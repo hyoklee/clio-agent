@@ -13,13 +13,12 @@ import asyncio
 import logging
 import os
 import platform
-import re
 import shutil
 import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Protocol
 
 from fastmcp import Context, FastMCP
 from pydantic import Field
@@ -39,7 +38,11 @@ from clio_agent.tools.servers.shell_commands import (
     is_command_length_exception,
     windows_launch_error,
 )
+from clio_agent.tools.servers.shell_commands import (
+    translate_windows_paths_for_bash as _translate_windows_paths_for_bash,
+)
 from clio_agent.tools.servers.shell_output import (
+    ProgressReporter,
     StreamCapture,
     compose_output_fields,
     read_process_stream,
@@ -51,25 +54,26 @@ from clio_agent.tools.servers.shell_spill_store import (
     new_call_id,
     spill_directory,
 )
+from clio_agent.tools.servers.shell_spill_store import spill_root as _spill_root
 
 shell_server = FastMCP("shell")
 logger = logging.getLogger(__name__)
 
-# Declared MCP ToolAnnotations — the SINGLE source of truth for the shell tool's
+# Declared MCP ToolAnnotations â€” the SINGLE source of truth for the shell tool's
 # effect class (#1061). ``bash`` runs an arbitrary command whose writes/egress
 # the gate cannot bound (they live behind the OS fence, not a gate-side parser),
 # so it declares the most-restrictive open-world destructive hints: NOT read-only
 # and openWorldHint=True. This projects to NO catalog read/write tag (effectful/
-# unclassifiable) — preserving the pre-#1061 "no read tag => never read-only, and
+# unclassifiable) â€” preserving the pre-#1061 "no read tag => never read-only, and
 # not an fs-write the auto-edits mode may auto-approve" classification.
 
 
 # POSIX text utilities the model tends to reach for (and improvises `wsl bash -c`
-# to get on Windows, booting a resident VM — iowarp/clio-agent#898). Their real
+# to get on Windows, booting a resident VM â€” iowarp/clio-agent#898). Their real
 # presence on the host PATH is probed, not assumed.
 _POSIX_TEXT_TOOLS = ("cut", "sed", "awk", "grep")
 
-# Operational caps — resolved file → env → default (see clio_agent.conf).
+# Operational caps â€” resolved file â†’ env â†’ default (see clio_agent.conf).
 # Timeouts: 0 means none. A command runs until it exits (a conversion, a batch
 # job, a long `df`), the human cancels the turn, or the MODEL passes its own
 # positive ``timeout_s``. An operator may still set a ceiling via
@@ -143,9 +147,6 @@ def resolve_shell_limits() -> ShellLimits:
 #: Resolved once at server build: the tool description below is registered from
 #: it, and :func:`bash` enforces the same values.
 _SHELL_LIMITS = resolve_shell_limits()
-_WINDOWS_BASH_PATH = re.compile(
-    r"(?P<drive>[A-Za-z]):[\\/](?P<rest>[^\"'`\s|&;<>()]+(?:[\\/][^\"'`\s|&;<>()]+)*)"
-)
 
 
 def _error(code: str, message: str, *, details: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -170,7 +171,7 @@ def _resolve_cwd(cwd: str | None) -> Path:
     process's own current directory. A single managed backend process outlives
     its boot-time cwd and can serve sessions across multiple workspaces, so
     falling back to ``Path.cwd()`` let commands without an explicit ``cwd``
-    run outside the session's own workspace (iowarp/clio-agent — desktop
+    run outside the session's own workspace (iowarp/clio-agent â€” desktop
     ``sensor_readings_*.md`` files landing in the install directory instead of
     the workspace). ``Path.cwd()`` remains the last-resort fallback for the
     app-less CLI grounding path where no workspace is bound.
@@ -240,20 +241,6 @@ def _resolve_cwd(cwd: str | None) -> Path:
     return resolved
 
 
-def _windows_bash_path(path_match: re.Match[str]) -> str:
-    """Translate a Windows drive path to the WSL mount path bash expects."""
-
-    drive = path_match.group("drive").lower()
-    rest = path_match.group("rest").replace("\\", "/")
-    return f"/mnt/{drive}/{rest}"
-
-
-def _translate_windows_paths_for_bash(command: str) -> str:
-    """Translate embedded Windows absolute paths before sending to WSL bash."""
-
-    return _WINDOWS_BASH_PATH.sub(_windows_bash_path, command)
-
-
 def _windows_shell_backend() -> str:
     """Return the configured Windows shell backend."""
 
@@ -302,9 +289,9 @@ class ShellEnvFacts:
     """Host facts the shell tool description is computed from (#898).
 
     The tool description the model reads must describe the environment the
-    command ACTUALLY executes in — the model improvised ``wsl bash -c "cut ..."``
+    command ACTUALLY executes in â€” the model improvised ``wsl bash -c "cut ..."``
     on Windows precisely because the tool called itself a *bash* and the host was
-    not one. This is grounding, not a behavioural handcuff (CLAUDE.md ⚑ #3).
+    not one. This is grounding, not a behavioural handcuff (CLAUDE.md âš‘ #3).
     """
 
     is_windows: bool
@@ -421,7 +408,7 @@ def build_shell_tool_description(facts: ShellEnvFacts, limits: ShellLimits | Non
             f"{invocation}"
             f"{tools_line} "
             "Do NOT assume WSL exists: do not invoke `wsl`, `wsl bash -c`, or POSIX "
-            "pipelines to reach cut/sed/awk/grep — on a WSL-less host they fail, and the "
+            "pipelines to reach cut/sed/awk/grep â€” on a WSL-less host they fail, and the "
             "first `wsl` call boots a utility VM that stays resident holding gigabytes. "
             "Paths use Windows conventions (drive letters, backslashes) unless the bash "
             "backend is active. For tabular, "
@@ -451,24 +438,6 @@ def build_shell_tool_description(facts: ShellEnvFacts, limits: ShellLimits | Non
 #: this as the ``bash`` tool description, so it is grounded in the real platform,
 #: shell, and tool availability rather than a static "bash"-flavoured string.
 _SHELL_TOOL_DESCRIPTION = build_shell_tool_description(_detect_shell_env())
-
-
-def _kill_process_tree(pid: int) -> None:
-    """Kill ``pid`` and every descendant (``uv run`` and shells spawn children)."""
-
-    import psutil  # noqa: PLC0415
-
-    try:
-        root = psutil.Process(pid)
-        victims = [*root.children(recursive=True), root]
-    except psutil.NoSuchProcess:
-        return
-    for proc in victims:
-        try:
-            proc.kill()
-        except psutil.NoSuchProcess:
-            continue
-    psutil.wait_procs(victims, timeout=5)
 
 
 def _log_shell_phase(
@@ -519,9 +488,39 @@ async def bash(
     Output that does not fit the
     result budget is spilled in full under Agent-managed ``tool-output/`` state and excerpted
     (:mod:`clio_agent.tools.servers.shell_output`). Foreground turn cancellation
-    kills its process tree. Accepted background tasks require explicit cancellation.
+    kills its process tree; background tasks require explicit cancellation.
     """
 
+    if background:
+        return _error(
+            "native_submission_required", "Background shell must use the native MCP task client."
+        )
+    return await execute_shell(
+        ctx, command, cwd, timeout_s, max_output_bytes, access_paths=access_paths
+    )
+
+
+class ShellCleanupObserver(Protocol):
+    """Attempt-specific evidence supplied to the native worker, never a task driver."""
+
+    def acquiring_effects(self) -> None:
+        """Mark process acquisition before the spawn can produce side effects."""
+
+    def confirm_cleanup(self) -> None:
+        """Confirm actual process-tree and reader retirement."""
+
+
+async def execute_shell(
+    ctx: ProgressReporter,
+    command: str,
+    cwd: str | None = None,
+    timeout_s: float = _DEFAULT_TIMEOUT_S,
+    max_output_bytes: int = _SHELL_LIMITS.default_output_bytes,
+    *,
+    cleanup: ShellCleanupObserver | None = None,
+    access_paths: list[str] | None = None,
+) -> dict[str, Any]:
+    """Execute the retained confined workload, shared by both native shell modes."""
     if not isinstance(command, str) or not command.strip():
         return _error(
             "invalid_command",
@@ -529,30 +528,11 @@ async def bash(
             details={"field": "command"},
         )
     if access_paths:
-        # The managed gate asks first; app-less callers still cannot use this
-        # declaration to self-grant territory or bypass connected-source policy.
+        # Declaring a path never grants it; execution rechecks actual folder rights.
         from clio_agent.gact.folder_access import requested_folders
 
         if requested_folders("shell_bash", {"access_paths": access_paths}):
-            return _error(
-                "folder_access_required", "Ask the user to permit the declared folders first."
-            )
-    background_app, background_sid = None, ""
-    if background:
-        from clio_agent.gact import context as task_context
-
-        background_app, background_sid = task_context.active_app(), task_context.active_session_id()
-        if background_app is None or not background_sid:
-            return _error(
-                "background_unavailable",
-                "Background shell requires an application-owned conversation",
-            )
-        from clio_agent.tools.task_call_context import require_admission
-
-        try:
-            require_admission(background_app, background_sid)
-        except RuntimeError as exc:
-            return _error("task_admission_closed", str(exc))
+            return _error("folder_access_required", "Ask the user to permit these folders first.")
     command = command.strip()
     max_chars = _SHELL_LIMITS.max_command_chars
     if len(command) > max_chars:
@@ -602,7 +582,7 @@ async def bash(
 
     # #975: route the shell subprocess through the single confinement composer with the
     # per-invocation `shell` profile (write territory computed from THIS command's cwd).
-    # Floor-first — the backend is passthrough this slice, so argv/env are byte-identical;
+    # Floor-first â€” the backend is passthrough this slice, so argv/env are byte-identical;
     # the shell seam carries no pdeathsig today, so it stays off here.
     from clio_agent.runtime import sandbox  # noqa: PLC0415 - avoid import cycle
 
@@ -626,6 +606,9 @@ async def bash(
     if os.name == "nt" and (launch_error := windows_launch_error(run_argv, command)):
         return launch_error
     run_env = {**os.environ, **prepared, "PYTHONUTF8": "1", **confined.env_overlay}
+    # The model's shell is not the authenticated human control channel.
+    for internal_credential in ("CLIO_AUTH_TOKEN", "CLIO_GACT_BEARER_TOKEN"):
+        run_env.pop(internal_credential, None)
     # Prepared scratch is already inside this workspace's writable territory.
     run_env.update({key: prepared[key] for key in ("TEMP", "TMP", "TMPDIR") if key in prepared})
     from clio_agent.paths import workspace_state_dir  # noqa: PLC0415
@@ -648,41 +631,36 @@ async def bash(
     try:
         from clio_agent.runtime.task_process_tree import task_spawn_options
 
-        process_options = (
-            task_spawn_options(confined.popen_kwargs) if background else confined.popen_kwargs
-        )
-        spawn = asyncio.create_subprocess_exec(
-            *run_argv,
-            cwd=str(safe_cwd),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=run_env,
-            **process_options,
-            # Give the child an immediately-EOF stdin. Without this the spawned
-            # shell inherits clio-agent's own stdin (a pipe the parent holds open
-            # and never closes), and PowerShell/cmd block at startup waiting on
-            # that stream — every command then hits the timeout with empty output.
-            stdin=subprocess.DEVNULL,
-        )
-        if background:
-            from clio_agent.gact.task_shell_owner import spawn_owned_shell
-            from clio_agent.tools.task_call_context import TASK_CALL
-
-            accepted = await spawn_owned_shell(
-                background_app,
-                background_sid,
-                spawn,
-                captures,
-                command=command,
-                cwd=safe_cwd,
-                spill_root=spill_root,
-                timeout=timeout,
-                invocation_id=TASK_CALL.get().invocation_id,
+        process_options = task_spawn_options(confined.popen_kwargs)
+        if cleanup is not None:
+            cleanup.acquiring_effects()
+        spawn = asyncio.create_task(
+            asyncio.create_subprocess_exec(
+                *run_argv,
+                cwd=str(safe_cwd),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=run_env,
+                **process_options,
+                # Give the child an immediately-EOF stdin. Without this the spawned
+                # shell inherits clio-agent's own stdin (a pipe the parent holds open
+                # and never closes), and PowerShell/cmd block at startup waiting on
+                # that stream â€” every command then hits the timeout with empty output.
+                stdin=subprocess.DEVNULL,
             )
-            _log_shell_phase(call_id, "process_start", phase_started, outcome="accepted")
-            return accepted
-        process = await spawn
+        )
+        try:
+            process = await asyncio.shield(spawn)
+        except asyncio.CancelledError:
+            # A cancelled submission waiter cannot abandon a newly created
+            # suspended process. Resolve this exact spawn before stopping it.
+            await _cancel_pending_spawn(spawn)
+            if cleanup is not None:
+                cleanup.confirm_cleanup()
+            raise
     except Exception as exc:  # noqa: BLE001
+        if cleanup is not None:
+            cleanup.confirm_cleanup()
         _log_shell_phase(call_id, "process_start", phase_started, outcome="failed")
         if is_command_length_exception(exc):
             return command_length_error(command, str(exc), bound="native_spawn")
@@ -691,53 +669,113 @@ async def bash(
 
     assert process.stdout is not None
     assert process.stderr is not None
+    from clio_agent.runtime.task_process_tree import TaskProcessTree
+
+    try:
+        tree = TaskProcessTree(process.pid)
+    except Exception:
+        # Windows ownership failure kills the still-suspended process; wait
+        # for its actual exit before allowing the worker to leave.
+        if process.returncode is None:
+            process.kill()
+        await process.wait()
+
+        raise
     readers = [
         asyncio.create_task(read_process_stream(pipe, capture=capture, ctx=ctx))
         for pipe, capture in zip((process.stdout, process.stderr), captures, strict=True)
     ]
     timed_out = False
+    physical_settlement = False
+    result: dict[str, Any] | None = None
+
+    async def settle() -> None:
+        await process.wait()
+        while tree.active():
+            await asyncio.sleep(0.05)
+
     try:
-        await asyncio.wait_for(process.wait(), timeout=timeout or None)
+        await asyncio.wait_for(settle(), timeout=timeout or None)
+        physical_settlement = True
     except TimeoutError:
         timed_out = True
-        await asyncio.to_thread(_kill_process_tree, process.pid)
-        await process.wait()
-    except asyncio.CancelledError:
-        _log_shell_phase(call_id, "child_lifetime", phase_started, outcome="cancelled")
-        # The turn was cancelled (the human stopped it): never orphan the command.
-        _kill_process_tree(process.pid)
+        tree.terminate()
+        await settle()
+        physical_settlement = True
+    except BaseException:
+        _log_shell_phase(call_id, "child_lifetime", phase_started, outcome="interrupted")
+        # Signal the owned OS tree directly; Core I/O may occupy the executor.
+        # The receipt still follows actual process exit and output-reader retirement.
+        tree.terminate()
+        await settle()
+        physical_settlement = True
         raise
-    phase_started = _log_shell_phase(
-        call_id, "child_lifetime", phase_started, outcome="timed_out" if timed_out else "completed"
-    )
-    await asyncio.gather(*readers)
-    _log_shell_phase(call_id, "output_drain", phase_started)
-    base = {
-        "command": command,
-        "cwd": str(safe_cwd),
-        "exit_code": None if timed_out else process.returncode,
-        "timed_out": timed_out,
-        "timeout_s": timeout,
-    }
-    return compose_output_fields(base, captures, root=spill_root, budget=shell_result_char_budget())
+    finally:
+        phase_started = _log_shell_phase(
+            call_id,
+            "child_lifetime",
+            phase_started,
+            outcome="timed_out"
+            if timed_out
+            else "completed"
+            if physical_settlement
+            else "unsettled",
+        )
+        try:
+            await asyncio.gather(*readers)
+            _log_shell_phase(call_id, "output_drain", phase_started)
+        finally:
+            tree.close()
+            if physical_settlement:
+                if cleanup is not None and all(reader.done() for reader in readers):
+                    # A reader failure can leave output custody unconfirmed.
+                    if all(
+                        not reader.cancelled() and reader.exception() is None for reader in readers
+                    ):
+                        cleanup.confirm_cleanup()
+                base = {
+                    "command": command,
+                    "cwd": str(safe_cwd),
+                    "exit_code": None if timed_out else process.returncode,
+                    "timed_out": timed_out,
+                    "timeout_s": timeout,
+                }
+                result = compose_output_fields(
+                    base, captures, root=spill_root, budget=shell_result_char_budget()
+                )
+    if result is None:
+        raise RuntimeError("Shell exited without confirmed process-tree settlement")
+    return result
 
 
-def _spill_root(safe_cwd: Path) -> Path:
-    """Where this call's spill files go: the session workspace root.
+async def _cancel_pending_spawn(spawn: asyncio.Task[asyncio.subprocess.Process]) -> None:
+    """Resolve an exact spawn race and physically settle it without replaying the command."""
+    from clio_agent.runtime.task_process_tree import TaskProcessTree
 
-    The model reads spilled output with its workspace file tools, so the files
-    belong under the bound workspace's Agent state root even when the command ran
-    in an explicit sub-``cwd``. With no workspace bound (the app-less CLI path,
-    whose fallback :func:`_resolve_cwd` already traces) the policy-validated cwd
-    is used.
-    """
+    async def cleanup() -> None:
+        process = await spawn
+        tree = None
+        try:
+            tree = TaskProcessTree(process.pid)
+            tree.terminate()
+            await process.wait()
+            while tree.active():
+                await asyncio.sleep(0.05)
+        finally:
+            if tree is not None:
+                tree.close()
+            elif process.returncode is None:
+                process.kill()
+                await process.wait()
 
-    from clio_agent.tools.execution import (  # noqa: PLC0415 - avoid import cycle
-        get_active_tool_workspace_root,
-    )
-
-    active_root = get_active_tool_workspace_root()
-    return Path(active_root).resolve() if active_root else safe_cwd
+    pending = asyncio.create_task(cleanup())
+    while True:
+        try:
+            await asyncio.shield(pending)
+            return
+        except asyncio.CancelledError:
+            if pending.cancelled():
+                raise
 
 
 __all__ = [

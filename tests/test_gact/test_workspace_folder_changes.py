@@ -84,7 +84,9 @@ def test_moved_primary_preserves_sessions_grants_and_next_turn_context(tmp_path:
     assert persisted.config[grants.GRANTED_ROOTS_CONFIG_KEY] == [str(additional.resolve())]
 
 
-def test_root_change_rejects_busy_workspace_before_creating_or_renaming(tmp_path: Path) -> None:
+def test_root_change_rejects_busy_workspace_before_creating_or_renaming(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     app = build_app(sessions_path=tmp_path / "sessions.json")
     client = TestClient(app)
     root = tmp_path / "original"
@@ -92,9 +94,9 @@ def test_root_change_rejects_busy_workspace_before_creating_or_renaming(tmp_path
         "id"
     ]
     sid = client.post("/v1/sessions", json={"workspace_id": wid}).json()["id"]
-    app.state.in_flight_turns[sid] = Mock(done=Mock(return_value=False))
     destination = tmp_path / "must-not-create"
-    try:
+    with monkeypatch.context() as patch:
+        patch.setattr(app.state.turn_runner, "busy", lambda candidate: candidate == sid)
         response = client.patch(
             f"/v1/workspaces/{wid}", json={"name": "Changed", "root_path": str(destination)}
         )
@@ -104,8 +106,6 @@ def test_root_change_rejects_busy_workspace_before_creating_or_renaming(tmp_path
         stored = app.state.workspaces.get(wid)
         assert stored.name == "Original"
         assert stored.root_path == str(root)
-    finally:
-        app.state.in_flight_turns.pop(sid)
 
 
 def test_additional_folder_survives_reload_and_revocation_denies_access(tmp_path: Path) -> None:

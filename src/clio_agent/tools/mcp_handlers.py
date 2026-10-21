@@ -47,7 +47,6 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 if TYPE_CHECKING:
     import mcp.types as mcp_types
 
-    from clio_agent.tools.mcp_task_records import TaskKey
 
 __all__ = [
     "ElicitationDispatcher",
@@ -130,7 +129,6 @@ class MCPInvocationContext:
     # older foreground-elicitation callers retain the same construction shape.
     task_id: str | None = None
     input_key: str | None = None
-    task_key: TaskKey | None = None
 
 
 @runtime_checkable

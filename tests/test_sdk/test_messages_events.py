@@ -77,7 +77,7 @@ def test_post_text_and_read_settled_ledger(client: ClioClient, stub_agent: StubA
     assert fetched.turn_id == ack.message_id
 
 
-def test_live_sse_consume_of_a_stubbed_turn(client: ClioClient) -> None:
+def test_live_sse_consume_of_a_stubbed_turn(client: ClioClient, app: Any) -> None:
     sess = client.sessions.create(title="sse live")
 
     with client.sessions.events(sess.id) as stream:
@@ -102,9 +102,25 @@ def test_live_sse_consume_of_a_stubbed_turn(client: ClioClient) -> None:
                 break
 
         types = [e.type for e in seen]
-        assert types[0] == "session.status_changed"
-        running = seen[0]
-        assert isinstance(running, SessionStatusChanged)
+        # Durable root-task acceptance precedes dispatch/running and uses the
+        # same handle returned in the SDK acknowledgement.
+        assert types[0] == "task.updated"
+        accepted = seen[0].payload
+        assert isinstance(ack.task_handle, str) and ack.task_handle.startswith("task_")
+        assert accepted["handle"] == ack.task_handle
+        assert accepted["kind"] == "Session"
+        task = app.state.task_history.task_snapshot(ack.task_handle)
+        assert task is not None and task.kind == "Session"
+        assert task.owner.session_id == sess.id
+        assert task.owner.assignment_id == ack.task_handle
+        assert task.invocation_id == ack.message_id
+        assert task.backend is not None and task.backend.task_id == ack.task_handle
+        running = next(
+            event
+            for event in seen
+            if isinstance(event, SessionStatusChanged) and event.status == "running"
+        )
+        assert seen.index(running) > 0
         assert running.status == "running"
 
         created = [e for e in seen if isinstance(e, MessageCreated)]

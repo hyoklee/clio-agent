@@ -49,6 +49,7 @@ _install_sigusr1_diagnostic()
 # must happen at module import: build_app can race a prior app's startup worker.
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
+from functools import partial
 from pathlib import Path
 from typing import Any, AsyncIterator, Optional
 
@@ -263,7 +264,6 @@ from clio_agent.gact import (  # noqa: E402
     desktop_boot,  # noqa: E402
     desktop_lifecycle,
     provenance_wiring,
-    relay_wiring,
 )
 from clio_agent.gact._params import (  # noqa: E402,F401
     _gact_turn_timeout_s,
@@ -306,7 +306,6 @@ from clio_agent.gact.agents.composition import (  # noqa: E402, F401
     _runtime_active_workspace_context,
     _runtime_dynamic_agent_children_context,
 )
-from clio_agent.gact.agents.invoker import InProcessExpertInvoker  # noqa: E402
 from clio_agent.gact.agents.resolution import (  # noqa: E402, F401
     _agent_definition_is_agent_blueprint,
     _agent_definition_uses_blueprint_runtime,
@@ -333,7 +332,6 @@ from clio_agent.gact.agents.runners import (  # noqa: E402
     _run_prompt_user_agent,
     _run_tool_user_agent,
 )
-from clio_agent.gact.ask_user_tool import restore_pending_ask_user_questions  # noqa: E402
 
 # gact/delegation.py -- delegation + workflow-state derivation cluster.
 from clio_agent.gact.delegation import (  # noqa: E402,F401
@@ -405,14 +403,8 @@ from clio_agent.gact.providers.lmstudio import (  # noqa: E402,F401
 )
 from clio_agent.gact.routes import artifact_workspace  # noqa: E402
 from clio_agent.gact.routes.a2ui import register_a2ui_routes  # noqa: E402
-from clio_agent.gact.routes.agent_tasks import (  # noqa: E402
-    register_agent_task_routes,
-)
 from clio_agent.gact.routes.agents import (  # noqa: E402
     register_agents_routes,
-)
-from clio_agent.gact.routes.async_processes import (  # noqa: E402
-    register_async_process_routes,
 )
 from clio_agent.gact.routes.blueprint_updates import register_blueprint_updates_routes  # noqa: E402
 from clio_agent.gact.routes.blueprints import (  # noqa: E402
@@ -453,7 +445,6 @@ from clio_agent.gact.routes.provider_models_refresh import (
     register_provider_models_refresh_routes,  # noqa: E402
 )
 from clio_agent.gact.routes.providers import register_providers_routes  # noqa: E402
-from clio_agent.gact.routes.relay import register_relay_routes  # noqa: E402
 from clio_agent.gact.routes.sandbox_setup import register_sandbox_setup_routes  # noqa: E402
 from clio_agent.gact.routes.schedules import (  # noqa: E402
     register_schedules_routes,
@@ -552,7 +543,6 @@ from clio_agent.gact.runtime.type_parsing import (  # noqa: E402,F401
     _parse_field_annotation,
     _sanitize_model_name,
 )
-from clio_agent.gact.user_question_ledger import restore_user_questions  # noqa: E402
 
 # gact/workflow_state/merge.py -- pure workflow_state merge/normalize helpers.
 from clio_agent.gact.workflow_state.merge import (  # noqa: E402,F401
@@ -599,21 +589,12 @@ def _clear_session_model_refs(app: "FastAPI") -> None:
 # stay green; ``_start_background_user_turn`` is the explicit-``app`` engine the  #
 # thin ``build_app`` closure wrapper (and ``GactDeps``) delegate to.             #
 # --------------------------------------------------------------------------- #
-from clio_agent.gact.agent_tasks import (  # noqa: E402
-    install_agent_task_registry,
-)
-from clio_agent.gact.mcp_task_events import install_mcp_task_event_publisher  # noqa: E402
 from clio_agent.gact.turn import (  # noqa: E402,F401
     _run_turn_in_background,
     _start_background_user_turn,
 )
 from clio_agent.gact.turn_runner import (  # noqa: E402
-    drain_app_turns,
     install_turn_runner,
-)
-from clio_agent.gact.turn_spawn import (  # noqa: E402
-    install_agent_task_executor,
-    shutdown_agent_task_executors,
 )
 
 # Alias kept so the thin ``build_app`` closure wrapper (which shadows the
@@ -660,7 +641,6 @@ from clio_agent.gact.expert_packs import (
     load_expert_packs,
     validate_expert_hierarchy,
 )
-from clio_agent.gact.loop_inbox import _make_loop_inbox_drain, drain_inbox_and_notify_spotter
 from clio_agent.gact.permission_gate import (  # noqa: E402,F401
     _direct_permission_denied,
     _guard_direct_destructive_action,
@@ -711,9 +691,6 @@ from clio_agent.gact.transcript_file import boot_transcript_store
 from clio_agent.gact.types import (
     AgentDef,
     ErrorInfo,
-    Message,
-    Part,
-    Session,
 )
 from clio_agent.gact.usage import (  # noqa: E402,F401
     _PRICE_TABLE_PER_M,
@@ -798,6 +775,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.scheduler_task = task
 
     server_boot.start(app)  # clio-core attach + first doctor pass, both off-loop (typed rows)
+    from clio_agent.gact import task_runtime
+
+    readiness: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+    app.state.task_runtime_start = readiness
     agent_task: Optional[asyncio.Task] = None
     if getattr(app.state, "want_agent", False) and app.state.agent is None:
         agent_task = asyncio.create_task(_construct_agent_async(app))
@@ -805,108 +786,81 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     provider_catalog_task = server_boot.start_provider_catalog(app)
 
-    server_boot.reconcile_connected_storage(app)
+    runtime_stop = asyncio.Event()
 
-    yield
+    runtime_task = asyncio.create_task(
+        task_runtime.run_lifespan(app, readiness, runtime_stop), name="clio-task-resources"
+    )
+    app.state.task_runtime_lifetime = runtime_task
+    try:
+        if not getattr(app.state, "server_boot", False):
+            await asyncio.shield(readiness)
+        yield
+    finally:
+        # Agent construction runs on an executor thread. Cancelling its asyncio task
+        # does not stop that thread, and Python waits for executor workers at process
+        # exit. Wake provider discovery before cancelling the task so a missing LM
+        # Studio instance cannot add its entire retry window to Desktop Quit.
+        desktop_lifecycle.wake_for_shutdown()
 
-    await server_boot.shutdown_connected_storage(app)
+        # #1334: no request is served on this loop any more, so the teardown flushes below
+        # (the turn drain, the trace close) must LAND rather than be refused and dropped.
+        loop_guard.begin_server_loop_drain(app.state.mcp_app_loop)
+        await asyncio.to_thread(app.state.document_store.close)
+        # #948 S1 (#662): quiesce the internal turn-PRODUCERS (the scheduler tick, the
+        # agent-construction and lm-config tasks) BEFORE draining turns, so nothing can
+        # spawn a fresh turn into the drain window. The scheduler (the live post-yield
+        # producer) could otherwise fire mid-drain and leave a zombie turn the drain
+        # never saw (drain() re-snapshots too); the catalog re-probe loop stops here.
+        lm_config_task = getattr(app.state, "lm_config_task", None)
+        reprobe_task = getattr(app.state, "provider_catalog_reprobe_task", None)
+        await server_boot.stop_producers(
+            task, agent_task, lm_config_task, provider_catalog_task, reprobe_task
+        )
 
-    # Agent construction runs on an executor thread. Cancelling its asyncio task
-    # does not stop that thread, and Python waits for executor workers at process
-    # exit. Wake provider discovery before cancelling the task so a missing LM
-    # Studio instance cannot add its entire retry window to Desktop Quit.
-    desktop_lifecycle.wake_for_shutdown()
+        # Settle turns and task owners while their durable stores are still alive.
+        runtime_stop.set()
+        task_cleanup_errors = await asyncio.shield(runtime_task)
 
-    # #1334: no request is served on this loop any more, so the teardown flushes below
-    # (the turn drain, the trace close) must LAND rather than be refused and dropped.
-    loop_guard.begin_server_loop_drain(app.state.mcp_app_loop)
-    # #948 S1: the turn-runner idle hook is ALSO a turn producer — a draining
-    # turn's completion would otherwise re-drive a deferred resume, staging a fresh
-    # turn whose task the drain hard-cancels but whose SIDE EFFECTS (a persisted
-    # user message, the session flipped to 'running', a misleading
-    # ``user_question.resumed`` event) survive. Unregister it before draining so no
-    # completion during teardown stages new work. The deferred resume is simply
-    # not run (honest: no false 'resumed' claim), consistent with shutdown losing
-    # other in-memory in-flight state.
-    app.state.turn_runner.set_idle_hook(None)
-    await asyncio.to_thread(app.state.document_store.close)
-    # #948 S1 (#662): quiesce the internal turn-PRODUCERS (the scheduler tick, the
-    # agent-construction and lm-config tasks) BEFORE draining turns, so nothing can
-    # spawn a fresh turn into the drain window. The scheduler (the live post-yield
-    # producer) could otherwise fire mid-drain and leave a zombie turn the drain
-    # never saw (drain() re-snapshots too); the catalog re-probe loop stops here.
-    lm_config_task = getattr(app.state, "lm_config_task", None)
-    reprobe_task = getattr(app.state, "provider_catalog_reprobe_task", None)
-    for t in (task, agent_task, lm_config_task, provider_catalog_task, reprobe_task):
-        if t is None:
-            continue
-        if getattr(t, "done", lambda: False)():
-            continue
-        t.cancel()
+        # Release Core after verified worker retirement and before later executor joins.
+        await desktop_lifecycle.release_runtime_after_drain(app)
+
+        # MCP Apps may own browser attachments or other remote resources. Close
+        # every retained record while the exact originating MCP transports are
+        # still alive. A failure is logged and retained; the child server's own
+        # close_all lifespan remains the final process-level backstop below.
         try:
-            await t
-        except (asyncio.CancelledError, Exception):  # noqa: BLE001,S110 - shutdown task drain; cancellation/errors ignored on teardown
-            pass
-
-    # Settle turns and task owners while their durable stores are still alive.
-    await drain_app_turns(app, logger)
-    await server_boot.shutdown_tasks(app)
-
-    # Desktop Quit must release the shared runtime before any later executor join can
-    # block on a provider/tool worker.  The turn drain above is the safety boundary:
-    # cooperative cancellation has been signalled and every asyncio turn task has
-    # settled or been hard-cancelled, so application work can no longer reacquire the
-    # runtime.  Releasing from the HTTP route itself was too early (an active turn
-    # could immediately spawn clio-core again); releasing at the very end was too
-    # late (a stuck executor join let the desktop supervisor kill Python first,
-    # skipping this cleanup and leaking clio-core).
-    await desktop_lifecycle.release_runtime_after_drain(app)
-
-    # #948 S3/S4: shut down every per-depth agent-task pool (child forwards) off the
-    # loop, symmetric to their lazy install. Without this their non-daemon workers
-    # leak across app lifecycles and a worker still in a slow child forward blocks
-    # process exit (concurrent.futures' atexit joins all workers).
-    try:
-        await asyncio.get_running_loop().run_in_executor(
-            None, lambda: shutdown_agent_task_executors(app)
-        )
-    except Exception:  # noqa: BLE001,S110 - defensive shutdown cleanup
-        pass
-
-    # MCP Apps may own browser attachments or other remote resources. Close
-    # every retained record while the exact originating MCP transports are
-    # still alive. A failure is logged and retained; the child server's own
-    # close_all lifespan remains the final process-level backstop below.
-    try:
-        await cleanup_all_mcp_apps(app)
-    except RuntimeError:
-        logger.exception(
-            "one or more MCP Apps failed explicit host cleanup; "
-            "child transport shutdown will run the server cleanup backstop"
-        )
-    try:
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
-            None,
-            lambda: _release_owned_lm_studio_instance(app, raise_on_error=False),
-        )
-    except Exception:  # noqa: BLE001,S110 - best-effort LM-Studio instance release on shutdown
-        pass
-    # Drain + stop the off-loop semantic-trace writer so no events are lost on shutdown.
-    _trace_backend = getattr(app.state, "semantic_trace_backend", None)
-    _trace_close = getattr(_trace_backend, "close", None)
-    if callable(_trace_close):
+            await cleanup_all_mcp_apps(app)
+        except RuntimeError:
+            logger.exception(
+                "one or more MCP Apps failed explicit host cleanup; "
+                "child transport shutdown will run the server cleanup backstop"
+            )
         try:
-            _trace_close()
-        except Exception:  # pragma: no cover - defensive shutdown cleanup  # noqa: BLE001,S110 - defensive shutdown cleanup
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(
+                None,
+                lambda: _release_owned_lm_studio_instance(app, raise_on_error=False),
+            )
+        except Exception:  # noqa: BLE001,S110 - best-effort LM-Studio instance release on shutdown
             pass
-    provenance_wiring.close_artifact_backend(app)
-    # #900: explicit clean-shutdown teardown (promoted from atexit best-effort) — close
-    # the agent's MCP stdio executors + pooled SDK CLI transports now, with typed logging,
-    # off the event loop (thread joins). A HARD kill skips this; the Job Object / pdeathsig
-    # binding above is the backstop. The owner helper never raises.
-    _agent = getattr(app.state, "agent", None)
-    await desktop_lifecycle.finalize_desktop_shutdown(app, _agent)
+        # Drain + stop the off-loop semantic-trace writer so no events are lost on shutdown.
+        _trace_backend = getattr(app.state, "semantic_trace_backend", None)
+        _trace_close = getattr(_trace_backend, "close", None)
+        if callable(_trace_close):
+            try:
+                _trace_close()
+            except Exception:  # pragma: no cover - defensive shutdown cleanup  # noqa: BLE001,S110 - defensive shutdown cleanup
+                pass
+        provenance_wiring.close_artifact_backend(app)
+        # #900: explicit clean-shutdown teardown (promoted from atexit best-effort) — close
+        # the agent's MCP stdio executors + pooled SDK CLI transports now, with typed logging,
+        # off the event loop (thread joins). A HARD kill skips this; the Job Object / pdeathsig
+        # binding above is the backstop. The owner helper never raises.
+        _agent = getattr(app.state, "agent", None)
+        await desktop_lifecycle.finalize_desktop_shutdown(app, _agent)
+        if task_cleanup_errors:
+            raise BaseExceptionGroup("Task runtime cleanup failed", list(task_cleanup_errors))
 
 
 async def _construct_agent_async(app: "FastAPI") -> None:
@@ -930,7 +884,6 @@ async def _construct_agent_async(app: "FastAPI") -> None:
         # ARC churn / trace ⊋ ARC split). Built on a worker thread (server_boot): a clio-core
         # attach can take tens of seconds and must never block /v1/health on this loop.
         arc = await server_boot.process_arc_off_loop(app)
-        relay_kwargs = await relay_wiring.relay_agent_kwargs(app)
         # Pre-import the heavy LM stack ON THIS THREAD before any builder thread
         # runs: the deferred init here and a concurrent provider bind otherwise
         # import litellm simultaneously on two executor threads.
@@ -966,7 +919,7 @@ async def _construct_agent_async(app: "FastAPI") -> None:
         # this exact config (credential included — the boot/default config is the
         # sanctioned env-credential read, design §6), so a GACT booted purely from
         # ``CLIO_LM_*`` still authenticates.
-        agent = ClioAgent(verbose=False, arc=arc, provider_config=cfg, **relay_kwargs)
+        agent = ClioAgent(verbose=False, arc=arc, provider_config=cfg)
         agent_initialization.update_provider_profile(app, agent)
         return agent
 
@@ -990,6 +943,11 @@ async def _construct_agent_async(app: "FastAPI") -> None:
     if not await registry_boot.boot_fold_artifact_registry_offloop(app, loop):
         return  # wedged store — agent stays unready with a typed agent_init_error
     agent_initialization.mark_agent_ready(app, agent, boot=True)
+    starting = getattr(app.state, "task_runtime_start", None)
+    if starting is not None:
+        await asyncio.shield(starting)
+        for sid in await app.state.task_history.io.run(app.state.task_history.pending_sessions):
+            app.state.turn_runner.signal(sid)
 
     # #972: enforce the CAS store byte budget across every workspace at boot (off-loop,
     # #1001 cadence — the registry is now folded, so the reachability scan is ready).
@@ -1044,7 +1002,7 @@ class ARCLike(Protocol):
 
     def get_cache_stats(self) -> dict[str, Any]: ...  # pragma: no cover
     def set_highway_sink(self, sink: Any) -> None: ...  # pragma: no cover
-    def set_segment_op_logger(self, logger: Any) -> None: ...  # pragma: no cover
+    def set_segment_op_logger(self, logger: Any, /) -> None: ...  # pragma: no cover
 
 
 def build_app(
@@ -1205,7 +1163,6 @@ def build_app(
     # iowarp/clio-agent#333: structured ask-user protocol. The
     # orchestrator/backend can publish pending questions; clients
     # answer or cancel them through explicit endpoints.
-    app.state.user_questions = {}
     # iowarp/clio-agent#333: retry attempts preserve provenance for
     # retry-with-notes/model flows without mutating the original turn.
     app.state.turn_attempts = {}
@@ -1227,26 +1184,15 @@ def build_app(
     install_turn_runner(app)
     # #948 S2 (#950): in-memory AgentTask projection over the session store, rebuilt
     # from agent-task sessions; feeds events, the task API, and S3+ spawns.
-    install_agent_task_registry(app)
     # #1205: bridge every durable MCP TaskRecord write (#1115) to this app's event
     # bus, so the async-processes tray refreshes live instead of polling.
-    install_mcp_task_event_publisher(app)
     # #948 S3 (#951): dedicated child-forward pool, sized to the concurrency cap,
     # prevents a waiting parent from starving its children.
-    install_agent_task_executor(app)
-    app.state.expert_invoker = InProcessExpertInvoker(app)
-    relay_wiring.configure_relay_expert_invokers(app)
     # #948 S1: schedule ids deferred because their session was busy at the cron
     # minute; _scheduler_tick_once retries them until the session frees (a coarse
     # cron can't be retried via due_now, which only re-yields on a cron match).
     app.state.deferred_schedules = set()
     # #1035/#1036 (epic #1031 Pillar 2): per-session loop inboxes — the mid-turn
-    # wake + user-steer carrier (session_id -> LoopInbox). See gact/loop_inbox.py.
-    # #1036 folded the former app.state.deferred_resumes stash here: an ask-user
-    # resume that arrives while busy is enqueued as a user_message steer and the
-    # idle hook (drain_inbox_to_new_turn) re-drives residual steers into ONE turn.
-    app.state.loop_inboxes = {}
-    app.state.turn_runner.set_idle_hook(lambda sid: drain_inbox_and_notify_spotter(app, sid))
     # iowarp/clio-agent#2: per-session ledger of tool calls observed
     # during the in-flight turn. The global tool_observer appends
     # here; _run_turn_in_background drains it post-forward to attach
@@ -1301,7 +1247,6 @@ def build_app(
     set_tool_runtime_resolver(resolve_tool_runtime)
     # #1035: install the injected loop-inbox drain (both boot branches run turns);
     # resolve_tool_runtime folds it into ToolRuntimeHooks (acyclic edge preserved).
-    app.state.pending_loop_inbox_drain = _make_loop_inbox_drain(app)
     if agent is not None:
         try:
             _install_tool_runtime_hooks(app)
@@ -1732,39 +1677,7 @@ def build_app(
     # app, deps). Answering a resume-on-answer question + executing a retry
     # both drive a turn through ``deps.start_background_user_turn`` (the
     # thin ``build_app`` wrapper around the turn engine, defined just below).
-    def _start_background_user_turn(
-        sid: str,
-        sess: Session,
-        user_text: str,
-        *,
-        request_parts: Optional[list[Part]] = None,
-        metadata: Optional[dict[str, Any]] = None,
-        prev_status: str = "idle",
-        turn_agent_id: str = "",
-        user_msg_id: str = "",
-        user_created_at: str = "",
-        replace_existing_user_message: bool = False,
-    ) -> Message:
-        """Stage + drive a user turn (thin ``build_app`` wrapper, #714).
-
-        The engine moved to :func:`clio_agent.gact.turn._start_background_user_turn`
-        (single source). ``build_app``'s in-closure callers + the route factories
-        (via ``GactDeps.start_background_user_turn``) reach it through this wrapper
-        so they need not thread ``app`` explicitly; behavior is unchanged.
-        """
-        return _turn_start_background_user_turn(
-            app,
-            sid,
-            sess,
-            user_text,
-            request_parts=request_parts,
-            metadata=metadata,
-            prev_status=prev_status,
-            turn_agent_id=turn_agent_id,
-            user_msg_id=user_msg_id,
-            user_created_at=user_created_at,
-            replace_existing_user_message=replace_existing_user_message,
-        )
+    _start_background_user_turn = partial(_turn_start_background_user_turn, app)
 
     # ---- POST /v1/sessions/{sid}/cancel (BBB20) -----------------------
     # Best-effort cooperative cancel of an in-flight turn is owned by
@@ -2044,6 +1957,9 @@ def build_app(
         install_tool_runtime_hooks=_install_tool_runtime_hooks,
         clear_session_model_refs=_clear_session_model_refs,
     )
+    # The lifespan and the runner use the same bound conversation operations
+    # as HTTP routes; they must not reconstruct a second dispatch surface.
+    app.state.gact_deps = deps
 
     # ---- /v1/sessions/* lifecycle + ask-user/retry -------------------
     # Session CRUD/delete, rollback (undo/rewind), fork, export/import,
@@ -2063,17 +1979,18 @@ def build_app(
     # replace, active-model ref + override error and the agent-not-available
     # error travel on ``deps``.
     register_messages_routes(app, deps)
+    from clio_agent.gact.routes.tasks import register_task_routes
+
+    register_task_routes(app)
     composer_runtime.register_composer_routes(app, deps)
     register_a2ui_routes(app, deps)
 
     # ---- /v1/agent-tasks + /v1/sessions/{sid}/agent-tasks (#948 S2 / #950) ----
     # The AgentTask projection read + cancel routes, over
     # ``app.state.agent_task_registry`` (rebuilt at boot from agent-task sessions).
-    register_agent_task_routes(app, deps)
     # ---- /v1/sessions/{sid}/async-processes (#1205) ----
     # Session-scoped union of spawned AgentTask rows and durable MCP TaskRecord
     # rows, kind-discriminated, for the tray's single fetch.
-    register_async_process_routes(app, deps)
 
     # ---- /v1/artifacts + /v1/{sessions,workspaces}/{id}/artifacts (#966 S2/#968) ----
     artifact_workspace.register_artifact_workspace_routes(app, deps)
@@ -2161,7 +2078,6 @@ def build_app(
     register_system_routes(app, deps)
     register_sandbox_setup_routes(app)  # /v1/system/sandbox (+/setup) -- routes/sandbox_setup.py
     register_lifecycle_routes(app)
-    register_relay_routes(app, deps)
     register_infrastructure_routes(app, session_store_path.parent)
     register_connected_storage_routes(app)
     # ---- /v1/sessions/{sid}/tasks + /v1/tasks/{tid} + memory/events + share ----
@@ -2201,8 +2117,6 @@ def build_app(
     register_permission_and_interaction_routes(app, deps)
     # Restore durable question history before legacy/native pending snapshots;
     # Recovery mutates live state, so it belongs in app assembly.
-    restore_user_questions(app)
-    restore_pending_ask_user_questions(app)
 
     # ---- DELETE /v1/sessions/{sid}/messages/{id} + /v1/messages/{id} -
     # Both message-delete routes (session-scoped + the global, optionally

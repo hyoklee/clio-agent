@@ -264,101 +264,74 @@ def append_turn_resource_links(
 def append_turn_child_resource_links(
     app: "FastAPI", sid: str, turn_id: str, transcript: Any, *, agent_id: str = ""
 ) -> None:
-    """Roll up artifacts minted by CHILD sessions spawned THIS turn (owner ask
-    2026-08-06): "show at the end of the turn ALL artifacts that have been
-    generated in that turn by any of the agents or subagents".
+    """Project deliverables from authorized delegations originating in this turn.
 
-    :func:`append_turn_resource_links` gives the PARENT's own mints wire identity
-    from its per-session turn buffer; a delegated child's mints only ever chipped
-    into the CHILD's own transcript because that buffer is session-scoped and
-    already drained by the child's OWN finalize by the time this parent finalize
-    runs — so the buffer is not a source here. Instead this walks the agent-task
-    registry for the child sessions this parent TURN spawned (``parent_turn_id ==
-    turn_id`` — a prior turn's child never matches) plus their full descendant
-    tree (a child's own children, still entirely owned by this turn's work: each
-    spawn mints a brand-new session, never reused across turns or parents), then
-    reads every version those sessions produced from the artifact REGISTRY — the
-    authoritative in-process projection (RULE 4), not a heuristic.
-
-    Appended as one contiguous run, ordered by mint time, AFTER
-    :func:`append_turn_resource_links` so both runs land adjacent on the message
-    (one ARTIFACTS grid client-side); any ``artifact_id`` already riding a
-    ``resource_link`` part on this message is skipped, so the parent's own chips
-    can never duplicate. No descendant spawned this turn -> no registry scan, no
-    parts (never an empty grid marker). Fully guarded: a rollup failure must
-    never break the turn's answer.
+    Core supplies immutable assignment lineage. This only appends resource links;
+    it neither settles children nor reconstructs their execution history.
     """
-    try:
-        reg = getattr(app.state, "agent_task_registry", None)
-        if reg is None:
-            return
-        direct_children = [
-            str(task.child_session_id)
-            for task in reg.for_parent(sid)
-            if task.child_session_id and task.parent_turn_id == turn_id
-        ]
-        if not direct_children:
-            return
+    from clio_agent.arc.task_types import AssignmentDetails
+    from clio_agent.gact.artifacts.presentation import child_response_owners, response_deliverables
+    from clio_agent.gact.artifacts.registry import get_registry
+    from clio_agent.gact.runtime.globals import _new_part_id
+    from clio_agent.gact.task_access import TaskAccess
 
-        from clio_agent.gact.artifacts.presentation import (
-            child_response_owners,
-            response_deliverables,
+    history = app.state.task_history
+    access = TaskAccess(history, app.state.conversations.caller(sid))
+    sessions: set[str] = set()
+    for handle in history.tree_handles(sid):
+        child = access.require(handle, "read")
+        parent = (
+            history.task_snapshot(child.owner.parent_handle) if child.owner.parent_handle else None
         )
-        from clio_agent.gact.artifacts.registry import get_registry  # noqa: PLC0415
-        from clio_agent.gact.runtime.globals import _new_part_id  # noqa: PLC0415
-        from clio_agent.gact.session_descendants import descendant_session_ids  # noqa: PLC0415
-
-        session_ids: set[str] = set(direct_children)
-        for child_sid in direct_children:
-            session_ids.update(descendant_session_ids(app, child_sid))
-
-        already = {
-            str(part.metadata.get("artifact_id") or "")
-            for part in transcript.snapshot()
-            if part.type == "resource_link"
-        }
-
-        published = child_response_owners(app, session_ids)
-        rows: list[tuple[str, str, ArtifactVersion]] = []
-        for record in get_registry(app).all_records():
-            for version in record.versions:
-                if version.producer.get("designation") == "document-rendition":
-                    continue
-                producer_sid = str((version.producer or {}).get("session_id") or "")
-                if (
-                    producer_sid not in session_ids and version.artifact_id not in published
-                ) or version.artifact_id in already:
-                    continue
-                rows.append((record.workspace_id, record.name, version))
-        # Keep distinct child identities, then project the latest deliverable
-        # per family within each producer. Every older/review version remains
-        # in the registry and evidence; exact IDs already on the message are skipped.
-        rows.sort(key=lambda row: row[2].created_at or "")
-
-        for entry in response_deliverables(
-            {
-                "workspace_id": workspace_id,
-                "name": name,
-                "version": version,
-                "purpose": "deliverable" if version.artifact_id in published else None,
-                "response_session_id": published.get(version.artifact_id),
-            }
-            for workspace_id, name, version in rows
+        if (
+            child.kind != "Subagent"
+            or parent is None
+            or parent.owner.session_id != sid
+            or child.details is None
         ):
-            transcript.append_part(
-                resource_link_part(
-                    entry["workspace_id"],
-                    entry["name"],
-                    entry["version"],
-                    part_id=_new_part_id(),
-                    agent_id=agent_id,
-                ),
-                stream_source="batch",
-            )
-    except Exception:  # noqa: BLE001 — a wire-identity rollup must never break a turn
-        logger.warning(
-            "artifact child resource_link rollup skipped reason=turn_rollup_failed session=%s",
-            sid,
+            continue
+        details = AssignmentDetails.model_validate(history.read_content(child.details))
+        if details.parent_turn_id != turn_id:
+            continue
+        for descendant in history.tree_handles(child.owner.session_id):
+            task = access.require(descendant, "read")
+            if task.kind in {"Session", "Subagent"}:
+                sessions.add(task.owner.session_id)
+    if not sessions:
+        return
+    already = {
+        str(part.metadata.get("artifact_id") or "")
+        for part in transcript.snapshot()
+        if part.type == "resource_link"
+    }
+    published = child_response_owners(app, sessions)
+    entries: list[dict[str, Any]] = [
+        {
+            "workspace_id": record.workspace_id,
+            "name": record.name,
+            "version": version,
+            "purpose": "deliverable" if version.artifact_id in published else None,
+            "response_session_id": published.get(version.artifact_id),
+        }
+        for record in get_registry(app).all_records()
+        for version in record.versions
+        if (
+            str(version.producer.get("session_id") or "") in sessions
+            or version.artifact_id in published
+        )
+        and version.artifact_id not in already
+    ]
+    entries.sort(key=lambda entry: entry["version"].created_at or "")
+    for entry in response_deliverables(entries):
+        transcript.append_part(
+            resource_link_part(
+                entry["workspace_id"],
+                entry["name"],
+                entry["version"],
+                part_id=_new_part_id(),
+                agent_id=agent_id,
+            ),
+            stream_source="batch",
         )
 
 

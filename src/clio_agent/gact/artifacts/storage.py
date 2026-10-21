@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, BinaryIO
 
 from clio_agent.gact.artifacts.cas import IngestedIdentity
 from clio_agent.gact.artifacts.provenance.native import NativeArtifactStore
@@ -14,6 +15,53 @@ if TYPE_CHECKING:
 
 
 _NATIVE_FALLBACK = NativeArtifactStore()
+
+
+def open_verified_artifact_handle(
+    source: Path,
+    recorded_sha: str | None,
+    *,
+    artifact_id: str,
+    hash_handle: Callable[[BinaryIO], str],
+    error: Any,
+) -> BinaryIO:
+    """Retain one open, verified object for either streamed or bounded task reads."""
+    from clio_agent.platform_paths import win_extended_path
+
+    try:
+        handle = open(win_extended_path(source), "rb")
+    except OSError as cause:
+        raise error(
+            status_code=404,
+            error="not_found",
+            message="artifact bytes are not readable",
+            details={"artifact_id": artifact_id},
+        ) from cause
+    if recorded_sha:
+        try:
+            actual = hash_handle(handle)
+        except OSError as cause:
+            handle.close()
+            raise error(
+                status_code=404,
+                error="not_found",
+                message="artifact bytes are not readable",
+                details={"artifact_id": artifact_id},
+            ) from cause
+        if actual != recorded_sha:
+            handle.close()
+            raise error(
+                status_code=409,
+                error="integrity_violation",
+                message="artifact content no longer matches its recorded hash",
+                details={
+                    "artifact_id": artifact_id,
+                    "recorded_sha256": recorded_sha,
+                    "actual_sha256": actual,
+                },
+            )
+        handle.seek(0)
+    return handle
 
 
 def artifact_store(app: "FastAPI") -> Any:

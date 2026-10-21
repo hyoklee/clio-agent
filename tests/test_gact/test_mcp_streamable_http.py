@@ -22,8 +22,10 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from clio_agent.gact.app import build_app
@@ -78,7 +80,8 @@ def client(tmp_path: Path) -> TestClient:
 
 
 def _seed_streamable_http(client: TestClient, sid: str = "mcp_ext_sh01") -> str:
-    client.app.state.external_mcp_servers = {
+    app = cast(FastAPI, client.app)
+    app.state.external_mcp_servers = {
         sid: {
             "id": sid,
             "name": "remote_sh",
@@ -101,7 +104,6 @@ def test_streamable_http_tool_visible_in_catalog(
     _seed_streamable_http(client)
     captured: list[object] = []
     factory = _fake_client_factory(captured)
-    monkeypatch.setattr("clio_agent.tools.task_receipt.TaskAwareClient", factory)
     monkeypatch.setattr("fastmcp.Client", factory)
 
     resp = client.get("/v1/tools")
@@ -124,7 +126,6 @@ def test_streamable_http_tools_listing_nonempty(
     sid = _seed_streamable_http(client)
     captured: list[object] = []
     factory = _fake_client_factory(captured)
-    monkeypatch.setattr("clio_agent.tools.task_receipt.TaskAwareClient", factory)
     monkeypatch.setattr("fastmcp.Client", factory)
 
     resp = client.get(f"/v1/mcp/servers/{sid}/tools")
@@ -144,7 +145,6 @@ def test_streamable_http_tool_call_not_500(
     sid = _seed_streamable_http(client)
     captured: list[object] = []
     factory = _fake_client_factory(captured)
-    monkeypatch.setattr("clio_agent.tools.task_receipt.TaskAwareClient", factory)
     monkeypatch.setattr("fastmcp.Client", factory)
 
     resp = client.post(f"/v1/mcp/servers/{sid}/call", json={"tool": "sh_tool", "args": {}})

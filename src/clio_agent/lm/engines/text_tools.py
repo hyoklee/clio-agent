@@ -76,7 +76,11 @@ I'll check both sources.
 
 (Those two names only illustrate the format -- call only names from the Available tools
 list.) All calls in one block run at the same time; you see all their results together in
-the next message. A message that ends without a block is your final answer."""
+the next message. Stop your reply immediately after the closing fence. Do not author
+new [tool results] sections or simulate later turns: only the host supplies actual
+observations. If a call needs another call's output, emit only the prerequisite now,
+then use its real result on the next step. Never invent a result or placeholder handle.
+A message that ends without a block is your final answer."""
 
 #: Appended to every user or tool-result turn the transport sends (never to the
 #: system prompt), so the model is reminded where its tools are at each step.
@@ -85,6 +89,11 @@ TURN_REMINDER = (
     "complete fenced block: an opening line of three backticks followed by tool_calls, "
     "the JSON list on the next line, then a closing line of three backticks. Include BOTH "
     "fences; a JSON list alone or XML invoke/parameter tags are not calls. "
+    "A JSON object wrapping a tool_calls list or XML <tool_calls> tags is not a call either. "
+    "A single JSON call object also needs the complete fenced JSON list. "
+    "Underscores are not tool-call fences. "
+    "Stop after the closing fence and wait for host observations; do not simulate "
+    "tool results or later turns. Dependent calls require the preceding real result. "
     "If no calls are needed, answer normally.)"
 )
 
@@ -181,8 +190,27 @@ def split_reply(
     reply: str, *, call_prefix: str, available_tools: Collection[str] = ()
 ) -> ReplySplit:
     """Split a reply into visible text and tool calls (never repaired; see module doc)."""
-    start = reply.rfind(FENCE)
+    fences = list(re.finditer(r"(?m)^[ \t]*(?P<fence>```tool_calls)[ \t]*(?=\r?$)", reply))
+    if len(fences) > 1:
+        return _invalid_reply(
+            reply[: fences[0].start()].rstrip(),
+            reply[fences[0].start() :].strip(),
+            "multiple tool-call blocks require one complete fenced JSON list containing "
+            "every intended call; no operation was submitted",
+            call_prefix,
+        )
+    start = fences[0].start("fence") if fences else reply.rfind(FENCE)
     if start < 0:
+        if available_tools and re.fullmatch(
+            r"\s*_tool_calls\r?\n.+\r?\n_tool_calls\s*", reply, re.DOTALL
+        ):
+            return _invalid_reply(
+                "",
+                reply.strip(),
+                "broken tool-call delimiters require a complete fenced JSON call list; "
+                "no operation was submitted",
+                call_prefix,
+            )
         if _xml_call_block(reply, available_tools):
             return _invalid_reply(
                 "",
@@ -193,6 +221,14 @@ def split_reply(
         if _orphaned_call_block(reply, available_tools):
             return _invalid_reply(
                 "", reply.strip(), "missing opening ```tool_calls fence", call_prefix
+            )
+        if _bare_call_json(reply, available_tools):
+            return _invalid_reply(
+                "",
+                reply.strip(),
+                "tool-call JSON requires a complete fenced ```tool_calls JSON list; "
+                "no operation was submitted",
+                call_prefix,
             )
         return ReplySplit(text=reply.strip())
     body = reply[start + len(FENCE) :]
@@ -215,6 +251,22 @@ def _xml_call_block(reply: str, available_tools: Collection[str]) -> bool:
     """Reject observed native call shapes without inferring or executing their arguments."""
     if not available_tools:
         return False
+    container = re.fullmatch(r"\s*<tool_calls>\s*(.*?)\s*</tool_calls>\s*", reply, re.DOTALL)
+    if container:
+        try:
+            return _known_call_list(json.loads(container[1]), available_tools)
+        except ValueError:
+            return False
+    parameter_calls = re.fullmatch(
+        r"""\s*<parameter\s+name=(["'])tool_calls\1\s*>\s*(.*?)\s*</parameter>\s*""",
+        reply,
+        re.DOTALL,
+    )
+    if parameter_calls:
+        try:
+            return _known_call_list(json.loads(parameter_calls[2]), available_tools)
+        except ValueError:
+            return False
     match = re.match(r"""\s*<invoke\s+name=(["'])([^"']+)\1\s*>""", reply)
     if match:
         return match[2] in available_tools and "</invoke>" in reply[match.end() :]
@@ -230,18 +282,43 @@ def _xml_call_block(reply: str, available_tools: Collection[str]) -> bool:
 
 
 def _orphaned_call_block(reply: str, available_tools: Collection[str]) -> bool:
-    """Recognize the observed missing-opener form without guessing executable calls.
+    """Recognize observed broken openers without guessing executable calls.
 
     Ordinary JSON answers and fenced examples stay answers. Only a whole call list
-    for this request's tools followed by an unmatched closing fence is rejected.
+    or single call object for this request's tools followed by an unmatched closing fence is rejected,
+    including the live reply whose opening fence became ``_tool_calls``.
     """
     raw = reply.strip()
     if not available_tools or not raw.endswith("\n```") or "```" in raw[:-3]:
         return False
+    body = raw[:-3]
+    if body.startswith("_tool_calls\n"):
+        body = body.removeprefix("_tool_calls\n")
     try:
-        calls = json.loads(raw[:-3])
+        calls = json.loads(body)
     except ValueError:
         return False
+    return _known_call_list(calls, available_tools) or _known_call_list([calls], available_tools)
+
+
+def _bare_call_json(reply: str, available_tools: Collection[str]) -> bool:
+    """Reject a whole declared call or reserved envelope; never reinterpret examples."""
+    if not available_tools or not reply.lstrip().startswith("{"):
+        return False
+    try:
+        envelope = json.loads(reply)
+    except ValueError:
+        return False
+    if not isinstance(envelope, dict):
+        return False
+    return _known_call_list([envelope], available_tools) or (
+        set(envelope) == {"tool_calls"}
+        and _known_call_list(envelope["tool_calls"], available_tools)
+    )
+
+
+def _known_call_list(calls: Any, available_tools: Collection[str]) -> bool:
+    """Recognize only exact call objects for declared tools, without resolving arguments."""
     return (
         isinstance(calls, list)
         and bool(calls)

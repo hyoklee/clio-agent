@@ -125,6 +125,21 @@ def test_health_answers_within_a_second_while_clio_core_attach_stalls(
         assert attach["reason"] == "clio_core_starting"
         assert attach["required"] is False
 
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
+        try:
+            conn.request(
+                "POST",
+                "/v1/sessions",
+                body='{"title":"not yet"}',
+                headers={"Content-Type": "application/json"},
+            )
+            refusal = conn.getresponse()
+            assert refusal.status == 503
+            assert json.loads(refusal.read())["error"]["error"] == "task_runtime_starting"
+            assert app.state.sessions.list() == []
+        finally:
+            conn.close()
+
         released.set()  # the attach completes -> the typed state flips to attached
         attach_deadline = time.monotonic() + 20.0
         reason = attach["reason"]

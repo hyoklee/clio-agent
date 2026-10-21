@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Any, Literal
 
 from fastapi import FastAPI, HTTPException
 
@@ -25,13 +24,9 @@ from clio_agent.gact.context_reference_delivery import (
 )
 from clio_agent.gact.context_references import authorize_context_reference_parts_sync
 from clio_agent.gact.events import Event
-from clio_agent.gact.loop_inbox import enqueue_user_steer
-from clio_agent.gact.message_intents import DuplicateIntentError, PendingSteer
+from clio_agent.gact.human_controls import relay_confirmed_human_input
 from clio_agent.gact.message_submission_errors import (
     a2ui_client_metadata_error as _a2ui_client_metadata_error,
-)
-from clio_agent.gact.message_submission_errors import (
-    identity_conflict as _identity_conflict,
 )
 from clio_agent.gact.message_submission_errors import (
     session_not_found as _session_not_found,
@@ -42,7 +37,6 @@ from clio_agent.gact.modality_evidence import (
     image_input_capability,
     live_model_modalities,
 )
-from clio_agent.gact.part_atom_minter import run_transcript_job
 from clio_agent.gact.parts import Part
 from clio_agent.gact.providers.config import (
     _active_lm_supports_vision,
@@ -56,7 +50,6 @@ from clio_agent.gact.providers.config import (
 )
 from clio_agent.gact.question_answer_message import (
     QuestionAnswerMessage,
-    settle_question_answer,
 )
 from clio_agent.gact.resource_delivery import (
     ResourceDeliveryRecord,
@@ -64,15 +57,13 @@ from clio_agent.gact.resource_delivery import (
 )
 from clio_agent.gact.runtime.globals import (
     _ContextFileAccessError,
-    _iso_from_epoch,
     _new_message_id,
 )
 from clio_agent.gact.selected_model_refresh import refresh_for_selected_model
 from clio_agent.gact.session_host_agent import ensure_host_agent
 from clio_agent.gact.session_model_ref import remember_session_model
+from clio_agent.gact.session_store import project_accepted_mail_messages
 from clio_agent.gact.thinking_level_guard import raise_if_selection_unusable
-from clio_agent.gact.transcript_projection import on_message_appended
-from clio_agent.gact.turn_runner import session_busy_error_payload
 from clio_agent.gact.types import (
     ErrorEnvelope,
     ErrorInfo,
@@ -99,9 +90,8 @@ class PreparedReferences:
     reference-carrying submission stalled every other session's SSE stream.
 
     ``parts`` are the canonical, authorized parts and ``model_text`` is the
-    enriched prompt for the steer branch. Acceptance itself stays synchronous
-    (it hands work to ``TurnRunner.spawn``, which must run on the loop), so the
-    expensive half is hoisted out in front of it rather than moved wholesale.
+    enriched prompt retained for later model-input rendering. Acceptance records
+    the input; the existing TurnRunner independently admits model execution.
     """
 
     parts: list[Part]
@@ -485,109 +475,18 @@ def _model_text(app: FastAPI, sid: str, user_text: str, message: Message) -> str
         ) from exc
 
 
-async def accept_message_async(
-    app: FastAPI,
-    deps: "GactDeps",
-    sid: str,
+def accepted_message_metadata(
     req: PostMessageRequest,
+    session: Session,
+    effective_model: ModelRef,
+    parts: list[Part],
     *,
-    internal_model_text: str | None = None,
+    busy: bool,
     answer: QuestionAnswerMessage | None = None,
-) -> tuple[PostMessageResponse, int]:
-    """Accept an async-produced message, optionally with private model-only context.
-
-    ``answer`` makes the message the answer to a pending agent question (#1448).
-    """
-
-    # A session's selected model is enough to run its first turn (no global provider).
-    await ensure_host_agent(app, sid, req)
-    await reprobe_for_message(app, sid, req)  # #1455: see a terminal sign-in at turn start
-    await refresh_for_selected_model(app, sid, req)  # a pinned model's stale discovery
-    prepared = await prepare_references(app, sid, req)
-    ack = accept_message(
-        app,
-        deps,
-        sid,
-        req,
-        prepared=prepared,
-        internal_model_text=internal_model_text,
-        answer=answer,
-    )
-    if answer is not None:
-        settle_question_answer(app, sid, answer, ack[0].message_id)
-    return ack
-
-
-def accept_message(
-    app: FastAPI,
-    deps: "GactDeps",
-    sid: str,
-    req: PostMessageRequest,
-    *,
-    prepared: PreparedReferences | None = None,
-    internal_model_text: str | None = None,
-    answer: QuestionAnswerMessage | None = None,
-) -> tuple[PostMessageResponse, int]:
-    """Accept one message using explicit start-or-steer semantics.
-
-    Returns the wire response and HTTP status. A pending steer is durable and
-    visible in the transcript before this function returns.
-
-    ``prepared`` carries reference work an async caller already did off the event
-    loop (see :func:`accept_message_async`). Omitting it keeps the fully
-    synchronous behaviour, which the in-process idle-hook queue promoter
-    (``composer_runtime.promote_queue_head``) still uses: it runs from a
-    turn-task done-callback, so it has no ``await`` to hoist the work behind.
-    That promoter is bounded by the queue head (ONE row per idle transition),
-    unlike the request path this seam exists for.
-    """
-
-    key = _idempotency_key(req)
-    prior = app.state.message_intents.acceptance(sid, key)
-    if prior is not None:
-        return _acceptance_replay(prior), 202 if prior.state == "pending_steer" else 200
-
-    sess, effective_model, user_text, _images, resolved_parts = _validate_provider_and_payload(
-        app, deps, sid, req, prepared=prepared
-    )
-    message_id = req.client_message_id.strip() or _new_message_id("user")
-    resolved_parts, resource_deliveries = _plan_resource_parts(
-        app,
-        workspace_id=sess.workspace_id,
-        message_id=message_id,
-        parts=resolved_parts,
-        model=effective_model,
-    )
-    busy_payload = session_busy_error_payload(getattr(app.state, "turn_runner", None), sid)
-    busy = busy_payload is not None
-    if busy and req.delivery == "start":
-        raise HTTPException(status_code=409, detail=busy_payload)
-    if not busy and req.delivery == "steer":
-        # ``steer`` is HONOURED, not reinterpreted. It used to fall through to the
-        # busy check and silently start a turn on an idle session -- the caller
-        # asked to steer work in flight and got a brand-new turn instead. There is
-        # nothing to steer, so say so and let the caller decide (``auto`` is the
-        # value that means "start or steer, whichever fits").
-        raise HTTPException(
-            status_code=409,
-            detail=ErrorEnvelope(
-                error=ErrorInfo(
-                    error="no_active_turn_to_steer",
-                    message=(
-                        "delivery=steer requires a turn in flight on this session; "
-                        "use delivery=start or delivery=auto to begin one"
-                    ),
-                    details={
-                        "session_id": sid,
-                        "recovery_actions": ["retry_with_start", "retry_with_auto"],
-                    },
-                    recoverable=True,
-                )
-            ).model_dump(exclude_none=True),
-        )
+) -> dict[str, Any]:
+    """Build the single canonical metadata shape for Core and UI projections."""
 
     # An unset reasoning effort is absent, never stored as null.
-    behavior = req.behavior.model_dump(exclude_none=True)
     metadata = dict(req.metadata)
     # Already schema-validated in ``_apply_a2ui_client_metadata_guards`` above
     # (strict + extra="forbid"/"allow", so the raw value IS the canonical shape)
@@ -606,162 +505,189 @@ def accept_message(
         "per_message"
         if req.model is not None and not _model_ref_is_empty(req.model)
         else "session"
-        if not _model_ref_is_empty(sess.model)
+        if not _model_ref_is_empty(session.model)
         else "global_active"
     )
-    if model_selection_source == "per_message":
-        remember_session_model(app, sid, sess.model, effective_model)
     metadata.update(
         {
             "delivery": "steer" if busy else "start",
-            "behavior": behavior,
+            "behavior": req.behavior.model_dump(exclude_none=True),
             "client_message_id": req.client_message_id,
             "effective_model": effective_model.model_dump(),
         }
     )
-    reference_deliveries = context_reference_deliveries(resolved_parts)
+    reference_deliveries = context_reference_deliveries(parts)
     if reference_deliveries:
         metadata["context_reference_deliveries"] = reference_deliveries
     if model_selection_source != "global_active":
         metadata["model_selection_source"] = model_selection_source
     if answer is not None:  # server-owned: set after the reserved-key check, never client
         metadata.update(answer.metadata)
-        internal_model_text = answer.model_text_prefix + (
-            internal_model_text or (prepared.model_text if prepared is not None else user_text)
-        )
     if busy:
-        if any(row.id == message_id for row in app.state.messages.get(sid, [])):
-            raise _identity_conflict(sid, message_id)
-        accepted_at = _iso_from_epoch(datetime.now(timezone.utc).timestamp())
-        parts = _user_message_parts(request_parts=resolved_parts, user_text=user_text)
         metadata["pending_steer"] = True
-        pending = PendingSteer(
-            message_id=message_id,
-            session_id=sid,
-            parts=parts,
-            text=user_text,
-            metadata=metadata,
-            accepted_at=accepted_at,
-            behavior=req.behavior,
-            model=effective_model,
-        )
-        message = Message(
-            id=message_id,
-            turn_id="",
-            session_id=sid,
-            role="user",
-            created_at=accepted_at,
-            updated_at=accepted_at,
-            parts=parts,
-            metadata=metadata,
-        )
-        model_text = internal_model_text or (
-            prepared.model_text
-            if prepared is not None
-            else _model_text(app, sid, user_text, message)
-        )
-        ack = PostMessageResponse(
-            message_id=message_id,
-            accepted_at=accepted_at,
-            delivery="steer",
-            state="pending_steer",
-            effective_model=effective_model,
-            behavior=req.behavior,
-        )
-        try:
-            prior = app.state.message_intents.accept_pending(pending, key, ack)
-            if prior is not None:
-                return _acceptance_replay(prior), 202
-            # #1334: the ledger + local store now; the ARC atoms through the running
-            # turn's minter (FIFO, covered by its finalize barrier), never on the loop.
-            deps.append_session_message(app, sid, message, atoms_minted=True)
-            run_transcript_job(
-                app, sid, f"steer:{message.id}", lambda: on_message_appended(app, sid, message)
-            )
-            enqueue_user_steer(
-                app,
-                sid,
-                user_text,
-                metadata,
-                steer_message_id=message_id,
-                steer_created_at=accepted_at,
-                steer_parts=parts,
-                model_text=model_text,
-            )
-            app.state.bus.publish(
-                Event(
-                    type="message.accepted",
-                    session_id=sid,
-                    payload={
-                        "message": message.to_wire(),
-                        "delivery": "steer",
-                        "state": "pending_steer",
-                        "effective_model": effective_model.model_dump(),
-                        "behavior": behavior,
-                    },
-                )
-            )
-            _commit_resource_deliveries(app, sid, resource_deliveries)
-        except DuplicateIntentError as exc:
-            raise _identity_conflict(sid, message_id) from exc
-        except Exception:
-            app.state.message_intents.discard_pending(sid, message_id, acceptance_key=key)
-            deps.replace_session_messages(
-                app,
-                sid,
-                [row for row in app.state.messages.get(sid, []) if row.id != message_id],
-            )
-            raise
-        return ack, 202
+    return metadata
 
-    # Cancellation belongs to the turn that was active when /cancel was requested.
-    # An idle cancellation (including recovery after a restart, where the persisted
-    # session may still say ``running`` but no executor exists) must not poison this
-    # user-authored turn; the busy branch above already preserved genuine mid-turn
-    # cancellation/steering races.
-    app.state.cancel_flags.discard(sid)
-    app.state.cancel_events.pop(sid, None)
-    user_msg = deps.start_background_user_turn(
-        sid,
-        sess,
-        internal_model_text or user_text,
-        request_parts=resolved_parts,
-        metadata=metadata,
-        prev_status="idle",
-        turn_agent_id=req.extract_agent_id().strip(),
-        user_msg_id=message_id,
+
+def accept_message(
+    app: FastAPI,
+    deps: "GactDeps",
+    sid: str,
+    req: PostMessageRequest,
+    *,
+    prepared: PreparedReferences | None = None,
+    internal_model_text: str | None = None,
+    server_metadata: dict[str, Any] | None = None,
+) -> tuple[PostMessageResponse, int]:
+    """Validate and confirm one Core mailbox input, regardless of current activity."""
+    import hashlib
+
+    from clio_agent.gact.turn import _start_background_user_turn
+
+    owner = getattr(app.state, "conversations", None)
+    if owner is None:
+        raise HTTPException(status_code=503, detail="Core conversation runtime is not ready")
+    if prepared is None:
+        source_session = app.state.sessions.get(sid)
+        if source_session is None:
+            raise _session_not_found(sid)
+        prepared = prepare_references_sync(app, source_session, req)
+    if internal_model_text is not None:
+        prepared = replace(prepared, model_text=internal_model_text)
+    session, selected, text, _images, parts = _validate_provider_and_payload(
+        app, deps, sid, req, prepared=prepared
     )
-    # Only an explicit idle send resumes the future-message queue. Pending
-    # feedback uses the inbox re-drive and must leave this pause intact.
-    app.state.sessions.update(sid, metadata_patch={"composer_queue_paused": False})
-    _commit_resource_deliveries(app, sid, resource_deliveries)
-    ack = PostMessageResponse(
-        message_id=user_msg.id,
-        accepted_at=user_msg.created_at,
-        delivery="start",
-        state="started",
-        effective_model=effective_model,
-        behavior=req.behavior,
+    key = _idempotency_key(req)
+    identity = (
+        "user_" + hashlib.sha256((sid + "\0" + key).encode()).hexdigest()
+        if key
+        else _new_message_id("user")
     )
-    app.state.message_intents.record_acceptance(sid, key, ack)
-    # Acceptance is UNIFORM across both branches. Publishing this only on the
-    # steer branch left a client watching for acceptance seeing nothing at all
-    # for a start -- it had to infer acceptance from message.created, a
-    # different fact (the transcript row) with a different shape.
-    app.state.bus.publish(
-        Event(
-            type="message.accepted",
-            session_id=sid,
-            payload={
-                "message": user_msg.to_wire(),
-                "delivery": "start",
-                "state": "started",
-                "effective_model": effective_model.model_dump(),
-                "behavior": behavior,
-            },
+    with owner.history.serialized():
+        previous = next(
+            (row for row in app.state.messages.get(sid, []) if row.id == identity), None
         )
+        accepted = owner.history.mail_item(sid, identity)
+        if accepted is not None:
+            saved = owner.history.read_content(accepted.content)
+            if not isinstance(saved, dict) or saved.get("text") != text:
+                raise HTTPException(
+                    status_code=409, detail="Message identity was reused with changed content"
+                )
+            retained = (
+                Message.model_validate(saved["message"]) if saved.get("message") else previous
+            )
+            if retained is None or retained.id != identity or retained.session_id != sid:
+                raise HTTPException(
+                    status_code=409, detail="Accepted message identity is unavailable"
+                )
+            if not owner.history.mail_withdrawn(
+                sid, identity
+            ) and identity not in owner.history.acknowledged_notifications(sid):
+                project_accepted_mail_messages(app, owner.history, sid, (accepted,))
+            original_handle = saved.get("assignment_id")
+            if original_handle is None and accepted.admission is not None:
+                original_handle = accepted.admission.assignment_id
+            if original_handle is not None and not isinstance(original_handle, str):
+                raise ValueError("Retained acceptance assignment identity is invalid")
+            original_delivery: Literal["steer", "start"] = (
+                "steer" if retained.metadata.get("delivery") == "steer" else "start"
+            )
+            relay_confirmed_human_input(owner.history, accepted)
+            return PostMessageResponse(
+                message_id=identity,
+                accepted_at=retained.created_at,
+                delivery=original_delivery,
+                state="pending_steer" if original_delivery == "steer" else "started",
+                effective_model=ModelRef.model_validate(
+                    retained.metadata.get("effective_model", {})
+                ),
+                behavior=type(req.behavior).model_validate(retained.metadata.get("behavior", {})),
+                idempotent_replay=True,
+                task_handle=original_handle,
+            ), 200
+        if previous is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Message identity belongs to retained history without a confirmed acceptance",
+            )
+        parts, deliveries = _plan_resource_parts(
+            app, workspace_id=session.workspace_id, message_id=identity, parts=parts, model=selected
+        )
+        reservation = app.state.turn_runner.handle(sid)
+        busy = reservation is not None
+        # Idle admission reserves the slot before checking pending input. That
+        # empty reservation is not model execution: an ordinary human send must
+        # still release a future queue paused by Stop. Keep the reservation and
+        # normal busy routing; no second segment is admitted here.
+        idle_reservation = reservation is not None and not reservation.turn_id
+        if (not busy or idle_reservation) and req.delivery != "steer":
+            from clio_agent.gact.composer_runtime import resume_session_composer_autostart
+
+            resume_session_composer_autostart(app, sid)
+        assignment = owner.history.latest_assignment(sid)
+        if assignment is None or assignment.terminal_at is not None:
+            assignment = owner._new_assignment(
+                sid,
+                text,
+                owner.caller(sid).human_id,
+                predecessor=assignment,
+                invocation_id=identity,
+            )
+        metadata = accepted_message_metadata(req, session, selected, parts, busy=busy)
+        metadata.update(server_metadata or {})
+        message = _start_background_user_turn(
+            app,
+            sid,
+            session,
+            text,
+            request_parts=parts,
+            model_text=prepared.model_text,
+            metadata=metadata,
+            turn_agent_id=req.extract_agent_id(),
+            user_msg_id=identity,
+        )
+        if req.model is not None and not _model_ref_is_empty(req.model):
+            current = app.state.sessions.get(sid)
+            if current is not None:
+                remember_session_model(app, sid, current.model, selected)
+        _commit_resource_deliveries(app, sid, deliveries)
+        return PostMessageResponse(
+            message_id=message.id,
+            accepted_at=message.created_at,
+            delivery="steer" if busy else "start",
+            state="pending_steer" if busy else "started",
+            effective_model=selected,
+            behavior=req.behavior,
+            task_handle=assignment.handle,
+        ), 202
+
+
+async def accept_message_async(
+    app: FastAPI,
+    deps: "GactDeps",
+    sid: str,
+    req: PostMessageRequest,
+    *,
+    internal_model_text: str | None = None,
+    server_metadata: dict[str, Any] | None = None,
+) -> tuple[PostMessageResponse, int]:
+    """Prepare the selected runtime, then validate and confirm input off the application loop."""
+    from clio_agent.gact.off_loop import join_off_loop
+
+    await ensure_host_agent(app, sid, req)
+    await reprobe_for_message(app, sid, req)
+    await refresh_for_selected_model(app, sid, req)
+    prepared = await prepare_references(app, sid, req)
+    return await join_off_loop(
+        accept_message,
+        app,
+        deps,
+        sid,
+        req,
+        prepared=prepared,
+        internal_model_text=internal_model_text,
+        server_metadata=server_metadata,
     )
-    return ack, 200
 
 
 __all__ = [

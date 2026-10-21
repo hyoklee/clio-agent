@@ -293,19 +293,6 @@ def build_ledger_bounds() -> dict[str, LedgerBound]:
             ),
             is_terminal=_terminal_turn_attempt,
         ),
-        # ``app.state.user_questions`` is the live ask-user / elicitation ledger and
-        # is scanned in full by the interaction projection. Terminal-first so a
-        # still-PENDING question -- someone is waiting on it -- survives a burst of
-        # answered ones, and only the hard cap ever force-evicts a pending row.
-        "user_questions": LedgerBound(
-            max_entries=_resolve_positive_int(
-                "gact.ledger_retention.user_questions.max", "CLIO_LEDGER_USER_QUESTIONS_MAX", 2000
-            ),
-            hard_cap=_resolve_positive_int(
-                "gact.ledger_retention.user_questions.hard", "CLIO_LEDGER_USER_QUESTIONS_HARD", 4000
-            ),
-            is_terminal=_terminal_user_question,
-        ),
         "shared_tokens": LedgerBound(
             max_entries=_resolve_positive_int(
                 "gact.ledger_retention.shared_tokens.max", "CLIO_LEDGER_SHARED_TOKENS_MAX", 5000

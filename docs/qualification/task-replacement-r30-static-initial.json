@@ -1,0 +1,93 @@
+{
+  "base": "9f517191cc9de1604ceafbef84e1970f8d0826d8",
+  "created_at": "2026-10-15T02:51:42.035587+00:00",
+  "checks": [
+    {
+      "command": [
+        "ruff",
+        "check",
+        "--fix",
+        "scripts/check_task_replacement_removal.py",
+        "src/clio_agent/arc/task_types.py",
+        "src/clio_agent/gact/conversation_assignments.py",
+        "src/clio_agent/gact/hooks/__init__.py",
+        "src/clio_agent/gact/hooks/defer.py",
+        "src/clio_agent/gact/hooks/user_prompt.py",
+        "src/clio_agent/gact/permission_gate.py",
+        "src/clio_agent/gact/question_events.py",
+        "src/clio_agent/gact/question_surface.py",
+        "src/clio_agent/gact/routes/permissions.py",
+        "src/clio_agent/gact/routes/sessions.py",
+        "src/clio_agent/gact/session_input.py",
+        "src/clio_agent/gact/session_mail.py",
+        "src/clio_agent/gact/task_publication.py",
+        "src/clio_agent/gact/turn.py",
+        "src/clio_agent/gact/hooks/turn_approval.py",
+        "tests/test_arc/test_hook_approval_contracts.py"
+      ],
+      "exit_code": 0,
+      "output": "Found 2 errors (2 fixed, 0 remaining).\n"
+    },
+    {
+      "command": [
+        "ruff",
+        "format",
+        "scripts/check_task_replacement_removal.py",
+        "src/clio_agent/arc/task_types.py",
+        "src/clio_agent/gact/conversation_assignments.py",
+        "src/clio_agent/gact/hooks/__init__.py",
+        "src/clio_agent/gact/hooks/defer.py",
+        "src/clio_agent/gact/hooks/user_prompt.py",
+        "src/clio_agent/gact/permission_gate.py",
+        "src/clio_agent/gact/question_events.py",
+        "src/clio_agent/gact/question_surface.py",
+        "src/clio_agent/gact/routes/permissions.py",
+        "src/clio_agent/gact/routes/sessions.py",
+        "src/clio_agent/gact/session_input.py",
+        "src/clio_agent/gact/session_mail.py",
+        "src/clio_agent/gact/task_publication.py",
+        "src/clio_agent/gact/turn.py",
+        "src/clio_agent/gact/hooks/turn_approval.py",
+        "tests/test_arc/test_hook_approval_contracts.py"
+      ],
+      "exit_code": 0,
+      "output": "3 files reformatted, 14 files left unchanged\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_task_replacement_removal.py"
+      ],
+      "exit_code": 0,
+      "output": "Task replacement removal guard: 0 violations\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_file_size.py"
+      ],
+      "exit_code": 1,
+      "output": "FAIL: 2 file(s) break the size ratchet (#714, #774):\n  src/clio_agent/gact/routes/sessions.py:857 (regressed past recorded baseline 856)\n  src/clio_agent/gact/turn.py:812 (new file exceeds cap 800)\n"
+    }
+  ],
+  "behavioral_tests": "R30 unexecuted",
+  "source_sha256": {
+    "scripts/check_task_replacement_removal.py": "55ae0740428dbee24984db07fd59098dd8989fe77c8ed76f087806eed926196d",
+    "src/clio_agent/arc/task_types.py": "465dc8d81bd6ed678044d7e0d8465c0a9653846818ae8637e1d7607365202241",
+    "src/clio_agent/gact/conversation_assignments.py": "32e2220cddb135971bda445d121bde9a516fb6cb71e6daeaae7cb12cb4be5291",
+    "src/clio_agent/gact/hooks/__init__.py": "f6631674d83e9591b6f0b8c5d570a9733f414d6fa195605a44303108406efac1",
+    "src/clio_agent/gact/hooks/defer.py": "e3e77a098696171090e879a453abc950948240b14d4998827072bed216bc3963",
+    "src/clio_agent/gact/hooks/user_prompt.py": "1e882d862dc5e2d032ddbb400dde42f1a331eaf2b2c159e77c65b88db1f396ab",
+    "src/clio_agent/gact/permission_gate.py": "eb94432899e9b092052a68a9149e939e87df5022f3e499e2fec53bd1792977e0",
+    "src/clio_agent/gact/question_events.py": "7d09ab6afa770ab7a37686b979ab415ba6ebd7822605bda5ab6039b3227844a9",
+    "src/clio_agent/gact/question_surface.py": "32c09c69562673c477135c29bb4800e6ecdfdfa0191941a1e26e55f6a1a276df",
+    "src/clio_agent/gact/routes/permissions.py": "ee62bd5c2af9a729ff50ce335ed6190266bce7a909f10763d04eec43cd726d9e",
+    "src/clio_agent/gact/routes/sessions.py": "701e6e105d2ffdca9f6be9ec8d09b4a88cdcdc391e29f852f4fed97309a0abae",
+    "src/clio_agent/gact/session_input.py": "fe9a6e011331dde409fe858c1ddf7917962e670dbbea23440c96e3bf7f2d3f95",
+    "src/clio_agent/gact/session_mail.py": "6b5ecfa499d9074028248f6ae26a352c437db38a610e27cd4864ae47a3ee6abb",
+    "src/clio_agent/gact/task_publication.py": "4ad886e6d44bf30025026e5ff830cd7f015e57343d5c575ba54cca3dfe628d94",
+    "src/clio_agent/gact/turn.py": "b6043b16557a79be2b3555fb2add2fedaa8093f61cbf4c751d45126cc427cdc4",
+    "src/clio_agent/gact/hooks/turn_approval.py": "971760774ecf4583f8923f8c163d1fbefceec2e693b9cae86aaefc01d1dd5f28",
+    "tests/test_arc/test_hook_approval_contracts.py": "70af8f192ba446c783f23a441f3bfb9dbf400b7fec6b2700a8543ec74a21412a"
+  }
+}

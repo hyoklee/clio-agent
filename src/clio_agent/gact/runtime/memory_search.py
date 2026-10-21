@@ -124,6 +124,15 @@ def _message_text_excerpt(message: "Message", *, max_chars: int = 360) -> str:
     return text[: max_chars - 3].rstrip() + "..."
 
 
+def agent_memory_search(
+    app: "FastAPI", session_id: str, *, query: str, scope: str = "session", limit: int = 20
+) -> MemorySearchResponse:
+    """Compatibility entry point for task-backed session discovery."""
+    from clio_agent.gact.task_transcripts import search_session_alias
+
+    return search_session_alias(app, session_id, query=query, scope=scope, limit=limit)
+
+
 def _memory_search_response(
     app: "FastAPI",
     *,
@@ -133,6 +142,7 @@ def _memory_search_response(
     include_cross_session: bool = False,
     limit: int = 20,
     exclude_message_id: str = "",
+    allowed_session_ids: set[str] | None = None,
 ) -> MemorySearchResponse:
     """Search retained GACT transcript memory with explicit scope controls.
 
@@ -174,7 +184,16 @@ def _memory_search_response(
         )
 
     limit = max(1, min(int(limit or 20), 100))
-    sessions = app.state.sessions.list(workspace_id=workspace_id or None)
+    sessions = (
+        app.state.sessions.list(workspace_id=workspace_id or None)
+        if allowed_session_ids is None
+        else [
+            session
+            for sid in sorted(allowed_session_ids)
+            if (session := app.state.sessions.get(sid)) is not None
+            and (not workspace_id or session.workspace_id == workspace_id)
+        ]
+    )
     if include_cross_session and not session_id:
         sessions = [
             session
@@ -218,7 +237,7 @@ def _memory_search_response(
                     ).model_dump(exclude_none=True),
                 )
             if active_workspace_id and not workspace_id:
-                sessions = app.state.sessions.list(workspace_id=active_workspace_id)
+                sessions = [row for row in sessions if row.workspace_id == active_workspace_id]
             session_ids = [s.id for s in sessions]
             if session_id not in session_ids:
                 session_ids.append(session_id)
@@ -231,7 +250,9 @@ def _memory_search_response(
     if not active_workspace_id and session_id:
         active_session = app.state.sessions.get(session_id)
         active_workspace_id = str(getattr(active_session, "workspace_id", "") or "")
-    sessions_by_id = {s.id: s for s in app.state.sessions.list()}
+    if allowed_session_ids is not None:
+        session_ids = [sid for sid in session_ids if sid in allowed_session_ids]
+    sessions_by_id = {sid: app.state.sessions.get(sid) for sid in session_ids}
     hits: list[MemorySearchHit] = []
     for sid in session_ids:
         sess = sessions_by_id.get(sid)

@@ -1,0 +1,26 @@
+{
+  "status": "authored, unexecuted; not acceptance",
+  "cases": [
+    {
+      "id": "tests/test_gact/test_replacement_turn_resources.py::test_stop_waits_for_preflight_retirement_and_cannot_stop_a_later_reservation",
+      "behavior": "Stop owns assignment-less admission and awaits retirement, without stopping a later reservation",
+      "gates": ["Q3", "Q8", "R3"]
+    },
+    {
+      "id": "tests/test_arc/test_conversation_owner_contracts.py::test_automatic_queue_preflight_stop_retains_unassigned_work",
+      "behavior": "Actual Stop route suspends automatic promotion while provider preflight is held; no assignment starts and accepted queue item remains",
+      "gates": ["Q3", "R3"]
+    },
+    {
+      "id": "tests/test_arc/test_conversation_owner_contracts.py::test_busy_evidence_uses_accepted_snapshot_and_rechecks_current_access",
+      "behavior": "Busy delivery preserves original admitted evidence and refuses inaccessible workspace evidence",
+      "gates": ["Q3", "Q5"]
+    },
+    {
+      "id": "tests/test_arc/test_conversation_owner_contracts.py::test_rendered_mail_batches_count_the_initial_head_and_retain_overflow",
+      "behavior": "Initial human text and native media count as one batch item; overflow stays Core-pending across restore without partial acknowledgement",
+      "gates": ["Q3", "Q7", "R5"]
+    }
+  ],
+  "legacy_tests": "Static import audit found additional obsolete-engine test imports. Classify independent algorithms versus coupled scenarios before the fresh execution batch; no compatibility authority may be restored."
+}

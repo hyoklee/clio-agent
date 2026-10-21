@@ -42,13 +42,17 @@ from clio_agent.gact.storage.models import (
     Manifest,
     SftpCredentials,
     SourceRecord,
-    TransferOperation,
 )
 from clio_agent.gact.storage.ndp_source import public_selection
 from clio_agent.gact.storage.service import StorageService
 from clio_agent.gact.storage.sftp import SftpSource
 from clio_agent.gact.storage.ssh_target import SshTargetSource
-from clio_agent.gact.storage.task_adapter import validate_task_owner
+from clio_agent.gact.storage.task_controls import (
+    cancel_source_action,
+    source_operation_views,
+    submit_source_action,
+    validate_task_owner,
+)
 
 T = TypeVar("T")
 
@@ -71,7 +75,6 @@ def register_connected_storage_routes(app: FastAPI) -> None:
         if owner is None:
             owner = SourceDrafts(service, app.state.resource_store)
             app.state.source_drafts = owner
-            service.transfer_settled = owner.cleanup
         return owner
 
     def target_source(record: SourceRecord) -> SshTargetSource | SftpSource:
@@ -575,22 +578,22 @@ def register_connected_storage_routes(app: FastAPI) -> None:
                         raise ValueError("Remove the downloaded copy before changing its access")
                     record.download_access = body.access
                     service.store.put("source", source_id, record)
-                operation = service.start_transfer(record, workspace_root(wid), paths)
             except ValueError as exc:
                 raise HTTPException(409, str(exc)) from exc
-        if body and body.session_id:
-            from clio_agent.gact.storage.task_adapter import storage_handle
-
-            storage_handle(app, body.session_id, operation, f"Download {record.source.label}")
-            operation = service.store.get("operation", operation.id, TransferOperation)
-        return operation.model_dump()
+        return await submit_source_action(
+            app,
+            wid,
+            body.session_id if body else "",
+            "connected_data_download",
+            {"source_id": source_id, "selected_paths": paths},
+        )
 
     @app.post("/v1/workspaces/{wid}/sources/{source_id}/link", status_code=202)
     async def link(wid: str, source_id: str, body: DraftSelection | None = None) -> dict[str, Any]:
         """Link or explicitly refresh folder metadata through its fsspec backend."""
-        from clio_agent.gact.storage.indexing import start_index
 
         def attach() -> SourceRecord:
+            validate_task_owner(app, wid, body.session_id if body else "")
             record = record_for(wid, source_id)
             if getattr(app.state, "resource_store", None) is not None:
                 drafts().change(source_id, body.draft_id if body else "")
@@ -605,17 +608,17 @@ def register_connected_storage_routes(app: FastAPI) -> None:
                         raise ValueError("Confirm that saving edits will update the originals")
                 service.set_link_access(record, body.access)
                 service.store.put("source", source_id, record)
-            validate_task_owner(app, wid, body.session_id if body else "")
             return record
 
         record = await change_access(attach)
-        operation = start_index(service, record)
-        if body and body.session_id:
-            from clio_agent.gact.storage.task_adapter import storage_handle
-
-            storage_handle(app, body.session_id, operation, f"Index {record.source.label}")
-            operation = service.store.get("operation", operation.id, TransferOperation)
-        return {**visible(record), "indexing_operation": operation.model_dump()}
+        operation = await submit_source_action(
+            app,
+            wid,
+            body.session_id if body else "",
+            "connected_data_index",
+            {"source_id": source_id},
+        )
+        return {**visible(record), "indexing_operation": operation}
 
     @app.post("/v1/workspaces/{wid}/sources/{source_id}/unlink")
     async def unlink(wid: str, source_id: str) -> dict[str, Any]:
@@ -638,38 +641,14 @@ def register_connected_storage_routes(app: FastAPI) -> None:
     async def operations(wid: str, source_id: str) -> dict[str, Any]:
         """Read durable transfer progress and native task IDs."""
         record_for(wid, source_id, connected=False)
-        rows = await run(lambda: service.store.list("operation", TransferOperation))
-        return {
-            "operations": [
-                row.model_dump(exclude={"native_request"})
-                for row in rows
-                if row.source_id == source_id
-            ]
-        }
+        rows = await run(lambda: source_operation_views(app, source_id))
+        return {"operations": rows}
 
-    @app.post("/v1/workspaces/{wid}/sources/{source_id}/operations/{operation_id}/cancel")
-    async def cancel(wid: str, source_id: str, operation_id: str) -> dict[str, Any]:
-        """Request cancellation; completion/cleanup waits for the transfer owner's confirmation."""
+    @app.post("/v1/workspaces/{wid}/sources/{source_id}/operations/{handle}/cancel")
+    async def cancel_operation(wid: str, source_id: str, handle: str) -> dict[str, Any]:
+        """Cancel through the shared owner, including work that has not started yet."""
         record_for(wid, source_id, connected=False)
-        operation = await run(
-            lambda: service.store.get("operation", operation_id, TransferOperation)
-        )
-        if operation.source_id != source_id:
-            raise HTTPException(404, "Transfer not found for this source")
-        if operation.task_handle and operation.owner_session_id:
-            from clio_agent.gact.task_controls import cancel_selected
-
-            outcome = await asyncio.to_thread(
-                cancel_selected, app, operation.owner_session_id, operation.task_handle
-            )
-            if outcome["errors"]:
-                raise HTTPException(409, outcome["errors"])
-            return service.store.get("operation", operation_id, TransferOperation).model_dump(
-                exclude={"native_request"}
-            )
-        return (
-            await run(lambda: service.store.update_operation(operation_id, cancel_requested=True))
-        ).model_dump(exclude={"native_request"})
+        return await cancel_source_action(app, source_id, handle)
 
     @app.post("/v1/workspaces/{wid}/sources/{source_id}/review")
     async def review(wid: str, source_id: str) -> dict[str, Any]:

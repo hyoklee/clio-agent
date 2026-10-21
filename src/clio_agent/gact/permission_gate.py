@@ -356,13 +356,10 @@ def resolve_permission(
     intercept: Mapping[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Resolve a request, serializing folder grants against duplicate responses."""
-    from clio_agent.gact.folder_access import FOLDER_ACCESS_KIND, FOLDER_RESOLUTION_LOCK
+    from clio_agent.gact.folder_access import FOLDER_RESOLUTION_LOCK
 
-    row = app.state.permissions.get(pid)
-    if row is not None and row.get("kind") == FOLDER_ACCESS_KIND:
-        with FOLDER_RESOLUTION_LOCK:
-            return _resolve_permission(app, pid, action, grantor=grantor, intercept=intercept)
-    return _resolve_permission(app, pid, action, grantor=grantor, intercept=intercept)
+    with FOLDER_RESOLUTION_LOCK:
+        return _resolve_permission(app, pid, action, grantor=grantor, intercept=intercept)
 
 
 def _resolve_permission(
@@ -392,7 +389,17 @@ def _resolve_permission(
     (idempotent — a double-resolve is a no-op, matching the route's prior behaviour).
     """
 
+    from clio_agent.gact.hooks.turn_approval import SOURCE, respond
+
+    history = getattr(app.state, "task_history", None)
+    task = history.task_snapshot(pid) if history is not None else None
+    if task is not None and task.kind == "Question" and task.tool == SOURCE:
+        return respond(app, task, action, grantor)
     row = app.state.permissions.get(pid)
+    if row is not None and row.get("kind") == "turn_defer":
+        raise ValueError(
+            "Legacy hook approval lacks its verified Core input binding; gate retained"
+        )
     if row is None or row.get("status") != "pending":
         return None
     from clio_agent.gact.folder_access import FOLDER_ACCESS_KIND, apply_folder_permission
@@ -437,14 +444,6 @@ def _resolve_permission(
     evt = app.state.permission_events.pop(pid, None)
     if evt is not None:
         evt.set()
-    # P2.6: a TURN-ending defer (Stop / UserPromptSubmit) holds NO thread — it suspended
-    # the session. Resolving its row stages the deferred-resume (approve → new turn /
-    # release; deny → tighten) via the owner module. Runs exactly once (this body only
-    # runs on the pending→resolved transition, which is idempotent above).
-    if row.get("kind") == "turn_defer":
-        from clio_agent.gact.hooks.defer import resume_turn_defer  # noqa: PLC0415
-
-        resume_turn_defer(app, row, action)
     # B5 #979.8: surface the resolution on the highway/trace too so the request→resolution
     # lifecycle is consistently captured AND SSE-served. Guarded — a resolution must never
     # fail on an emit.
@@ -485,6 +484,7 @@ def _resolve_permission(
             "action": action,
             "session_id": owner_session_id,
             "grantor": grantor,
+            **({"reason": row["reason"]} if row.get("reason") else {}),
         },
     )
     return row
@@ -536,6 +536,7 @@ def _make_permission_gate(app: "FastAPI"):
         # Prefer the session currently driving the turn. Recency is
         # only a fallback for truly out-of-band tool calls.
         sid, current = _resolve_tool_session(app)
+        cancelled = app.state.cancel_events.get(sid)
         if denial := _spotter_clearance(
             app, sid, current, name, args, subject, _record_resolved_permission
         ):
@@ -718,8 +719,9 @@ def _make_permission_gate(app: "FastAPI"):
         # the ledger attributes the ask to the ai-review mode (never a silent default).
         if approval_mode == "ai-review" and policy_action != "ask":
             row["reason"] = REASON_AI_REVIEW_REVIEWER_PENDING
-        app.state.permissions[pid] = row
+        # A responder may act as soon as the pending row is visible.
         app.state.permission_events[pid] = evt
+        app.state.permissions[pid] = row
         enforce_dict_bound(app, app.state.permissions, "permissions", session_id=sid)
         publish_permission_event(
             app,
@@ -749,9 +751,10 @@ def _make_permission_gate(app: "FastAPI"):
             # reason and the call falls through to the human wait below (fail-safe).
         # Block the bridge thread until POST /v1/permissions/{pid}
         # sets the event (or we time out).
-        if not evt.wait(timeout=permission_timeout.PERMISSION_REQUEST_TIMEOUT_S):
-            if expired := permission_timeout.expire_permission(app, pid, row, tool_name=name):
-                return expired  # typed, published + logged; the model is told it timed out
+        if decision := permission_timeout.wait_for_permission(
+            app, pid, row, evt, tool_name=name, cancelled=cancelled
+        ):
+            return decision
         action = row.get("action", "deny")
         if action in {"allow", "allow_session", "allow_workspace"}:
             return "allow"

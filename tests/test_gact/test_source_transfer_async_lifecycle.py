@@ -20,6 +20,9 @@ from clio_agent.gact.storage import transfers
 from clio_agent.gact.storage.adapters import LocalSource, SourceAdapter
 from clio_agent.gact.storage.models import FileEntry, SourceRecord
 from clio_agent.platform_paths import win_extended_path
+from tests.test_gact.test_source_connect_runtime import bound as storage_runtime_fixture
+
+bound = storage_runtime_fixture
 
 
 class _PausedReader(io.BufferedReader):
@@ -71,6 +74,9 @@ def transfer_setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[
         )
         assert created.status_code == 201, created.text
         wid = created.json()["id"]
+        owner = client.post("/v1/sessions", json={"workspace_id": wid, "title": "Transfer owner"})
+        assert owner.status_code == 200, owner.text
+        sid = owner.json()["id"]
         source = client.post(
             f"/v1/workspaces/{wid}/sources",
             json={"provider": "local", "root": str(upstream), "label": "Transfer fixture"},
@@ -85,7 +91,7 @@ def transfer_setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[
 
         monkeypatch.setattr(app.state.connected_storage, "adapter", source_adapter)
         try:
-            yield client, app, f"/v1/workspaces/{wid}/sources/{source_id}", adapter, payload
+            yield client, app, f"/v1/workspaces/{wid}/sources/{source_id}", adapter, payload, sid
         finally:
             adapter.release.set()
 
@@ -103,6 +109,18 @@ def _wait_terminal(client: TestClient, prefix: str, identifier: str) -> dict[str
             return row
         time.sleep(0.01)
     pytest.fail("the transfer never settled")
+
+
+def _wait_cancel_request(client: TestClient, prefix: str, identifier: str) -> dict[str, Any]:
+    """Observe deferred intent confirmation while the actual worker is still held."""
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        row = _operation(client, prefix, identifier)
+        if row["cancel_requested"]:
+            assert row["state"] == "cancellation_requested", row
+            return row
+        time.sleep(0.01)
+    pytest.fail("the cancellation request was not durably recorded")
 
 
 @contextmanager
@@ -129,8 +147,8 @@ def test_download_ack_progress_and_result_do_not_block_control_plane(
     transfer_setup: tuple[Any, ...], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The real 202/progress/result path stays responsive while file I/O is paused."""
-    client, app, prefix, adapter, payload = transfer_setup
-    response = client.post(prefix + "/transfer", json={"access": "read_only"})
+    client, app, prefix, adapter, payload, sid = transfer_setup
+    response = client.post(prefix + "/transfer", json={"access": "read_only", "session_id": sid})
     assert response.status_code == 202, response.text
     identifier = response.json()["id"]
     source_id = prefix.rsplit("/", 1)[-1]
@@ -164,22 +182,23 @@ def test_cancel_is_requested_then_settled_without_publishing_partial_data(
     transfer_setup: tuple[Any, ...], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An acknowledged cancellation becomes terminal only when the transfer owner settles."""
-    client, app, prefix, adapter, payload = transfer_setup
-    response = client.post(prefix + "/transfer", json={"access": "read_only"})
+    client, app, prefix, adapter, payload, sid = transfer_setup
+    response = client.post(prefix + "/transfer", json={"access": "read_only", "session_id": sid})
     assert response.status_code == 202, response.text
     identifier = response.json()["id"]
     assert adapter.entered.wait(timeout=5), str(_operation(client, prefix, identifier))
     cancellation = client.post(prefix + f"/operations/{identifier}/cancel")
     assert cancellation.status_code == 200, cancellation.text
-    pending = _operation(client, prefix, identifier)
+    assert cancellation.json()["cancel_requested"] is True
+    pending = _wait_cancel_request(client, prefix, identifier)
     assert pending["cancel_requested"] is True
-    assert pending["state"] == "running"
+    assert pending["state"] == "cancellation_requested"
 
     with _pause_cleanup(monkeypatch, identifier) as cleanup:
         adapter.release.set()
         assert cleanup.wait(timeout=5), str(_operation(client, prefix, identifier))
         pending = _operation(client, prefix, identifier)
-        assert pending["state"] == "running"
+        assert pending["state"] == "cancellation_requested"
         assert pending["cancel_requested"] is True
         assert client.get("/v1/health").status_code == 200
     settled = _wait_terminal(client, prefix, identifier)
@@ -193,3 +212,58 @@ def test_cancel_is_requested_then_settled_without_publishing_partial_data(
     owner_root = app.state.connected_storage.store.root / source_id
     with os.scandir(win_extended_path(owner_root)) as entries:
         assert not any(entry.name.startswith("stage-") for entry in entries)
+
+
+def test_native_download_settles_abandoned_attachment_cleanup(bound: Any, monkeypatch: Any) -> None:
+    """Real native cleanup finishes before publishing the terminal task observation."""
+    import asyncio
+    import threading
+
+    from clio_agent.gact.storage import download_tool
+    from clio_agent.gact.storage.drafts import SourceDraft, SourceDrafts
+    from clio_agent.gact.storage.models import TransferOperation
+    from tests.test_gact.test_source_connect_runtime import _body, _collect, _connect
+
+    service, app, upstream = bound
+    first = _connect(app, "local", str(upstream), "Draft source", configuration={})
+    outcome, reply = _collect(app, first)
+    assert outcome["status"] == "completed"
+    source_id = _body(reply)["source_id"]
+    record = service.get("ws_default", source_id)
+    drafts = SourceDrafts(service, app.state.resource_store)
+    app.state.source_drafts = drafts
+    lease = drafts.begin(record)
+    entered, release = threading.Event(), threading.Event()
+    original = service.execute_transfer
+
+    async def held(*args: Any, **kwargs: Any) -> Any:
+        entered.set()
+        await asyncio.to_thread(release.wait)
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(service, "execute_transfer", held)
+    tool = app.state.builtin_boundary.bind(download_tool.build_connected_data_download_tool())
+    receipt = asyncio.run(tool.acall(source_id=source_id, paths=["measurements.csv"]))
+    try:
+        assert entered.wait(5)
+        drafts.finish(source_id, lease)
+        [operation] = [
+            row
+            for row in service.store.list("operation", TransferOperation)
+            if row.id == receipt["handle"]
+        ]
+        assert operation.cancel_requested
+    finally:
+        release.set()
+    outcome, reply = _collect(app, receipt, kind="Download")
+    assert outcome["status"] == "cancelled" and _body(reply)["state"] == "cancelled"
+    settled = app.state.task_history.task_snapshot(receipt["handle"])
+    assert settled is not None and settled.settlement == "confirmed"
+    assert settled.cancellation_requested_at is None  # the draft owner requested cancellation
+    assert (upstream / "measurements.csv").read_text() == "x,y\n1,2\n"
+    restored = service.get("ws_default", source_id)
+    assert restored.manifest_id == record.manifest_id
+    assert restored.source.local_path == record.source.local_path
+    assert not (Path(record.workspace_root) / "connected-data" / source_id).exists()
+    [draft] = service.store.list("source-draft", SourceDraft)
+    assert draft.state == "removed" and not draft.leases

@@ -16,7 +16,7 @@ import threading
 import time
 from types import SimpleNamespace
 
-from clio_agent.gact.turn_runner import TurnRunner
+from tests.test_gact.runner_records import admit_segment, make_runner
 
 from .conftest import settle_turn_slot
 
@@ -28,7 +28,7 @@ def test_settle_turn_slot_waits_for_the_release_publish() -> None:
     loop = asyncio.new_event_loop()
     loop_thread = threading.Thread(target=loop.run_forever, name="barrier-loop", daemon=True)
     loop_thread.start()
-    runner = TurnRunner({})
+    runner = make_runner()
     runner.bind_loop(loop)
     published: list[str] = []
     loop_held = threading.Event()
@@ -46,9 +46,9 @@ def test_settle_turn_slot_waits_for_the_release_publish() -> None:
 
     client = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(turn_runner=runner)))
     try:
-        loop.call_soon_threadsafe(lambda: runner.spawn(turn(), sid=SID, turn_id="turn_1"))
+        loop.call_soon_threadsafe(lambda: admit_segment(runner, turn(), sid=SID, turn_id="turn_1"))
         assert loop_held.wait(BACKSTOP_S), "the turn never ran"
-        assert not runner.busy(SID), "busy() already reads free here: the task is done"
+        assert runner.busy(SID), "The physical reservation includes pending retirement/publication"
         assert published == [], "the terminal publish has not run yet"
 
         settled = threading.Event()
@@ -57,7 +57,7 @@ def test_settle_turn_slot_waits_for_the_release_publish() -> None:
             daemon=True,
         )
         waiter.start()
-        # busy() is False, yet the helper must keep waiting for the queued publish.
+        # The helper must keep waiting for physical retirement and the queued publish.
         time.sleep(0.3)
         assert not settled.is_set(), "settle_turn_slot returned before the terminal publish"
 

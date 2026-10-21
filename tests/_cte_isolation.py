@@ -26,12 +26,14 @@ tests default to ``CLIO_ARC_STORE=local`` anyway.
 
 from __future__ import annotations
 
+import math
 import os
 import random
 import re
 import shutil
 import socket
 import stat
+import sys
 import time
 import uuid
 from collections.abc import MutableMapping
@@ -327,7 +329,7 @@ def eagerly_attach_private_daemon() -> bool:
 def _commit_charge_line() -> str:
     """This machine's commit charge (Windows), the resource a daemon start exhausts."""
 
-    if os.name != "nt":
+    if sys.platform != "win32":
         return ""
     import ctypes  # noqa: PLC0415
     from ctypes import wintypes  # noqa: PLC0415
@@ -397,10 +399,8 @@ def reap_private_daemon(state_dir: Path) -> None:
     """Force-reap the private daemon via its pidfile (belt-and-suspenders, best-effort).
 
     The normal path is the last-one-out ``release_runtime_client`` stop; this covers a
-    run whose clean stop failed. Only ever touches the PRIVATE state dir. PID-reuse
-    guarded via psutil create-time-free existence (the pidfile lives in a dir created
-    this session, so reuse across the session is the only residual risk — acceptable
-    for a kill fallback).
+    run whose clean stop failed. Authenticate the recorded birth time before signalling;
+    a reused PID belongs to another process and must remain untouched.
     """
     pidfile = state_dir / "clio-runtime.pid"
     try:
@@ -411,19 +411,27 @@ def reap_private_daemon(state_dir: Path) -> None:
         return
     try:
         pid = int(parts[0])
-    except ValueError:
-        return
-    try:
-        import psutil  # noqa: PLC0415
+        recorded_birth = float(parts[1])
+        if pid < 1 or recorded_birth <= 0 or not math.isfinite(recorded_birth):
+            raise ValueError("invalid recorded process identity")
+    except (IndexError, ValueError) as error:
+        raise RuntimeError(f"Private daemon ownership is unconfirmed: {state_dir}") from error
+    import psutil  # noqa: PLC0415
 
+    try:
         proc = psutil.Process(pid)
+        if abs(proc.create_time() - recorded_birth) > 0.001:
+            return  # The original daemon is gone; never signal the new process.
         proc.terminate()
         try:
             proc.wait(timeout=5.0)
         except psutil.TimeoutExpired:
             proc.kill()
-    except Exception:  # noqa: BLE001,S110 - already gone / psutil missing: best-effort kill
-        pass
+            proc.wait(timeout=5.0)
+    except psutil.NoSuchProcess:
+        return
+    except (psutil.AccessDenied, psutil.TimeoutExpired) as error:
+        raise RuntimeError(f"Private daemon settlement is unconfirmed: {state_dir}") from error
 
 
 def reap_stale_suite_runtimes(parent: Path) -> None:
@@ -453,7 +461,8 @@ def private_daemon_identity(state_dir: Path) -> tuple[int, float] | None:
     try:
         fd = os.open(state_dir / "clio-runtime.pid", os.O_RDONLY)
         try:
-            pid = int(os.read(fd, 256).split()[0])
+            parts = os.read(fd, 256).split()
+            pid, recorded_birth = int(parts[0]), float(parts[1])
         finally:
             os.close(fd)
     except (OSError, IndexError, ValueError):
@@ -461,7 +470,8 @@ def private_daemon_identity(state_dir: Path) -> tuple[int, float] | None:
     try:
         import psutil  # noqa: PLC0415
 
-        return pid, psutil.Process(pid).create_time()
+        birth = psutil.Process(pid).create_time()
+        return (pid, birth) if abs(birth - recorded_birth) <= 0.001 else None
     except ImportError:
         return None
     except Exception:  # noqa: BLE001 - NoSuchProcess / AccessDenied / ZombieProcess

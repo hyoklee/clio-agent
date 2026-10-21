@@ -12,7 +12,7 @@ import pytest
 
 from clio_agent.gact import session_warmup, workspace_warmup
 from clio_agent.gact.blueprint_reload import apply_blueprint_change
-from clio_agent.gact.turn_runner import TurnRunner
+from tests.test_gact.runner_records import admit_segment, make_runner
 
 
 def _app() -> Any:
@@ -25,7 +25,7 @@ def _app() -> Any:
     return SimpleNamespace(
         state=SimpleNamespace(
             agent=agent,
-            turn_runner=TurnRunner({}),
+            turn_runner=make_runner(),
             sessions=SimpleNamespace(list=lambda: []),
             session_defaults=SimpleNamespace(get=lambda: SimpleNamespace(blueprint_id="")),
             bus=SimpleNamespace(publish=lambda event: None),
@@ -193,7 +193,7 @@ async def test_running_turn_warmup_can_finish_while_writer_waits(
         await worker
         seen.append("turn finished")
 
-    parent = app.state.turn_runner.spawn(turn(), sid="parent", turn_id="parent")
+    parent = admit_segment(app.state.turn_runner, turn(), sid="parent", turn_id="parent")
     await entered.wait()
     change = asyncio.create_task(
         apply_blueprint_change(

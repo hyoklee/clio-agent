@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -12,8 +13,9 @@ from clio_agent.gact.app import build_app
 
 
 @pytest.fixture()
-def client(tmp_path: Path) -> TestClient:
-    return TestClient(build_app(sessions_path=tmp_path / "s.json"))
+def client(tmp_path: Path) -> Iterator[TestClient]:
+    with TestClient(build_app(sessions_path=tmp_path / "s.json")) as client:
+        yield client
 
 
 def test_capability_advertised(client: TestClient) -> None:
@@ -194,13 +196,11 @@ def test_bare_session_builtin_main_has_no_installed_default_registry_prompt(
 
 def test_activated_default_registry_agents_surface_prompts(client: TestClient) -> None:
     sid = client.post("/v1/sessions", json={"title": "activated"}).json()["id"]
-    assert (
-        client.post(
-            f"/v1/sessions/{sid}/agent-blueprint",
-            json={"blueprint_id": DEFAULT_AGENT_BLUEPRINT_ID},
-        ).status_code
-        == 200
+    activated = client.post(
+        f"/v1/sessions/{sid}/agent-blueprint",
+        json={"blueprint_id": DEFAULT_AGENT_BLUEPRINT_ID},
     )
+    assert activated.status_code == 200, activated.text
 
     rows = client.get("/v1/agents", params={"session_id": sid}).json()["agents"]
     main = next(a for a in rows if a["id"] == "main")

@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from .test_a2ui_actions import _event, _stub_spawn
+from .input_capture import capture_inputs
+from .test_a2ui_actions import _event
 from .test_a2ui_v3 import HEADERS, _create_message, _session_client
 
 
@@ -20,7 +21,7 @@ def test_private_login_is_audited_and_idempotent(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
     assert created.status_code == 200, created.text
-    spawned = _stub_spawn(app, monkeypatch)
+    spawned = capture_inputs(app, monkeypatch)
     service = app.state.connected_storage
     session = app.state.sessions.get(sid)
     assert session is not None

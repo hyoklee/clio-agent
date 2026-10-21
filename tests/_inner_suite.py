@@ -60,7 +60,7 @@ def run_inner_pytest(
     env: Mapping[str, str] | None = None,
     backstop_s: float,
 ) -> subprocess.CompletedProcess[str]:
-    """Run ``python -m pytest <args>`` from the repo root with the suite conftest.
+    """Run the contained pytest launcher from the repo root with the suite conftest.
 
     Args:
         runtime_parent: From :func:`inner_runtime_parent`.
@@ -73,8 +73,8 @@ def run_inner_pytest(
     """
     cmd = [
         sys.executable,
-        "-m",
-        "pytest",
+        "-B",
+        str(REPO_ROOT / "scripts/run_tests.py"),
         *args,
         "-p",
         "no:cacheprovider",

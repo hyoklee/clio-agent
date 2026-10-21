@@ -106,7 +106,6 @@ SECRET_VARS: frozenset[str] = frozenset(
         "CLIO_LM_API_KEY",
         "CLIO_ARGONNE_TOKEN",
         "ALCF_INFERENCE_TOKEN",
-        "CLIO_RELAY_API_TOKEN",
         "CLIO_AUTH_TOKEN",
     }
 )

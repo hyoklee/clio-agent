@@ -64,10 +64,9 @@ import asyncio
 import atexit
 import contextlib
 import logging
-import queue
 import threading
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from typing import Any
 
 from clio_agent.providers.claude_code_cancel import (
@@ -496,7 +495,7 @@ class _StreamClientEntry:
         cwd: str | None = None,
         thinking: dict[str, Any] | None = None,
         system_prompt: str | None = None,
-    ) -> AsyncIterator[Any]:
+    ) -> AsyncGenerator[Any, None]:
         """Yield SDK messages for one ``query`` on the pooled client (cross-loop)."""
         if self._dead:
             from clio_agent.providers.claude_code_lifecycle import (  # noqa: PLC0415
@@ -506,8 +505,9 @@ class _StreamClientEntry:
             raise RuntimeError(dead_entry_error_message())
         self._ensure_loop()
         self._mark_busy()
-        caller_loop = asyncio.get_running_loop()
-        chunks: queue.SimpleQueue[tuple[Any, Any]] = queue.SimpleQueue()
+        from clio_agent.providers.stream_queue import AsyncStreamQueue, StreamProducer
+
+        chunks: AsyncStreamQueue[tuple[Any, Any]] = AsyncStreamQueue()
         # Captured in the CALLER's context -- the owner-loop pump has no access
         # to either contextvar once scheduled cross-thread (#993 / #901).
         gact_sid = _active_gact_session_id()
@@ -553,11 +553,11 @@ class _StreamClientEntry:
                 if not clean:
                     await self._mark_dead_and_reset()
 
-        fut = asyncio.run_coroutine_threadsafe(_pump(), self._loop)
+        fut = StreamProducer(self._loop, _pump)
         kind: Any = None
         try:
             while True:
-                kind, val = await caller_loop.run_in_executor(None, chunks.get)
+                kind, val = await fut.receive(chunks.get())
                 if kind is _STREAM_END:
                     break
                 if kind == "exc":
@@ -569,8 +569,13 @@ class _StreamClientEntry:
             # cancel `fut` outright (it could land inside a disconnect mid-flight).
             if kind is not _STREAM_END and kind != "exc" and not fut.done():
                 abandon.set()
+                # Close the admission race before asynchronous disconnect. The
+                # caller can request the next model iteration immediately.
+                self._dead = True
+                self.announce_dropped()
                 with contextlib.suppress(Exception):
                     asyncio.run_coroutine_threadsafe(self._mark_dead_and_reset(), self._loop)
+            await fut.retire()
             self._mark_idle()
 
     def close_blocking(self) -> None:

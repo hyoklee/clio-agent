@@ -5,6 +5,7 @@ from __future__ import annotations
 from clio_agent import conf
 
 DEFAULT_MAX_SPAWN_DEPTH = 8
+DEFAULT_MAX_CONCURRENT_AGENT_TASKS = 3
 
 
 def max_spawn_depth() -> int:
@@ -17,4 +18,17 @@ def max_spawn_depth() -> int:
     )
     if value < 0:
         raise ValueError("agent_tasks.max_depth must be zero (unlimited) or a positive integer")
+    return int(value)
+
+
+def max_inference_concurrency() -> int:
+    """Read the child model-call capacity; zero leaves it unlimited."""
+    value = conf.resolve(
+        "agent_tasks.max_concurrent",
+        env="CLIO_MAX_CONCURRENT_AGENT_TASKS",
+        default=DEFAULT_MAX_CONCURRENT_AGENT_TASKS,
+        cast=conf.as_int,
+    )
+    if value < 0:
+        raise ValueError("Child inference concurrency must be nonnegative")
     return int(value)

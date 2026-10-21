@@ -2,85 +2,30 @@
 
 from __future__ import annotations
 
-import asyncio
-from pathlib import Path
 from typing import Any
 
-from clio_agent.gact import context
 from clio_agent.gact.agents.tool_instrumentation import native_tool
-from clio_agent.gact.artifacts.observer_bridge import observer_call_id
-from clio_agent.gact.permission_gate import _invoke_permission_gate
-from clio_agent.gact.task_tools import task_presentation
-from clio_agent.tools.task_call_context import require_admission
-
-
-def connected_data_download(
-    source_id: str, selected_paths: list[str] | None = None, description: str | None = None
-) -> dict[str, Any]:
-    """Start an approved Download task and immediately return its durable task handle.
-
-    Acceptance is not completion. Continue independent work and use query_tasks,
-    observe_tasks, wait_tasks, get_task_result or cancel_tasks with the handle.
-    Completion or failure arrives at the next model iteration or wakes you when
-    idle; Conversation Stop leaves accepted downloads running.
-    """
-    app, sid = context.active_app(), context.active_session_id()
-    if app is None or not sid:
-        raise ValueError("Download requires an active workspace conversation")
-    require_admission(app, sid)
-    session = app.state.sessions.get(sid)
-    if session is None:
-        raise ValueError("Download conversation is unavailable")
-    workspace = app.state.workspaces.get(session.workspace_id)
-    if workspace is None:
-        raise ValueError("Download workspace is unavailable")
-    if selected_paths is not None:
-        from clio_agent.gact.storage.models import FileEntry
-
-        if not selected_paths or len(selected_paths) > 1000:
-            raise ValueError("Select between 1 and 1000 relative paths")
-        for selected in selected_paths:
-            FileEntry(path=selected, kind="file")
-    service = app.state.connected_storage
-    source = service.get(session.workspace_id, source_id)
-    gate = getattr(app.state, "pending_permission_gate", None) or app.state.make_permission_gate()
-    arguments = {"source_id": source_id, "selected_paths": selected_paths}
-    if (
-        _invoke_permission_gate(
-            gate,
-            "connected_data_download",
-            arguments,
-            {"kind": "native", "summary": f"Download {source.source.label}"},
-        )
-        != "allow"
-    ):
-        raise PermissionError("Source download was not approved")
-    invocation = observer_call_id()
-
-    async def submit() -> dict[str, Any]:
-        from clio_agent.gact.storage.task_adapter import storage_handle
-
-        require_admission(app, sid)
-        operation = service.start_transfer(source, Path(workspace.root_path), selected_paths)
-        return storage_handle(
-            app, sid, operation, description or f"Download {source.source.label}", invocation
-        )
-
-    return asyncio.run_coroutine_threadsafe(submit(), app.state.mcp_app_loop).result()
 
 
 def build_connected_data_download_tool() -> Any:
-    """Declare downloads using the same permission and transcript boundaries as other natives."""
+    """Declare the native transfer without introducing a storage scheduler."""
+
+    async def download(source_id: str, paths: list[str]) -> dict[str, Any]:
+        from clio_agent.gact.builtin_boundary import submit_native_tool
+
+        return await submit_native_tool(
+            "connected_data_download", {"source_id": source_id, "paths": paths}
+        )
+
     return native_tool(
-        connected_data_download,
+        download,
         name="connected_data_download",
-        desc=connected_data_download.__doc__,
         args={
             "source_id": {"type": "string"},
-            "selected_paths": {"type": ["array", "null"], "items": {"type": "string"}},
-            "description": {"type": ["string", "null"]},
+            "paths": {"type": "array", "items": {"type": "string"}, "minItems": 1},
         },
-        presentation=task_presentation,
-        title="Download source",
+        desc="Download approved source paths and immediately return a durable Download task handle. Continue independent work or use observe_tasks/wait_tasks; use cancel_tasks to cancel explicitly. Completion wakes eligible idle agents; Stop leaves the transfer running.",
+        presentation="tasks",
         domain="resources",
+        title="Download source files",
     )

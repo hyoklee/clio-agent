@@ -122,13 +122,14 @@ def _install_loop(
             ctx.set_react_window(WINDOW),
         ]
         try:
+            ctx.set_primary_agent_id(SCOPE)
             with dspy.context(lm=lm):
                 return ClioReAct("question -> answer", tools=_tools())(question=question)
         finally:
             for token in reversed(tokens):
                 ctx.reset(token)
 
-    install_scripted_module(monkeypatch, run)
+    install_scripted_module(monkeypatch, run, commit_input=False)
 
 
 @pytest.fixture
@@ -646,14 +647,15 @@ def test_a_record_whose_turn_settled_before_the_fold_is_still_shown_live(
             for token in reversed(tokens):
                 ctx.reset(token)
 
-    install_scripted_module(monkeypatch, run)
+    install_scripted_module(monkeypatch, run, commit_input=False)
     _patch_tokens(monkeypatch, high_on=set())
     bus = app.state.bus
     cursor = bus.latest_event_id(sid)
     ack = client.post(
         f"/v1/sessions/{sid}/messages", json={"parts": [{"type": "text", "text": "go"}]}
     )
-    assert ack.status_code == 200, ack.text
+    assert ack.status_code == 202, ack.text
+    assert ack.json()["task_handle"]
     assert started.wait(120), "the turn never reached its tool"
 
     real_fold = app.state.arc.summarize_segments

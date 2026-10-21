@@ -8,10 +8,8 @@ second activity store.
 
 from __future__ import annotations
 
-from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
-from clio_agent.gact.agent_tasks import display_run_name
 from clio_agent.gact.session_descendants import _DEFAULT_DESCENDANT_DEPTH, descendant_walk
 
 if TYPE_CHECKING:
@@ -37,6 +35,27 @@ CHILD_ACTIVITY_PROJECTION_CAPABILITY: dict[str, Any] = {
         "responded_to",
     ],
 }
+
+
+def _task_index(app: "FastAPI", root_session_id: str) -> dict[str, dict[str, Any]]:
+    """Project delegated attribution from the common indexed Core snapshots."""
+    rows = {}
+    history = app.state.task_history
+    for handle in history.tree_handles(root_session_id):
+        task = history.task_snapshot(handle)
+        if task is None or task.kind != "Subagent":
+            continue
+        session = app.state.sessions.get(task.owner.session_id)
+        rows[handle] = {
+            "task_id": handle,
+            "child_session_id": task.owner.session_id,
+            "agent_ref": {"expert_id": session.agent.get("id", "") if session is not None else ""},
+            "run_label": task.label,
+            "status": task.status,
+            "created_at": task.created_at,
+            "updated_at": task.updated_at,
+        }
+    return rows
 
 
 def child_session_lineage(
@@ -66,7 +85,7 @@ def child_session_lineage(
             "attribution": "root",
         }
     ]
-    task_by_id = _task_index(app)
+    task_by_id = _task_index(app, root_session_id)
     path_by_session: dict[str, list[str]] = {root_session_id: []}
     descendants, truncated = descendant_walk(app, root_session_id, max_depth=max_depth)
     for row in descendants:
@@ -82,11 +101,7 @@ def child_session_lineage(
             "task_id": row.task_id,
             "agent_id": agent_id,
             "label": (
-                display_run_name(
-                    agent_id or "agent",
-                    int((task or {}).get("run_index") or 0),
-                    str((task or {}).get("run_label") or ""),
-                )
+                str(task.get("run_label") or _session_label(app, row.session_id))
                 if task
                 else _session_label(app, row.session_id)
             ),
@@ -133,7 +148,7 @@ def project_child_execution(
     if not include_children:
         lineage, truncated = lineage[:1], False
     by_session = {str(row["session_id"]): row for row in lineage}
-    task_by_id = _task_index(app)
+    task_by_id = _task_index(app, root_session_id)
     degradations: list[dict[str, str]] = [
         row for row in (result.get("degradations") or []) if isinstance(row, dict)
     ]
@@ -246,13 +261,6 @@ def project_child_execution(
 def _session_label(app: "FastAPI", session_id: str) -> str:
     session = app.state.sessions.get(session_id)
     return str(getattr(session, "title", "") or session_id)
-
-
-def _task_index(app: "FastAPI") -> dict[str, dict[str, Any]]:
-    registry = getattr(app.state, "agent_task_registry", None)
-    if registry is None:
-        return {}
-    return {task.task_id: asdict(task) for task in registry.snapshot()}
 
 
 def _entity_node(

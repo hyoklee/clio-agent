@@ -1,0 +1,68 @@
+{
+  "status": "blocked: diagnostic review deadline",
+  "host": "homelab",
+  "root": "/home/jcernuda/.cache/clio-task-review-19319a3b-r17",
+  "controller_pid": 35280,
+  "created_at": "2026-10-14T20:05:23.969938+00:00",
+  "source_base": "19319a3bccf7d07b45938a827e45b05501f951d3",
+  "source_commits": {
+    "core": "9486991a47eb9757476b438572d45c54730c2f74",
+    "gact": "ce99316446848ddd269b1bf782ff2c87cc9db14a",
+    "marketplace": "9257bba5953b012ba796299df4c633e698dbaddc"
+  },
+  "auth": "existing remote host login; no credentials copied",
+  "archive": false,
+  "ssh_pid": 29420,
+  "snapshot": {
+    "files": 4648,
+    "bytes": 40824928,
+    "manifest_sha256": "cdbfcf2ba7ad9e1c73d551ca80b1a8537f2379be56584c5d6e97b9b817b81057",
+    "root": "/home/jcernuda/.cache/clio-task-review-19319a3b-r17",
+    "receiver_pid": 3274574
+  },
+  "completed_at": "2026-10-14T20:05:28.913954+00:00",
+  "ssh_review_pid": 55032,
+  "remote_controller_pid": 3278380,
+  "remote_cli_pid": 3278381,
+  "model": "claude-opus-5-5",
+  "outcome": {
+    "status": "blocked: diagnostic review deadline",
+    "root": "/home/jcernuda/.cache/clio-task-review-19319a3b-r17",
+    "controller_pid": 3278380,
+    "started_at": "2026-10-14T20:06:55.249145+00:00",
+    "tools": [
+      "Read",
+      "Grep",
+      "Glob"
+    ],
+    "session_persistence": false,
+    "source_snapshot_verified": true,
+    "tool_calls": 100,
+    "tool_errors": 1,
+    "model": "claude-opus-5-5",
+    "cli_pid": 3278381,
+    "process_group": 3278381,
+    "session_id": "e1335b9f-f73c-44ce-a68f-4f1718a35043",
+    "exit_code": 143,
+    "ended_at": "2026-10-14T20:16:56.268264+00:00",
+    "cli_settled": true
+  },
+  "ssh_review_exit": 0,
+  "cleanup": {
+    "checked_at": "2026-10-14T20:37:33.741643+00:00",
+    "root": "/home/jcernuda/.cache/clio-task-review-19319a3b-r17",
+    "root_absent": true,
+    "pids_absent": {
+      "3274574": true,
+      "3278380": true,
+      "3278381": true,
+      "3314772": true,
+      "3314773": true
+    },
+    "source_manifest_predelete_verified": true,
+    "source_files": 4648,
+    "source_logical_bytes": 40824928,
+    "archive": false,
+    "note": "Removal succeeded; post-removal receipt formatting failed on older Python datetime.UTC. This is read-only absence verification."
+  }
+}

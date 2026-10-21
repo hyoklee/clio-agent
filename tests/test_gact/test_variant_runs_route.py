@@ -17,17 +17,18 @@ SABOTAGE (each run manually, each went RED, then was restored):
 from __future__ import annotations
 
 from collections.abc import Iterator
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
 import pytest
-from fastapi.testclient import TestClient
 
 from clio_agent.gact.agents.variant_records import VARIANT_RECORD_KIND, VARIANT_RECORD_SCOPE
 from clio_agent.gact.protocol.v3.message import part_to_v3_block
 from clio_agent.gact.session_store import _append_session_message
 from clio_agent.gact.types import Message, Part
-from tests._scripted_engine import Reply, routed_lm
+from tests._scripted_engine import Reply, calls, routed_lm
+from tests.test_gact.task_records import record_assignment_fixture
 from tests.test_gact.test_variant_drafts import (
     ASK,
     RUN0,
@@ -46,13 +47,15 @@ from tests.test_gact.test_variant_drafts import (
 @pytest.fixture
 def world(tmp_path: Path) -> Iterator[World]:
     """One app on real clio-core with a session (as in ``test_variant_drafts``)."""
-    app, arc, events = _app(tmp_path / "sessions.json")
-    sid = app.state.sessions.create(workspace_id="ws_default", title="runs").id
-    yield World(app, arc, sid, events, tmp_path / "sessions.json")
+    with ExitStack() as lifespans:
+        app, arc, events = _app(tmp_path / "sessions.json", lifespans=lifespans)
+        sid = app.state.sessions.create(workspace_id="ws_default", title="runs").id
+        record_assignment_fixture(app, sid)
+        yield World(app, arc, sid, events, tmp_path / "sessions.json", lifespans)
 
 
 def _runs(app: Any, sid: str) -> dict[str, Any]:
-    response = TestClient(app).get(f"/v1/sessions/{sid}/variant-runs")
+    response = app.state.test_client.get(f"/v1/sessions/{sid}/variant-runs")
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -121,7 +124,8 @@ def test_runs_are_served_from_clio_core_with_each_trys_steps_after_a_restart(
     ]
     assert second["tries"][0]["steps"][-1]["parts"][-1]["text"] == "Draft C"
 
-    restarted, _arc, _events = _app(world.sessions_path)
+    world.lifespans.close()
+    restarted, _arc, _events = _app(world.sessions_path, lifespans=world.lifespans)
     assert _runs(restarted, world.sid) == live
 
 
@@ -129,12 +133,16 @@ def test_the_interactions_list_carries_the_drafts_question_metadata(
     world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     lm, _engine = routed_lm(
-        {SCOPE: [_draft(2)], RUN0: [Reply(text="Draft A")], RUN1: [Reply(text="Draft B")]}
+        {
+            SCOPE: [_draft(2), Reply(text="Choose a draft.")],
+            RUN0: [Reply(text="Draft A")],
+            RUN1: [Reply(text="Draft B")],
+        }
     )
     _forward(world.app, world.sid, lm, ASK, "turn_1")
     question = _surface(world.app, world.sid, "turn_1", monkeypatch)
 
-    rows = TestClient(world.app).get(f"/v1/sessions/{world.sid}/interactions").json()
+    rows = world.client.get(f"/v1/sessions/{world.sid}/interactions").json()
     [row] = [r for r in rows["interactions"] if r["payload"].get("question_id") == question.id]
     metadata = row["payload"]["metadata"]
     assert metadata["variants_id"] == question.metadata["variants_id"]
@@ -149,7 +157,7 @@ def test_the_interactions_list_carries_the_drafts_question_metadata(
 def test_refine_advice_lands_in_its_trys_tab(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
     lm, _engine = routed_lm(
         {
-            SCOPE: [_draft(2, strategy="refine")],
+            SCOPE: [_draft(2, strategy="refine"), Reply(text="Choose a draft.")],
             RUN0: [Reply(text="Long draft.")],
             RUN1: [Reply(text="Short draft.")],
         }
@@ -157,6 +165,12 @@ def test_refine_advice_lands_in_its_trys_tab(world: World, monkeypatch: pytest.M
     _forward(world.app, world.sid, lm, ASK, "turn_1")
     question = _surface(world.app, world.sid, "turn_1", monkeypatch)
     _answer(world.app, question, RUN0, comment="Shorter, please.")
+    _engine.routes[SCOPE].extend(
+        [
+            calls(("draft_alternatives", {"question_handle": question.id})),
+            Reply(text="Choose the revised draft."),
+        ]
+    )
     _forward(world.app, world.sid, lm, "[Answer] refine", "turn_2")
 
     variants_id = question.metadata["variants_id"]
@@ -184,7 +198,7 @@ def test_refine_advice_lands_in_its_trys_tab(world: World, monkeypatch: pytest.M
 
 
 def test_an_unreadable_record_and_an_unknown_session_are_typed(world: World) -> None:
-    client = TestClient(world.app)
+    client = world.client
     missing = client.get("/v1/sessions/nope/variant-runs")
     assert (missing.status_code, missing.json()["error"]["error"]) == (404, "not_found")
 

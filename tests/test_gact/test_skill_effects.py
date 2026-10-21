@@ -8,6 +8,7 @@ only TIGHTEN the mode (no escape from plan mode). An effect-less skill is unchan
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from pathlib import Path
@@ -32,8 +33,9 @@ from clio_agent.gact.autonomous_loop import _get_loop
 from clio_agent.gact.goal import _get_goal
 from clio_agent.gact.skills import SkillCatalog
 from clio_agent.gact.types import AgentDef
+from tests.test_gact.task_records import active_turn_fixture, record_assignment_fixture
 
-pytestmark = pytest.mark.usefixtures("host_agent_executor")
+pytestmark = pytest.mark.usefixtures("host_agent_executor", "native_builtin_lifespan")
 
 
 class _Agent:
@@ -70,18 +72,29 @@ def _message_text(msg: Any) -> str:
     return "".join(
         str(getattr(p, "text", "") or "")
         for p in getattr(msg, "parts", []) or []
-        if getattr(p, "type", "") == "text"
+        if getattr(p, "type", "") in {"text", "injection"}
     )
+
+
+def _spawn_via_mcp(app: Any, sid: str, tool: Any, **arguments: Any) -> dict[str, Any]:
+    """Use the actual asynchronous built-in boundary under a retained parent assignment."""
+    if app.state.task_history.latest_assignment(sid) is None:
+        record_assignment_fixture(app, sid)
+    with active_turn_fixture(app, sid):
+        bound = app.state.builtin_boundary.bind(tool)
+        result = asyncio.run(bound.acall(**arguments))
+    assert isinstance(result, dict)
+    return result
 
 
 def _wait_terminal(app: Any, task_id: str, timeout: float = 10.0) -> Any:
     end = time.monotonic() + timeout
     while time.monotonic() < end:
-        t = app.state.agent_task_registry.get(task_id)
-        if t is not None and t.is_terminal:
+        t = app.state.task_history.task_snapshot(task_id)
+        if t is not None and t.terminal_at is not None:
             return t
         time.sleep(0.05)
-    return app.state.agent_task_registry.get(task_id)
+    return app.state.task_history.task_snapshot(task_id)
 
 
 # ---- parse / validation (pure) ---------------------------------------------------------
@@ -214,38 +227,41 @@ def test_spawn_subagent_with_skill_seeds_body_not_inlined(tmp_path: Path) -> Non
     with TestClient(app):
         sess = app.state.sessions.create(workspace_id="ws_default", title="p")
         tool = _tool(ws, "research-sub", agent_id="main", spawn=True)
-        tok_a = _ctx.set_app(app)
-        tok_s = _ctx.set_session_id(sess.id)
-        try:
-            out = tool.func(
-                skill_id="research-sub",
-                task="Research the requested topic and report the grounded result.",
-            )
-        finally:
-            _ctx.reset(tok_s)
-            _ctx.reset(tok_a)
-
-        data = json.loads(out)
+        data = _spawn_via_mcp(
+            app,
+            sess.id,
+            tool,
+            skill_id="research-sub",
+            task="Research the requested topic and report the grounded result.",
+        )
         assert data["skill_effect"] == "spawn_subagent_with_skill"
-        assert data["task_id"] and data["child_session_id"]
+        assert data["accepted"] is True
+        assert data["handle"] and data["session_id"]
         # The body is NOT inlined into the caller's tool observation.
-        assert "SUBAGENT_SKILL_BODY_MARKER." not in out
+        assert "SUBAGENT_SKILL_BODY_MARKER." not in json.dumps(data)
 
         # A real task/handle exists.
-        task = app.state.agent_task_registry.get(data["task_id"])
+        task = app.state.task_history.task_snapshot(data["handle"])
         assert task is not None
         parent_parts = (getattr(app.state, "live_assistant_parts", {}) or {}).get(sess.id, [])
         handoffs = [part for part in parent_parts if getattr(part, "type", "") == "expert_handoff"]
-        assert len(handoffs) == 1
-        assert handoffs[0].handle_id == data["task_id"]
-        assert handoffs[0].stage == "delegate.started"
+        assert handoffs == [], "A standalone fixture call cannot invent a streamed parent part"
+        parent = app.state.task_history.latest_assignment(sess.id)
+        assert parent is not None and task.owner.parent_handle == parent.handle
+        assert task.kind == "Subagent" and task.owner.session_id == data["session_id"]
 
-        _wait_terminal(app, data["task_id"])
-        # The child turn was SEEDED with the skill body (staged as its user input).
-        child_msgs = app.state.messages.get(data["child_session_id"], []) or []
-        seeded = [m for m in child_msgs if getattr(m, "role", "") == "user"]
-        assert seeded, "child got no staged user message"
-        assert any("SUBAGENT_SKILL_BODY_MARKER." in _message_text(m) for m in seeded)
+        _wait_terminal(app, data["handle"])
+        # Delegated instructions are system injections, never fabricated human input.
+        child_msgs = app.state.messages.get(data["session_id"], []) or []
+        assert not [m for m in child_msgs if m.role == "user"]
+        seeded = [
+            part
+            for message in child_msgs
+            for part in message.parts
+            if part.type == "injection" and part.source == "delegation"
+        ]
+        assert seeded, "child got no delegated assignment injection"
+        assert any("SUBAGENT_SKILL_BODY_MARKER." in (part.text or "") for part in seeded)
 
 
 def test_spawn_subagent_with_skill_uses_specific_task_assignment(tmp_path: Path) -> None:
@@ -261,26 +277,29 @@ def test_spawn_subagent_with_skill_uses_specific_task_assignment(tmp_path: Path)
     with TestClient(app):
         sess = app.state.sessions.create(workspace_id="ws_default", title="p")
         tool = _tool(ws, "region-worker", agent_id="main", spawn=True)
-        tok_a = _ctx.set_app(app)
-        tok_s = _ctx.set_session_id(sess.id)
-        try:
-            out = tool.func(
-                skill_id="region-worker",
-                task="Resolve San Diego, California and count stations within 50 km.",
-            )
-        finally:
-            _ctx.reset(tok_s)
-            _ctx.reset(tok_a)
-
-        data = json.loads(out)
-        task = app.state.agent_task_registry.get(data["task_id"])
+        data = _spawn_via_mcp(
+            app,
+            sess.id,
+            tool,
+            skill_id="region-worker",
+            task="Resolve San Diego, California and count stations within 50 km.",
+        )
+        assert data["accepted"] is True
+        task = app.state.task_history.task_snapshot(data["handle"])
         assert task is not None
-        assert task.run_label == "Resolve San Diego, California and count stations within 50 km"
-        _wait_terminal(app, data["task_id"])
-        child_msgs = app.state.messages.get(data["child_session_id"], []) or []
-        seeded = [m for m in child_msgs if getattr(m, "role", "") == "user"]
-        assert any("RESOLVE_REGION_PROCEDURE." in _message_text(m) for m in seeded)
-        assert any("Resolve San Diego" in _message_text(m) for m in seeded)
+        assert task.description == "Resolve San Diego, California and count stations within 50 km."
+        assert task.label
+        _wait_terminal(app, data["handle"])
+        child_msgs = app.state.messages.get(data["session_id"], []) or []
+        assert not [m for m in child_msgs if m.role == "user"]
+        seeded = [
+            part
+            for message in child_msgs
+            for part in message.parts
+            if part.type == "injection" and part.source == "delegation"
+        ]
+        assert any("RESOLVE_REGION_PROCEDURE." in (part.text or "") for part in seeded)
+        assert any("Resolve San Diego" in (part.text or "") for part in seeded)
 
 
 def test_spawn_subagent_with_skill_from_plan_mode_parent_inherits_plan_mode(
@@ -307,19 +326,15 @@ def test_spawn_subagent_with_skill_from_plan_mode_parent_inherits_plan_mode(
     with TestClient(app):
         sess = app.state.sessions.create(workspace_id="ws_default", title="p", mode="plan")
         tool = _tool(ws, "research-sub", agent_id="main", spawn=True)
-        tok_a = _ctx.set_app(app)
-        tok_s = _ctx.set_session_id(sess.id)
-        try:
-            out = tool.func(
-                skill_id="research-sub",
-                task="Research the requested topic without changing files.",
-            )
-        finally:
-            _ctx.reset(tok_s)
-            _ctx.reset(tok_a)
-
-        data = json.loads(out)
-        child_id = data["child_session_id"]
+        data = _spawn_via_mcp(
+            app,
+            sess.id,
+            tool,
+            skill_id="research-sub",
+            task="Research the requested topic without changing files.",
+        )
+        assert data["accepted"] is True
+        child_id = data["session_id"]
         child = app.state.sessions.get(child_id)
 
         assert child.mode == "plan", (

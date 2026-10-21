@@ -194,11 +194,12 @@ def test_http_mode_recovers_explicit_file_refusals(harness: base.Harness, mode: 
 
 @pytest.fixture
 def session(clio_core_plane: Any) -> Iterator[None]:
-    token = gact_context.set_session_id("sess-file-recovery")
-    try:
-        yield
-    finally:
-        gact_context.reset(token)
+    """Use the real fixture session and its confirmed assignment for model input."""
+    sid = gact_context.active_session_id()
+    assignment = clio_core_plane.state.task_history.latest_assignment(sid)
+    assert assignment is not None
+    assert gact_context.active_assignment_handle() == assignment.handle
+    yield
 
 
 def _call_tool(rid: str, call_id: str, name: str, args: dict[str, Any]) -> list[dict[str, Any]]:
@@ -221,7 +222,7 @@ def _call_tool(rid: str, call_id: str, name: str, args: dict[str, Any]) -> list[
 
 @pytest.mark.usefixtures("session")
 def test_workspace_summary_continues_to_local_inspection_after_pdf_refusal(
-    harness: base.Harness, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    harness: base.Harness, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, clio_core_plane: Any
 ) -> None:
     """Actual loop, native PDF descriptor and wire; only the provider socket is scripted."""
     from pypdf import PdfReader

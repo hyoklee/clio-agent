@@ -1,39 +1,18 @@
-"""GACT v0.2 session registry for CLIO.
+"""Stable GACT session addresses and presentation/configuration metadata.
 
-Until session ownership moves into ARC, the GACT
-app owns a small registry of ``Session`` records:
-
-- in-memory dict keyed by session id
-- optional JSON persistence so sessions survive ``clio-agent-gact``
-  restarts (default: Agent ``state/server/sessions.json`` per
-  :func:`_default_store_path`; ``CLIO_SESSIONS_PATH`` overrides the full path)
-
-The registry is thread-safe for the workload we expect (FastAPI
-serves requests concurrently but each request either reads or writes
-the registry atomically; no coordinated multi-step state machines).
-
-Session shape mirrors GACT v0.2 §4.2:
-
-    {
-      "id": "sess_...",
-      "workspace_id": "ws_default",
-      "title": "...",
-      "status": "idle" | "running" | "waiting_permission" | "waiting_user" | "error",
-      "created_at": "<ISO-8601 UTC>",
-      "updated_at": "<ISO-8601 UTC>",
-      "message_count": 0,
-      "metadata": {...}
-    }
-
-Spec fields the scaffold doesn't populate yet (model, tokens,
-cost_usd, summary, archived_at, parent_session_id, agent) stay at
-their zero-values until their own items land. Clients tolerate
-absent-optional fields per §3.2.
+Tasks, assignment history, mail and input commitments live in the confirmed Core
+hierarchy. This thread-safe store supplies session metadata and trusted startup
+receipts, with optional JSON persistence at ``state/server/sessions.json``.
+``CLIO_SESSIONS_PATH`` overrides that path. Public wire fields are projected from
+the record; private approval and initialization fields never enter public updates.
 """
 
 from __future__ import annotations
 
+import asyncio
 import builtins
+import copy
+import hashlib
 import json
 import logging
 import threading
@@ -58,6 +37,14 @@ _SESSION_ID_PREFIX = "sess_"
 _SERVER_PROFILES = frozenset({"spotter-watcher", "read-only-side"})
 _TIME_LOCK = threading.Lock()
 _LAST_TIME: datetime | None = None
+
+
+def _require_creation_worker() -> None:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    raise RuntimeError("Trusted session initialization must run off the event loop")
 
 
 def _utcnow_iso() -> str:
@@ -211,6 +198,12 @@ class Session:
     # The public approval mode therefore remains truthful while the dedicated
     # SPOTTER watcher can contain an anomaly without acquiring blanket bypass.
     approval_profile: str = ""
+    # Trusted child creation identity; immutable through public session updates.
+    # It names creation metadata, never an execution/retry policy.
+    creation_digest: str = ""
+    creation_lifecycle_confirmed: bool = False
+    # A missing legacy receipt is unknown, never permission to replay a hook.
+    creation_hook_state: str = "unknown"
     # Routing override. "auto" runs the LM-based router; "chat" forces
     # every turn through the chat path; "experts" rejects chat/none
     # routes (raises a routing error) so users can lock the session
@@ -234,6 +227,9 @@ class Session:
         wire["mode"] = normalize_stored_mode(self.mode)
         wire["status"] = normalize_stored_status(self.status)
         wire.pop("approval_profile", None)
+        wire.pop("creation_digest", None)
+        wire.pop("creation_lifecycle_confirmed", None)
+        wire.pop("creation_hook_state", None)
         # cost_known is bookkeeping, not part of the wire contract -- it
         # decides whether cost_usd is a real number or null, never rides
         # along itself (#775: no turn ever reporting a cost must read as
@@ -272,22 +268,9 @@ class SessionStore:
         # (:meth:`settle_interaction_times`); until then the field reads "" (unknown).
         self._interaction_unknown: set[str] = set()
         self._lifecycle_observer: Callable[[str, Session], None] | None = None
-        self.task_store: Any | None = None
+        self._initializing: set[str] = set()
         if path is not None:
             self._load()
-            # #1115: a PERSISTENT session registry is the durable home for in-flight
-            # SEP-2663 task ids (RULE 4 - no fifth store). Publishing it here is what
-            # lets the tools layer reach a durable store without importing gact; an
-            # in-memory registry deliberately does not publish, because it would be
-            # claiming a crash-recovery guarantee it cannot keep.
-            from clio_agent.gact.mcp_task_store import (  # noqa: PLC0415 - keep leaf
-                install_session_task_store,
-            )
-
-            # Retained so ``build_app`` can publish an APP-SCOPED handle: the
-            # process-global the install also sets is overwritten by the next
-            # registry constructed in this process.
-            self.task_store = install_session_task_store(self)
 
     # ---- lifecycle ----------------------------------------------------
 
@@ -358,15 +341,41 @@ class SessionStore:
         routing_mode: str = "auto",
         approval_mode: str = "ask",
         approval_profile: str = "",
+        creation_id: str = "",
+        creation_digest: str = "",
+        defer_initialization: bool = False,
     ) -> Session:
         """Create a new session. Returns the freshly-minted record.
 
         ``routing_mode`` mirrors the same validation as ``update()`` so a
         client can pre-lock a fresh session to a non-default routing mode
         (e.g. issue #25's ``reasoning_only``) without an extra PATCH.
+
+        Trusted conversation owners may supply a stable creation identity and
+        request digest. A matching existing child is returned without replaying
+        completed initialization or replacing human-edited settings. Known
+        unfinished initialization resumes; an admitted hook without a confirmed
+        receipt reports uncertainty. Trusted children defer startup to their
+        session-owned worker; preparing a row never starts model execution.
         """
 
-        sid = _SESSION_ID_PREFIX + uuid.uuid4().hex[:12]
+        if bool(creation_id) != bool(creation_digest) or (
+            creation_digest
+            and (
+                len(creation_digest) != 64
+                or any(c not in "0123456789abcdef" for c in creation_digest)
+            )
+        ):
+            raise ValueError("Reusable session creation requires its trusted identity and digest")
+        if defer_initialization and not creation_id:
+            raise ValueError("Deferred initialization requires trusted session creation")
+        if creation_id and not defer_initialization:
+            _require_creation_worker()
+        sid = _SESSION_ID_PREFIX + (
+            hashlib.sha256(creation_id.encode()).hexdigest()[:32]
+            if creation_id
+            else uuid.uuid4().hex[:12]
+        )
         now = _utcnow_iso()
         valid_routing_modes = {"auto", "chat", "experts", "reasoning_only"}
         valid_approval_modes = {"ask", "auto-edits", "bypass", "ai-review", "spotter-ai"}
@@ -387,37 +396,150 @@ class SessionStore:
             routing_mode=routing_mode if routing_mode in valid_routing_modes else "auto",
             approval_mode=approval_mode if approval_mode in valid_approval_modes else "ask",
             approval_profile=(approval_profile if approval_profile in _SERVER_PROFILES else ""),
+            creation_digest=creation_digest,
+            creation_hook_state="pending" if creation_id else "unknown",
         )
         with self._lock:
-            self._sessions[sid] = sess
-            self._flush()
+            existing = self._sessions.get(sid)
+            if existing is not None:
+                if (
+                    not creation_id
+                    or existing.creation_digest != creation_digest
+                    or existing.workspace_id != workspace_id
+                    or existing.parent_session_id != parent_session_id
+                    or existing.agent != sess.agent
+                    or existing.approval_profile != sess.approval_profile
+                ):
+                    raise ValueError("Session creation identity was reused with different work")
+                # Reconfirm the original address, then resume only initialization
+                # that is known unfinished. Completed work is never repeated.
+                self._flush()
+                sess = existing
+            else:
+                self._sessions[sid] = sess
+                self._flush()
+        if defer_initialization:
+            return sess
+        if creation_id:
+            return self.initialize(sid)
+        return self._finish_creation(sess)
+
+    def initialize(self, sid: str, *, cancel_event: threading.Event | None = None) -> Session:
+        """Initialize a prepared child on its exclusive worker, without holding task locks.
+
+        An unconfirmed admitted hook is never replayed. Concurrent initialization
+        fails immediately instead of blocking a shared worker or repeating effects.
+        """
+        _require_creation_worker()
+        with self._lock:
+            sess = self._sessions.get(sid)
+            if sess is None:
+                raise ValueError("Prepared session is unavailable")
+            if not sess.creation_digest:
+                return sess
+            if sess.creation_hook_state in {"completed", "interrupted"}:
+                if not sess.creation_lifecycle_confirmed:
+                    raise ValueError("Session initialization receipts are inconsistent")
+                return sess
+            if sid in self._initializing:
+                raise RuntimeError("Session initialization is already running")
+            self._initializing.add(sid)
         try:
-            self._observe_lifecycle("session.created", sess)
+            return self._finish_creation(sess, cancel_event=cancel_event)
+        finally:
+            with self._lock:
+                self._initializing.discard(sid)
+
+    def _finish_creation(
+        self, sess: Session, *, cancel_event: threading.Event | None = None
+    ) -> Session:
+        sid, trusted = sess.id, bool(sess.creation_digest)
+        from clio_agent.gact.hooks import dispatch_session_start  # noqa: PLC0415
+        from clio_agent.gact.hooks.wire import HookCancelled  # noqa: PLC0415
+
+        if cancel_event is not None and cancel_event.is_set():
+            raise HookCancelled("session-start")
+        try:
+            if not trusted or not sess.creation_lifecycle_confirmed:
+                if trusted and self._lifecycle_observer is None:
+                    raise RuntimeError("Trusted session creation requires its lifecycle observer")
+                self._observe_lifecycle("session.created", sess)
+                if trusted:
+                    with self._lock:
+                        sess.creation_lifecycle_confirmed = True
+                        self._flush()
         except BaseException:
+            # Trusted task creation can already have a confirmed Core event
+            # whose reply was lost. Retain its stable address for reconciliation.
+            if trusted:
+                raise
             # No session exists that clio-core has no record of.
             with self._lock:
                 self._sessions.pop(sid, None)
                 self._flush()
             raise
-        # P2.3 SessionStart lifecycle hook (observation): fires exactly once per
-        # created session, after it is persisted. Never blocks — the dispatcher
-        # returns a no-op outcome when no hook is configured.
-        from clio_agent.gact.hooks import dispatch_session_start  # noqa: PLC0415
-
-        dispatch_session_start(
-            session_id=sid,
-            payload={
-                "workspace_id": workspace_id,
-                "parent_session_id": parent_session_id,
-                "agent": dict(sess.agent),
-                "mode": sess.mode,
-            },
-        )
+        # Reuse known-unattempted initialization. An admitted hook with no
+        # completion receipt is uncertain and must never be replayed by reuse.
+        if cancel_event is not None and cancel_event.is_set():
+            raise HookCancelled("session-start")
+        if trusted:
+            with self._lock:
+                if sess.creation_hook_state != "pending":
+                    raise RuntimeError(
+                        f"SessionStart effects are unconfirmed for {sid}; inspect before retrying"
+                    )
+                sess.creation_hook_state = "started"
+                try:
+                    self._flush()
+                except BaseException:
+                    # This process knows the hook was never called. A restart
+                    # seeing a persisted 'started' receipt remains uncertain.
+                    sess.creation_hook_state = "pending"
+                    raise
+        try:
+            dispatch_session_start(
+                session_id=sid,
+                cancel_event=cancel_event,
+                payload={
+                    "workspace_id": sess.workspace_id,
+                    "parent_session_id": sess.parent_session_id,
+                    "agent": dict(sess.agent),
+                    "mode": sess.mode,
+                },
+            )
+        except HookCancelled as error:
+            if trusted and error.cleanup_confirmed:
+                with self._lock:
+                    sess.creation_hook_state = (
+                        "pending" if error.invocation_started is False else "interrupted"
+                    )
+                    self._flush()
+            raise
+        if trusted:
+            with self._lock:
+                sess.creation_hook_state = "completed"
+                self._flush()
         return sess
 
     def get(self, sid: str) -> Optional[Session]:
         with self._lock:
             return self._sessions.get(sid)
+
+    def snapshot(self, sid: str) -> Session | None:
+        """Return an independent, atomically captured metadata row for preparation."""
+        with self._lock:
+            session = self._sessions.get(sid)
+            return copy.deepcopy(session) if session is not None else None
+
+    def startup_retirement_error(self, sid: str) -> str | None:
+        """Report missing physical proof; unknown effects alone do not imply a live process."""
+        with self._lock:
+            session = self._sessions.get(sid)
+            if session is None:
+                return "Session startup evidence is unavailable; settlement remains unconfirmed."
+            if session.creation_digest and session.creation_hook_state == "started":
+                return "SessionStart process settlement is unconfirmed; no replay or successor was launched."
+        return None
 
     def list(
         self,
@@ -439,25 +561,10 @@ class SessionStore:
         with self._lock:
             existing = self._sessions.get(sid)
             existed = existing is not None
-            # #1115: a deleted session may still own LIVE remote SEP-2663 tasks. The
-            # deletion is never blocked or delayed by them, but the rows are captured
-            # here so they can be cancelled best-effort and migrated to the task
-            # store's holding path instead of vanishing with the session.
-            task_rows: dict[str, Any] = (
-                dict((existing.metadata or {}).get("mcp_tasks") or {})
-                if existing is not None
-                else {}
-            )
             self._sessions.pop(sid, None)
             if existed:
                 self._flush()
         if existed:
-            if task_rows:
-                from clio_agent.gact.mcp_task_store import (  # noqa: PLC0415 - keep leaf
-                    notify_session_deleted,
-                )
-
-                notify_session_deleted(sid, task_rows)
             # P2.3 SessionEnd lifecycle hook (observation): fires exactly once, only
             # when a session actually existed and was removed.
             from clio_agent.gact.hooks import dispatch_session_end  # noqa: PLC0415
@@ -477,10 +584,12 @@ class SessionStore:
         add_tokens_input: int = 0,
         add_tokens_output: int = 0,
         add_cost_usd: Optional[float] = None,
+        usage_totals: tuple[int, int, float, bool] | None = None,
         mode: Optional[str] = None,
         edit_mode: Optional[str] = None,
         routing_mode: Optional[str] = None,
         approval_mode: Optional[str] = None,
+        approval_profile: Optional[str] = None,
         model: Optional[dict[str, str]] = None,
         agent: Optional[dict[str, str]] = None,
         metadata_patch: Optional[dict[str, Any]] = None,
@@ -497,12 +606,18 @@ class SessionStore:
         source for this turn" and leaves ``cost_usd``/``cost_known``
         untouched; pass a real float (0.0 included) only when the turn
         actually produced one, which is what flips ``cost_known`` True.
+        ``usage_totals`` replaces that projection with fixed totals, allowing a
+        finalized turn to retry a failed flush without accumulating twice.
         """
 
         with self._lock:
             sess = self._sessions.get(sid)
             if sess is None:
                 return None
+            if approval_profile is not None:
+                if approval_profile and approval_profile not in _SERVER_PROFILES:
+                    raise ValueError("Unknown server-owned approval profile")
+                sess.approval_profile = approval_profile
             if title is not None:
                 sess.title = title
             if status is not None:
@@ -527,6 +642,8 @@ class SessionStore:
             if add_cost_usd is not None:
                 sess.cost_usd += add_cost_usd
                 sess.cost_known = True
+            if usage_totals is not None:
+                sess.tokens_input, sess.tokens_output, sess.cost_usd, sess.cost_known = usage_totals
             if mode is not None and mode in {"plan", "edit", "architect"}:
                 sess.mode = mode
             if edit_mode is not None and edit_mode in {"diff", "whole", "patch"}:
@@ -551,6 +668,9 @@ class SessionStore:
             if agent is not None:
                 sess.agent = dict(agent)
             if metadata_patch is not None:
+                # Readers retain Session rows after get() releases the store lock.
+                # Publish a new mapping so an in-flight wire projection can finish
+                # iterating its old metadata while task/mail writers patch the row.
                 sess.metadata = merge_session_metadata(sess.metadata, metadata_patch)
             if archived is not None:
                 sess.archived = bool(archived)

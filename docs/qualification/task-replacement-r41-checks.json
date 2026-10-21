@@ -1,0 +1,29 @@
+{
+  "parent_core": "afe65d08ef840beab707b922066bbf54c5d59598",
+  "gact": "416601856a1e828f658fd59fe6bc5bc4f1129f05",
+  "marketplace": "43af7a011805ce55c63da4d49cc04b652af5dcf8",
+  "scope": [
+    "src/clio_agent/gact/task_runtime.py",
+    "src/clio_agent/gact/external_task_connections.py",
+    "tests/test_arc/test_external_inline_session_contracts.py",
+    "tests/test_gact/test_native_cancellation_dispatch.py",
+    "tests/test_gact/test_storage_http_task_ack.py",
+    "tests/test_gact/test_tool_instrumentation.py"
+  ],
+  "ruff": "pass",
+  "format": "pass",
+  "linux_mypy": "pass: --follow-imports silent; changed cases are typed; legacy untyped cases are not claimed checked",
+  "source_guard_cap": 800,
+  "behavior_executed": false,
+  "live_executed": false,
+  "independent_review": "pending on corrected tuple; R40 both NO-GO with one source finding each",
+  "old_import_audit_complete": false,
+  "broader_audit": {
+    "advisory_only": true,
+    "findings": 327,
+    "candidate_files": 51,
+    "revision": "R40 source plus in-progress metadata migration",
+    "scanned": 1094
+  },
+  "writable_state": "D:/Libraries/Documents/projects/clio-agent-task-qualification/.pytest-runtime"
+}

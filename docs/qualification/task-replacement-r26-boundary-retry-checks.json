@@ -1,0 +1,88 @@
+{
+  "controller_pid": 52532,
+  "created_at": "2026-10-15T01:48:55.938976+00:00",
+  "purpose": "R26 exact-node sequential Core/thread checks",
+  "source": "8f40aa8dcb28d6f520e7672eba9a79dd23defc9c",
+  "runtime_parent": "C:\\t26-r1",
+  "workers": 1,
+  "tests": [
+    {
+      "node": "tests/test_arc/test_task_boundary_contracts.py::test_readiness_failure_after_last_owner_flush_remains_recoverable",
+      "pid": 65700,
+      "birth": 1792028935.9795284,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_s": 23.44,
+      "output": ".                                                                        [100%]\n============================== warnings summary ===============================\ntests/test_arc/test_task_boundary_contracts.py::test_readiness_failure_after_last_owner_flush_remains_recoverable\n  C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent\\paths.py:114: FutureWarning: CLIO_USER_DIR is deprecated; migrate to CLIO_AGENT_HOME\n    root = resolve_root(role, home=base_home, env=source, platform=_platform())\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n------------------ generated xml file: C:\\t26-r1\\case-0.xml -------------------\n1 passed, 1 warning in 14.45s\nnanobind: leaked 18 instances!\n - leaked instance 000001D1741E2528 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001D16F757748 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001D19D5FC948 of type \"clio_cte_core_ext.Client\"\n - leaked instance 000001D1741E2758 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001D1741E2988 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001D16F757628 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001D1741E2848 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001D16F7578A8 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001D16F757568 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001D16F7574A8 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001D1741E27F8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001D1741E2898 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001D1741E26B8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001D1741E27A8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001D16F757468 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001D1741E2938 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001D1741E28E8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001D1741E29D8 of type \"clio_cte_core_ext.PoolQuery\"\nnanobind: leaked 3 types!\n - leaked type \"clio_cte_core_ext.Client\"\n - leaked type \"clio_cte_core_ext.UniqueId\"\n - leaked type \"clio_cte_core_ext.PoolQuery\"\nnanobind: leaked 38 functions!\n - leaked function \"__init__\"\n - leaked function \"AsyncGetOrCreateTag\"\n - leaked function \"AsyncGetBlobDefer\"\n - leaked function \"AsyncGetBlob\"\n - leaked function \"Broadcast\"\n - leaked function \"TemporalSearch\"\n - leaked function \"__init__\"\n - leaked function \"ToU64\"\n - leaked function \"DelBlob\"\n - leaked function \"AsyncGetContainedBlobs\"\n - leaked function \"AsyncPollTelemetryLog\"\n - leaked function \"\"\n - leaked function \"AsyncReorganizeBlob\"\n - leaked function \"AsyncPutBlob\"\n - leaked function \"RegisterTarget\"\n - leaked function \"AsyncPutBlobDefer\"\n - leaked function \"GetNull\"\n - leaked function \"DeferErrorCount\"\n - leaked function \"AsyncTagQuery\"\n - leaked function \"__init__\"\n - leaked function \"SemanticSearch\"\n - leaked function \"\"\n - leaked function \"AsyncGetBlobSize\"\n - leaked function \"Local\"\n - leaked function \"BlobQuery\"\n - leaked function \"AwaitPutsUntilSpace\"\n - leaked function \"\"\n - leaked function \"PollTelemetryLog\"\n - leaked function \"\"\n - leaked function \"Dynamic\"\n - leaked function \"TagQuery\"\n - leaked function \"IsNull\"\n - leaked function \"AsyncDelBlob\"\n - leaked function \"AsyncRegisterTarget\"\n - leaked function \"AsyncBlobQuery\"\n - leaked function \"AsyncTemporalSearch\"\n - leaked function \"ReorganizeBlob\"\n - leaked function \"AsyncSemanticSearch\"\nnanobind: this is likely caused by a reference counting issue in the binding code.\nSee https://nanobind.readthedocs.io/en/latest/refleaks.html",
+      "junit": {
+        "tests": "1",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "14.225"
+      },
+      "properties": {},
+      "runtime_residue": [],
+      "pytest_absent": true
+    },
+    {
+      "node": "tests/test_arc/test_task_boundary_contracts.py::test_transport_health_timeout_retires_ping_without_cancelling_other_work",
+      "pid": 70024,
+      "birth": 1792028959.4311595,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_s": 20.81,
+      "output": ".                                                                        [100%]\n============================== warnings summary ===============================\ntests/test_arc/test_task_boundary_contracts.py::test_transport_health_timeout_retires_ping_without_cancelling_other_work\n  C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent\\paths.py:114: FutureWarning: CLIO_USER_DIR is deprecated; migrate to CLIO_AGENT_HOME\n    root = resolve_root(role, home=base_home, env=source, platform=_platform())\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n------------------ generated xml file: C:\\t26-r1\\case-1.xml -------------------\n1 passed, 1 warning in 11.26s\n",
+      "junit": {
+        "tests": "1",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "10.929"
+      },
+      "properties": {},
+      "runtime_residue": [],
+      "pytest_absent": true
+    },
+    {
+      "node": "tests/test_gact/test_turn_runner_contracts.py::test_running_sync_turn_does_not_poll_worker_liveness",
+      "pid": 36420,
+      "birth": 1792028980.2525113,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_s": 23.05,
+      "output": ".                                                                        [100%]\n============================== warnings summary ===============================\ntests/test_gact/test_turn_runner_contracts.py::test_running_sync_turn_does_not_poll_worker_liveness\n  C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent\\paths.py:114: FutureWarning: CLIO_USER_DIR is deprecated; migrate to CLIO_AGENT_HOME\n    root = resolve_root(role, home=base_home, env=source, platform=_platform())\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n------------------ generated xml file: C:\\t26-r1\\case-2.xml -------------------\n1 passed, 1 warning in 13.90s\nUsing legacy Agent config at C:\\Users\\jaime\\.config\\clio-agent; run migrate-paths to relocate it\n",
+      "junit": {
+        "tests": "1",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "13.673"
+      },
+      "properties": {},
+      "runtime_residue": [],
+      "pytest_absent": true
+    },
+    {
+      "node": "tests/test_gact/test_turn_runner_contracts.py::test_stop_holds_ownership_through_actual_thread_teardown",
+      "pid": 52344,
+      "birth": 1792029003.3119674,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_s": 20.77,
+      "output": ".                                                                        [100%]\n============================== warnings summary ===============================\ntests/test_gact/test_turn_runner_contracts.py::test_stop_holds_ownership_through_actual_thread_teardown\n  C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent\\paths.py:114: FutureWarning: CLIO_USER_DIR is deprecated; migrate to CLIO_AGENT_HOME\n    root = resolve_root(role, home=base_home, env=source, platform=_platform())\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n------------------ generated xml file: C:\\t26-r1\\case-3.xml -------------------\n1 passed, 1 warning in 12.44s\nUsing legacy Agent config at C:\\Users\\jaime\\.config\\clio-agent; run migrate-paths to relocate it\n",
+      "junit": {
+        "tests": "1",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "12.215"
+      },
+      "properties": {},
+      "runtime_residue": [],
+      "pytest_absent": true
+    }
+  ],
+  "status": "passed",
+  "parent_absent": true
+}

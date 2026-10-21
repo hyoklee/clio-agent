@@ -28,6 +28,8 @@ from clio_agent.gact.app import build_app
 WORKSPACE_ID = workspace_catalog_id()
 BASIC_ID = basic_catalog_id()
 
+pytestmark = pytest.mark.usefixtures("native_builtin_lifespan")
+
 
 def _session(tmp_path: Path, monkeypatch: Any) -> tuple[Any, str]:
     app = build_app(sessions_path=tmp_path / "sessions.json")

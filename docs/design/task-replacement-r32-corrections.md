@@ -1,0 +1,60 @@
+# R32 correction map after independent R31 review
+
+Source under review: core `3d929627`, GACT `30df56ed`, marketplace `9257bba5`. Both reviewers found the common ownership design coherent; neither accepted the candidate. See the retained Astra and Claude Code Fable R31 reports. Fresh runtime acceptance remains pending.
+
+## Replacement map
+
+| Finding | Correction in the existing owner | Behavior removed |
+| --- | --- | --- |
+| Stop can arrive before the conversation body or during finalization. | Bind the selected segment's retirement reconciliation before TurnRunner can discard its coroutine. Run it once after physical worker exit and before reservation release/re-admission, including no-worker startup and finalization. Recheck exact trigger identity/revision, withdrawal and input commitment. Keep a matching model-admission hold until failed recording reconciles; do not block accepted task execution or await a callback requiring this reservation's release. | Stop/input/activity reconciliation confined to the body's cancellation handler. |
+| Approved Stop completion may land before its gate release. | Recognize the frozen approval's exact result/context already recorded on its original assignment; release only the matching Question gate idempotently. Different results, epochs or cancellation must not be treated as this completion. | Refusing all terminal assignments during gate repair and leaving an applied approval stuck. |
+| Pause/resume leaves an empty pause-owner field that blocks gate cleanup. | Release a settled cancelled assignment's matching Question gate independently of pause-token cleanup. | Gate cleanup conditional on an unrelated pause-owner match. |
+| Peer collection without a subscription and interrupted collection lose native answer media. | Derive rendering from authorized immutable collected task results/read handles, independently of notification membership. Reconstruct it on input-commit retry; keep one recipient-input acknowledgement and existing bounds/references. | Notice-only rendering and a retry that acknowledges without reconstructing native input. |
+| Admission copies lifetime session history. | Intersect kind/active/session indexes inside TaskHistory, starting from the narrowest existing set. | Copying the whole session-handle set on every eligibility check. |
+| Runs and retained relay UI call removed APIs. | Replace assignment execution rows/actions with the existing task repository and common task controls. Remove special relay UI execution/status wiring; retain honest unavailable historical visibility and generic networking/MCP facilities. Inspect all callers before editing. | Requests to absent `/v1/runs`, `/v1/relay/*` and obsolete agent-task control paths. No restored registry or relay owner. |
+| Fresh assignments look yielded. | Create them with queued activity and use the shared UI status vocabulary. | Displaying never-started work as yielded. |
+| Subscription authorization uses the task owner's human identity. | Resolve the recipient's own confirmed session/assignment principal before publication and event fanout; fail closed if unavailable. | Impersonating the owner's human to authorize a subscriber. |
+| Invalid observation cursors can mutate subscriptions first. | Share complete pure cursor/request validation before subscription mutation, including version, recipient, handles and scan position. Retain writer-boundary authorization. | A partial early cursor check followed by mutation and only then complete validation. |
+
+## Input lifetime decisions
+
+- Stop preserves an uncommitted accepted trigger as held. Other accepted eligible pending work, or an explicit resume, allows it to continue in accepted order. An ordinary wake hint alone is not new work. Buffered feedback does not require another Send. This behavior was adjudicated as intentional.
+- An explicit trusted retry of that stopped trigger supersedes the exact held revision, as it already does for pre-input hook/execution failures. The original remains in history; it is not delivered alongside its retry.
+- Cancelling the assignment withdraws its exact uncommitted admitted trigger and its typed delegation/resume inputs while retaining their history. It does not withdraw unrelated pending messages. An already committed input or a subsequently revised/withdrawn trigger is unchanged.
+- Historical ambiguous input ownership is not guessed or automatically replayed.
+
+Persist assignment/turn/input-revision/content correlation in the existing Core mailbox record when an input is admitted. This permits exact cancellation after the reservation has retired, including Stop → cancel and service restart → cancel. It is not inferred from message recency or held reason. Apply trusted retry supersession before ordinary Stop-hold release, including a retry accepted during worker unwind. Explicit resume must handle stopped input rather than returning `already_running`.
+
+Preserve the human's existing submitted-feedback contract: Stop delivers already submitted pending feedback once, in accepted order and with its original IDs, after slot release without requiring another Send. Buffered eligible messages/results are real accepted work; repeated wake hints and health probes are not. Do not introduce a new Stop timestamp rule that silently suppresses accepted feedback or task outcomes. Stop/retry and queued-feedback races must be tested together.
+
+The Runs replacement covers canonical pagination and cross-session listing, all applicable task kinds, stable handles, owner/session navigation and supported controls. Remove unsupported detach/dismiss actions without reinterpreting them as cancellation or history deletion. Retain workflow/provenance navigation; an interrupted workflow tool call cannot determine its accepted children's execution state. Remove special relay requests from settings, infrastructure and navigation as well as Runs. Shared task listing/status decoding must not become another UI lifecycle owner.
+
+The reservation callback retains execution resources and exact source correlation only; it adds no execution registry, task state machine, scheduler or delivery acknowledgement. The conversation owner still records assignment decisions. Remove the superseded body-local Stop writer rather than retaining two paths.
+
+## Review observations requiring judgment
+
+Collection's idempotent common notice publication currently closes the terminal-write/publication race before the shared recipient-input acknowledgement. Removing it without another confirmed owner boundary would permit later duplicate automatic delivery. Keep that behavior unless the owner commit path replaces it completely. Query/observe still never acknowledge completion.
+
+Early cursor/message validation and writer-boundary authorization are not interchangeable: invalid requests must not create subscriptions/messages, and grants must be rechecked after asynchronous gaps. Remove redundant work only after confirming those boundaries remain covered. Do not introduce a new generic state object or coordinator solely to reduce line count; canonical history and passive projections retain their existing owner.
+
+## Construction and acceptance
+
+Finish this Core/GACT correction pass before executing behavior tests. Build regressions together for early/finalizing Stop, Stop/retry, cancel withdrawal, applied-completion gate recovery, pause/resume/cancel, unsubscribed peer media, failed-input-commit media recovery, principal separation and bounded admission work. Preserve current assertions and budgets.
+
+Use the prepared D: repository/environment. All bootstrap, cache, native Core and per-run test state stays inside it; register and settle its processes and data. Do not retry any rejected C: cleanup or touch manual-only processes. No Core/product qualification runs from the C: checkout.
+
+The pytest launcher is `uv run --frozen --no-sync python -B scripts/run_tests.py <case> -n 0`. It establishes the suite's existing owned run directory before pytest plugins load. Direct pytest also establishes isolation at the start of conftest, before application/dependency imports. Temp, application state, user/config/data directories and dependency caches resolve under `<checkout>/.pytest-runtime/run-.../`; escaping runtime-root overrides are rejected. CI uses the launcher without changing its shard, coverage or worker flags. The task model harness likewise rejects proof/state outside its repository and redirects child temp/state paths. These source changes have not been exercised; initial Core/GACT implementation still precedes behavior execution.
+
+Renew both reviews against the resulting committed Core/GACT pair. The next Fable snapshot must include the marketplace's actual root-level agent directories and relevant CI configuration; R31's selection omitted those marketplace files. Preserve bounded source identity receipts and clean the review copy/processes. Then run focused cases sequentially, the SDK lifecycle retry, F03 measurements, required CI and the complete fresh Q1–Q9/R1–R6 matrix. No release, installation or completion claim precedes those gates.
+
+## October 15 source progress
+
+The test isolation changes are committed at `c6ff3b8c` and `72e7993a`. The prepared D: execution checkout has those changes; no pytest or native Core service has launched. Suite cleanup now authenticates the recorded daemon birth time and confirms retirement rather than signalling a PID alone. Unknown ownership/settlement fails cleanup instead of deleting its state.
+
+R32 production changes are present in the Core/GACT working trees: reservation-retirement Stop reconciliation replaces the body-local writer; exact admitted input correlation supports cancellation and trusted retry; frozen completion/gate repair and pause-independent gate cleanup are present; Question collection/recovery uses authorized read handles; cursor/subscriber/admission corrections are present. Runs uses a shared indexed human task query with explicit pagination. Old live Runs/relay endpoints and unsupported actions are removed; workflow output retains ordered task provenance and the UI distinguishes unavailable step visibility from physical cancellation.
+
+The R32 regression batch is now constructed, including early/finalizing Stop, buffered feedback, trusted retry during unwind, cancellation after retirement, applied-completion gate repair, pause/resume/cancel, cancelled delegation withdrawal, unsubscribed peer answer media, input-commit recovery, cursor mutation and subscriber-principal boundaries. Trusted retry capture is shared by the human request boundary and these regression cases. Coupled Runs/relay UI tests are migrated to the common task contract, pagination, progressive disclosure and supported cancellation behavior. Removed relay lifecycle tests are not presented as a qualified replacement capability.
+
+Scoped Core Ruff/format and Linux-target Mypy across 34 source/test files pass. UI source/test formatting and scoped lint, plus all six existing frontend guards, pass. Guard thresholds were not increased; two stale brand-literal exemptions for removed relay text were deleted. A Windows-target Mypy pass previously exposed POSIX API diagnostics in unchanged infrastructure; it is not Windows type acceptance. TypeScript, behavior execution, renewed independent source review, CI and fresh live acceptance remain pending. These source checks do not qualify the runtime. Protected human-file hashes still match.
+
+Test bootstrap now also clears inherited Core connection settings and installs a unique per-run IPC namespace before dependency imports. A launcher exit before pytest session setup cleans its owned run only after child retirement is confirmed; unknown custody retains state and fails cleanup. The regression batch includes a real plugin-import containment probe and cleanup identity cases, but none has executed yet. Tests and native Core will run only from the prepared D: repository; the C: feature checkout is a source writer, not a test deployment.

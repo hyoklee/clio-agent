@@ -11,20 +11,23 @@ import dspy
 import pytest
 
 from clio_agent.arc.memory import ARCMemory
+from clio_agent.arc.task_types import MailItem
+from clio_agent.gact import context as ctx
 from clio_agent.gact import goal as goal_mod
 from clio_agent.gact.agents.clio_react import ClioReAct
 from clio_agent.gact.autonomy_guard import goal_redrive_is_current
 from clio_agent.gact.goal import GoalJudgement, arm_goal, dispatch_goal_at_finalize
 from clio_agent.gact.goal_evidence import _build_transcript
-from clio_agent.gact.message_intents import MessageIntentStore, PendingSteer
+from clio_agent.gact.native_work import now
+from clio_agent.gact.task_publication import publish_task_notice
 from tests._scripted_engine import Reply, calls, scripted_lm, wire
-from tests.test_gact.test_context_projection import _plane
+from tests.test_gact.task_records import record_delegation_fixture
 from tests.test_gact.test_goal import _app, _session
 
 
 @pytest.mark.parametrize("proposals", [1, 3])
 def test_mid_generation_steer_replans_before_any_proposed_tool_runs(
-    tmp_path: Path, proposals: int
+    clio_core_plane: Any, monkeypatch: pytest.MonkeyPatch, proposals: int
 ) -> None:
     ran: list[str] = []
 
@@ -32,11 +35,22 @@ def test_mid_generation_steer_replans_before_any_proposed_tool_runs(
         ran.append(command)
         return f"ran {command}"
 
-    arrivals = [[], [("steer", "Do not launch a browser; inspect the saved file.")]]
+    app, sid = clio_core_plane, ctx.active_session_id()
+    monkeypatch.setattr(app.state.conversations, "execution_gate", lambda _sid: "test_direct_loop")
+    from clio_agent.gact.agents import clio_react
 
-    def drain() -> list[tuple[str, str]]:
-        return arrivals.pop(0) if arrivals else []
+    original = clio_react._call_lm
+    submitted = False
 
+    def call(lm: Any, request: Any) -> Any:
+        nonlocal submitted
+        result = original(lm, request)
+        if not submitted:
+            submitted = True
+            _pending(app, sid, None, text="Do not launch a browser; inspect the saved file.")
+        return result
+
+    monkeypatch.setattr(clio_react, "_call_lm", call)
     lm, engine = scripted_lm(
         [
             calls(*[("run", {"command": "launch browser"})] * proposals, text="Trying a browser."),
@@ -44,40 +58,56 @@ def test_mid_generation_steer_replans_before_any_proposed_tool_runs(
             Reply(text="File checked."),
         ]
     )
-    arc = ARCMemory(data_dir=str(tmp_path / "arc"))
-    with _plane(arc, pending_loop_inbox_drain=drain), dspy.context(lm=lm):
+    with dspy.context(lm=lm):
         prediction = ClioReAct("question -> answer", tools=[run])(question="check the page")
     assert ran == ["inspect saved file"]
     assert prediction.answer == "File checked."
-    assert wire(engine.requests[1])[-2:] == [
-        ("assistant", [("text", "Trying a browser.")]),
-        ("user", [("text", "Do not launch a browser; inspect the saved file.")]),
-    ]
+    observed = wire(engine.requests[1])
+    assert observed[-2] == ("assistant", [("text", "Trying a browser.")])
+    assert observed[-1][0] == "user"
+    assert observed[-1][1][0][1].endswith("Do not launch a browser; inspect the saved file.")
     assert "launch browser" not in str(wire(engine.requests[2]))
 
 
-def test_child_result_does_not_discard_a_tool_proposal(tmp_path: Path) -> None:
+def test_child_result_does_not_discard_a_tool_proposal(
+    clio_core_plane: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from clio_agent.gact.agents import clio_react
+
+    app, sid = clio_core_plane, ctx.active_session_id()
+    monkeypatch.setattr(app.state.conversations, "execution_gate", lambda _sid: "test_direct_loop")
     ran: list[str] = []
+    original = clio_react._call_lm
+    posted = False
+
+    def call(lm: Any, request: Any) -> Any:
+        nonlocal posted
+        result = original(lm, request)
+        if not posted:
+            posted = True
+            child = record_delegation_fixture(
+                app,
+                sid,
+                handle="task_steer_child",
+                completed=True,
+                result={"answer": "child finished"},
+            )
+            publish_task_notice(app.state.task_history, child)
+        return result
 
     def inspect(path: str) -> str:
         ran.append(path)
         return "valid"
 
-    arrivals = [[], [("task_results", "child finished")]]
-
-    def drain() -> list[tuple[str, str]]:
-        return arrivals.pop(0) if arrivals else []
-
-    lm, engine = scripted_lm(
-        [calls(("inspect", {"path": "page.html"}), text="Checking."), Reply(text="done")]
-    )
-    arc = ARCMemory(data_dir=str(tmp_path / "arc"))
-    with _plane(arc, pending_loop_inbox_drain=drain), dspy.context(lm=lm):
+    monkeypatch.setattr(clio_react, "_call_lm", call)
+    lm, engine = scripted_lm([calls(("inspect", {"path": "page.html"})), Reply(text="done")])
+    with dspy.context(lm=lm):
         ClioReAct("question -> answer", tools=[inspect])(question="check")
     assert ran == ["page.html"]
-    history = wire(engine.requests[1])
-    assert history[-1] == ("user", [("text", "[clio: task_results]\nchild finished")])
-    assert history[-2][0] == "tool"
+    observed = wire(engine.requests[1])
+    assert observed[-2][0] == "tool"
+    assert observed[-1][0] == "user" and "child finished" in observed[-1][1][0][1]
 
 
 def _message(id: str, role: str, *parts: Any, **metadata: Any) -> NS:
@@ -194,24 +224,34 @@ def test_truncated_owner_retains_steer_and_harness_injections_remain_algorithmic
     assert "user: continue" not in transcript
 
 
-def _pending(app: Any, sid: str, tmp_path: Path, *, state: str = "pending") -> None:
-    app.state.message_intents = MessageIntentStore(tmp_path / "intents.json")
-    app.state.message_intents.add_pending(
-        PendingSteer(
-            message_id="human",
-            session_id=sid,
-            text="change scope",
-            accepted_at="2026-10-15T00:00:00Z",
-            state=state,
+def _pending(
+    app: Any,
+    sid: str,
+    tmp_path: Path | None,
+    *,
+    state: str = "pending",
+    text: str = "change scope",
+) -> None:
+    """Pending and interrupted-staging cases are unacknowledged Core input."""
+    del tmp_path, state
+    history = app.state.task_history
+    history.record_mail(
+        MailItem(
+            id="human",
+            recipient_session=sid,
+            kind="human",
+            created_at=now(),
+            sender_human="test-human",
+            content=history.write_content(sid, {"text": text}),
         )
     )
 
 
 @pytest.mark.parametrize("state", ["pending", "claimed"])
 def test_goal_does_not_judge_before_a_pending_steer_is_delivered(
-    tmp_path: Path, monkeypatch: Any, state: str
+    tmp_path: Path, arc: ARCMemory, monkeypatch: Any, state: str
 ) -> None:
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     arm_goal(app, sid, condition="finish")
     _pending(app, sid, tmp_path, state=state)
@@ -222,19 +262,19 @@ def test_goal_does_not_judge_before_a_pending_steer_is_delivered(
     monkeypatch.setattr(goal_mod, "run_llm_judge", judge)
     assert asyncio.run(dispatch_goal_at_finalize(app, session_id=sid, turn_id="t")) is None
     assert goal_mod._get_goal(app, sid)["iters_elapsed"] == 0
-    assert not app.state.loop_inboxes
+    assert not [item for item in app.state.task_history.pending_mail(sid) if item.kind == "goal"]
 
 
 @pytest.mark.parametrize("met", [True, False])
 def test_steer_arriving_during_judge_discards_the_stale_verdict(
-    tmp_path: Path, monkeypatch: Any, met: bool
+    tmp_path: Path, arc: ARCMemory, monkeypatch: Any, met: bool
 ) -> None:
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     arm_goal(app, sid, condition="finish")
 
     async def judge(*args: Any) -> GoalJudgement:
-        _pending(app, sid, tmp_path)
+        await asyncio.to_thread(_pending, app, sid, tmp_path)
         await asyncio.sleep(0)
         return GoalJudgement(met=met, reason="old verdict")
 
@@ -243,22 +283,26 @@ def test_steer_arriving_during_judge_discards_the_stale_verdict(
     goal = goal_mod._get_goal(app, sid)
     assert goal["active"] and goal["iters_elapsed"] == 0
     assert goal["phase"] == "working"
-    assert not app.state.loop_inboxes
+    assert not [item for item in app.state.task_history.pending_mail(sid) if item.kind == "goal"]
 
 
-def test_pending_steer_does_not_bypass_an_explicit_goal_limit(tmp_path: Path) -> None:
-    app = _app(tmp_path)
+def test_pending_steer_does_not_bypass_an_explicit_goal_limit(
+    tmp_path: Path, arc: ARCMemory
+) -> None:
+    app = _app(tmp_path, arc)
     sid = _session(app)
     arm_goal(app, sid, condition="finish", max_goal_iters=1)
     _pending(app, sid, tmp_path)
     decision = asyncio.run(dispatch_goal_at_finalize(app, session_id=sid, turn_id="t"))
     assert decision is not None and decision.reason == "goal_max_iters"
-    assert app.state.message_intents.list_pending(sid)
-    assert not app.state.loop_inboxes
+    assert [item for item in app.state.task_history.pending_mail(sid) if item.kind == "human"]
+    assert not [item for item in app.state.task_history.pending_mail(sid) if item.kind == "goal"]
 
 
-def test_an_already_queued_goal_wake_yields_to_a_later_human_steer(tmp_path: Path) -> None:
-    app = _app(tmp_path)
+def test_an_already_queued_goal_wake_yields_to_a_later_human_steer(
+    tmp_path: Path, arc: ARCMemory
+) -> None:
+    app = _app(tmp_path, arc)
     sid = _session(app)
     goal = arm_goal(app, sid, condition="finish")
     metadata = {"goal_redrive": True, "goal_id": goal["goal_id"], "goal_iters": 0}
@@ -269,8 +313,8 @@ def test_an_already_queued_goal_wake_yields_to_a_later_human_steer(tmp_path: Pat
     assert goal_redrive_is_current(app, sid, {})
 
 
-def test_goal_wake_from_an_older_evaluation_cannot_replay(tmp_path: Path) -> None:
-    app = _app(tmp_path)
+def test_goal_wake_from_an_older_evaluation_cannot_replay(tmp_path: Path, arc: ARCMemory) -> None:
+    app = _app(tmp_path, arc)
     sid = _session(app)
     goal = arm_goal(app, sid, condition="finish")
     goal_mod._put_goal(app, sid, {**goal_mod._get_goal(app, sid), "iters_elapsed": 2})

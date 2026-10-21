@@ -18,13 +18,23 @@ from __future__ import annotations
 
 import base64
 import binascii
+import logging
+from collections.abc import Callable
 
 from clio_agent.errors import ClioError
 
-__all__ = ["BlobDecodeError", "BlobFrameError", "BlobNameDecodeError", "frame", "unframe"]
+__all__ = [
+    "BlobDecodeError",
+    "BlobFrameError",
+    "BlobNameDecodeError",
+    "frame",
+    "read_framed_blob",
+    "unframe",
+]
 
 _SEP = b":"
 _MAX_HEADER = 20  # digits of the length; a body is far below 10**19 characters
+_logger = logging.getLogger(__name__)
 
 
 class BlobFrameError(ClioError):
@@ -77,6 +87,28 @@ def frame(data: bytes) -> bytes:
     """The stored body of ``data``: its base64 text behind a length header."""
     text = base64.b64encode(data)
     return str(len(text)).encode("ascii") + _SEP + text
+
+
+def read_framed_blob(name: str, reported_size: int, read: Callable[[int], bytes | str]) -> bytes:
+    """Read a record, retrying its exact framed length once if size metadata lags.
+
+    Both reads undergo strict decoding. Genuinely truncated or malformed data
+    remains an error; this operation changes neither stored bytes nor metadata.
+    """
+    raw = read(reported_size)
+    try:
+        return unframe(name, raw)
+    except BlobFrameError as error:
+        body = raw.encode("ascii") if isinstance(raw, str) else bytes(raw)
+        required = body.index(_SEP) + 1 + int(error.details["declared"])
+        value = unframe(name, read(required))
+        _logger.warning(
+            "reason=clio_core_blob_size_stale name=%s reported=%s framed=%s",
+            name,
+            reported_size,
+            required,
+        )
+        return value
 
 
 def unframe(name: str, raw: bytes | str) -> bytes:

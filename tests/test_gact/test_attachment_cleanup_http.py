@@ -24,6 +24,9 @@ def test_unsent_file_and_source_cleanup_http(
         result = client.post("/v1/workspaces", json={"name": "drafts", "root_path": str(workspace)})
         assert result.status_code == 201, result.text
         wid = result.json()["id"]
+        session = client.post("/v1/sessions", json={"workspace_id": wid, "title": "Draft custody"})
+        assert session.status_code == 200, session.text
+        sid = session.json()["id"]
         base = f"/v1/workspaces/{wid}"
         for pending in (True, False):
             upload_id = f"upload-{pending}"
@@ -66,7 +69,11 @@ def test_unsent_file_and_source_cleanup_http(
         lease = client.post(source + "/draft").json()["id"]
         from tests.test_gact.storage_operation_helpers import complete_indexing
 
-        complete_indexing(client, source, client.post(source + "/link", json={"draft_id": lease}))
+        complete_indexing(
+            client,
+            source,
+            client.post(source + "/link", json={"draft_id": lease, "session_id": sid}),
+        )
         result = client.post(
             source + "/reference", json={"folder": True, "linked": True, "draft_id": lease}
         )

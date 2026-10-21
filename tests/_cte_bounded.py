@@ -116,5 +116,6 @@ def install() -> None:
     for name in _BOUNDED_METHODS:
         setattr(ClioCoreStore, name, _wrap_op(name, getattr(ClioCoreStore, name)))
     ClioCoreStore.scan = _wrap_scan(ClioCoreStore.scan)  # type: ignore[method-assign]
+    ClioCoreStore.scan_names = _wrap_scan(ClioCoreStore.scan_names)  # type: ignore[method-assign]
     ClioCoreStore.__init__ = _wrap_init(ClioCoreStore.__init__)  # type: ignore[method-assign]
     _installed = True

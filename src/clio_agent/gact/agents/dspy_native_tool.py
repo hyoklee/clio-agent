@@ -8,6 +8,8 @@ from collections.abc import Callable
 from typing import Any
 
 import dspy
+from jsonschema import Draft202012Validator
+from referencing import Registry
 
 
 class ClioNativeTool(dspy.Tool):
@@ -30,6 +32,8 @@ class ClioNativeTool(dspy.Tool):
             for arg_name, parameter in inspect.signature(func).parameters.items():
                 if parameter.default is None and arg_name in args:
                     schema = args[arg_name]
+                    if Draft202012Validator(schema, registry=Registry()).is_valid(None):
+                        continue
                     args[arg_name] = {"anyOf": [schema, {"type": "null"}]}
                     # An annotation describes the argument, including its null
                     # alternative. Keep it on the argument's public schema.

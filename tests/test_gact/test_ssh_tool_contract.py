@@ -65,12 +65,12 @@ def test_actual_outputs_conform_to_catalog_and_terminal(tmp_path: Path, command:
 @pytest.mark.usefixtures("ssh_peer", "host_agent_executor")
 def test_real_observer_records_input_output_and_structured_result(tmp_path: Path) -> None:
     from clio_agent.gact.runtime.globals import _gact_app_context, _tool_session_context
-    from tests.test_gact.test_tool_instrumentation import _observing_app
+    from tests.test_gact.test_tool_instrumentation import _instrument_in_app, _observing_app
 
     app, client, sid = _observing_app(tmp_path)
     try:
         client.patch(f"/v1/sessions/{sid}", json={"approval_mode": "bypass"}).raise_for_status()
-        (tool,) = instrument_tools([ssh_tools.build_ssh_execute_tool()])
+        (tool,) = _instrument_in_app(app, [ssh_tools.build_ssh_execute_tool()])
         with _gact_app_context(app), _tool_session_context(sid):
             token = context.set_session_id(sid)
             try:
@@ -137,7 +137,8 @@ def test_legacy_history_paging_and_export_use_retained_output_only() -> None:
     app = FastAPI()
     app.state.sessions = {"sid": object()}
     app.state.messages = {"sid": [SimpleNamespace(parts=[Part.model_validate(part)])]}
-    register_messages_routes(app, SimpleNamespace())
+    route_dependencies: Any = SimpleNamespace()  # This read-only route uses no cross-owner hooks.
+    register_messages_routes(app, route_dependencies)
     with TestClient(app) as client:
         page = client.get("/v1/sessions/sid/tools/call/presentation/terminal?cursor=2048")
         assert page.status_code == 200 and page.json()["text"] == text[2048:4096]

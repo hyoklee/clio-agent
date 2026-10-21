@@ -28,7 +28,7 @@ gpt-oss). Otherwise the child runs on its own/global level and its provenance
 records ``inherited: false, reason: "different_model"``. The parent's level is
 kept per parent TURN by :func:`record_turn_reasoning` (in memory, bounded, pruned
 with its session) and the child finds it through the ``parent_turn_id`` its
-AgentTask captured at spawn -- so a later turn of the parent cannot change what
+assignment captured at spawn -- so a later turn of the parent cannot change what
 an already-spawned background child inherits.
 """
 
@@ -122,21 +122,15 @@ def forget_session_reasoning(app: "FastAPI", session_id: str) -> None:
 
 
 def _parent_turn_reasoning(app: "FastAPI | None", user_msg: "Message") -> dict[str, str] | None:
+    """Read the fixed delegation turn carried by the Core-backed assignment."""
     metadata = user_msg.metadata if isinstance(user_msg.metadata, dict) else {}
-    task_id = str(metadata.get("agent_task_id") or "")
-    tasks = getattr(getattr(app, "state", None), "agent_task_registry", None)
-    task = tasks.get(task_id) if task_id and tasks is not None else None
-    parent_turn_id = str(getattr(task, "parent_turn_id", "") or "")
+    parent_turn_id = str(metadata.get("parent_turn_id") or "")
     if app is None or not parent_turn_id:
         return None
     record = _registry(app).get(parent_turn_id)
     if not isinstance(record, dict) or not record.get("level"):
         return None
-    # Only a level the parent's MESSAGE chose is inherited; an agent/global level
-    # already governs the child the same way.
-    if record.get("source") not in {"per_message", "parent_message"}:
-        return None
-    return record
+    return record if record.get("source") in {"per_message", "parent_message"} else None
 
 
 def apply_turn_reasoning(
@@ -157,7 +151,7 @@ def apply_turn_reasoning(
     level = message_reasoning_effort(user_msg)
     if level:
         return _with_level(agent_def, level, **{TURN_REASONING_SOURCE_KEY: "per_message"})
-    del session  # the parent turn is found through the child's AgentTask
+    del session  # the trusted message carries the fixed delegation turn
     parent = _parent_turn_reasoning(app, user_msg)
     if parent is None:
         return agent_def

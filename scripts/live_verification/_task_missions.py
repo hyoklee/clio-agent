@@ -25,7 +25,7 @@ def shell_input(workspace: Path) -> str:
     return "& " + command if os.name == "nt" else command
 
 
-def folder_input(proof: Path, kind: str) -> dict[str, Any]:
+def folder_input(proof: Path, kind: str, *, file_count: int | None = None) -> dict[str, Any]:
     """Create real owned files, below the production enumeration limit, without a fake adapter."""
     root = proof / "upstream"
     root.mkdir()
@@ -34,7 +34,9 @@ def folder_input(proof: Path, kind: str) -> dict[str, Any]:
     selected.write_bytes(payload)
     seed = root / "seed.txt"
     seed.write_bytes(b"owned indexing entry\n" * 32)
-    count = 48_000 if kind == "Indexing" else 24_000
+    count = file_count if file_count is not None else (48_000 if kind == "Indexing" else 24_000)
+    if not 0 < count <= 99_000:
+        raise ValueError("Owned storage workload must stay below the actual provider entry limit")
     for index in range(count):
         directory = root / f"group-{index // 500:03}"
         directory.mkdir(exist_ok=True)
@@ -78,8 +80,8 @@ def mission(kind: str, workspace: Path, *, source: dict[str, Any] | None = None)
     elif kind == "Download" and source is not None:
         submit = (
             f"Call connected_data_download(source_id={source['source_id']!r}, "
-            f"selected_paths={source['selected_paths']!r}, "
-            "description='Download owned live payload and directory selections')."
+            f"paths={source['selected_paths']!r}, "
+            "_clio_task_description='Download owned live payload and directory selections')."
         )
     else:
         raise ValueError(f"No mission for {kind}")

@@ -50,17 +50,33 @@ def _active() -> tuple[Any, str]:
 
 
 def cancel_schedule(app: Any, schedule_id: str) -> bool:
-    """Delete a schedule AND cancel its daemon-side deferred entry (cancel-both).
+    """Delete future fires, deferred retries and uncommitted accepted occurrences.
 
-    Shared by the ``cron_delete`` tool and the HTTP delete route so both close the same
-    orphan window: the store drop stops the due scan, and discarding the id from
-    ``deferred_schedules`` stops a queued busy-retry from resurrecting it."""
+    GACT serializes cancellation with its existing mailbox admission. Standalone
+    schedule-store clients have no conversation mailbox to withdraw from.
+    """
+    from contextlib import nullcontext
 
-    existed = app.state.schedules.delete(schedule_id)
-    deferred = getattr(app.state, "deferred_schedules", None)
-    if deferred is not None:
-        deferred.discard(schedule_id)
-    return existed
+    history = getattr(app.state, "task_history", None)
+    with history.serialized() if history is not None else nullcontext():
+        schedule = app.state.schedules.get(schedule_id)
+        deferred = getattr(app.state, "deferred_schedules", None)
+        if deferred is not None:
+            deferred.discard(schedule_id)
+        if schedule is None:
+            return False
+        # Close future admission first. If recording fails, this disabled row
+        # keeps accepted input gated until an explicit retry can finish deletion.
+        app.state.schedules.set_enabled(schedule_id, False)
+        if history is not None:
+            for item in history.pending_mail(schedule.session_id):
+                if item.kind != "schedule":
+                    continue
+                value = history.read_content(item.content)
+                metadata = value.get("metadata") if isinstance(value, dict) else None
+                if isinstance(metadata, dict) and metadata.get("schedule_id") == schedule_id:
+                    history.withdraw_mail(schedule.session_id, item.id)
+        return app.state.schedules.delete(schedule_id)
 
 
 def cancel_owned_schedule(app: Any, session_id: str, schedule_id: str) -> bool:

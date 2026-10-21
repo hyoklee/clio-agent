@@ -28,6 +28,8 @@ from clio_agent.gact.a2ui_producer import (
 )
 from clio_agent.gact.app import build_app
 
+pytestmark = pytest.mark.usefixtures("native_builtin_lifespan")
+
 WORKSPACE_ID = workspace_catalog_id()
 
 _ROWS = [{"t": 0, "v": 1.0}, {"t": 1, "v": 2.0}]

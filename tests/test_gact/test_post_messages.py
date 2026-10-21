@@ -20,9 +20,10 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from clio_agent.gact.app import build_app
@@ -51,6 +52,9 @@ class FakePrediction:
 class FakeClioAgent:
     """Minimal stand-in for ClioAgent. Records invocations so tests
     can assert on them without a real LM."""
+
+    _routing_mode_override: Any
+    _provider_config: Any
 
     def __init__(
         self,
@@ -137,18 +141,20 @@ class WedgedClioAgent(FakeClioAgent):
     poll finds the work finished and correctly settles ``end_turn`` (a finished
     turn is not stuck). Under a starved event loop that poll can land after the
     sleep ends, which made the timeout assertion depend on scheduling. Blocking
-    until ``release`` is set means only the watchdog can settle the turn.
-    ``returned`` fires once ``forward`` has exited, so a test can prove that
-    work finishing late does not rewrite the turn that already settled.
+    until ``release`` is set proves that the watchdog requests stopping while
+    retirement still waits for the actual provider thread. ``returned`` fires
+    once ``forward`` exits, before the timeout may settle.
     """
 
     def __init__(self) -> None:
         super().__init__(answer="too late")
+        self.entered = threading.Event()
         self.release = threading.Event()
         self.returned = threading.Event()
 
     def forward(self, question: str, session_id: str) -> Any:
         self.calls.append((question, session_id))
+        self.entered.set()
         try:
             if not self.release.wait(timeout=TURN_SIGNAL_BACKSTOP_S):
                 raise TimeoutError("test did not release the wedged turn")
@@ -171,10 +177,13 @@ class ProgressingSlowClioAgent(FakeClioAgent):
         self.steps = steps
         self.step_s = step_s
         self.bus: Any | None = None
+        self.started_at: float | None = None
+        self.progress_times: list[float] = []
 
     def forward(self, question: str, session_id: str) -> Any:
         from clio_agent.gact.events import Event
 
+        self.started_at = time.monotonic()
         self.calls.append((question, session_id))
         for i in range(self.steps):
             time.sleep(self.step_s)
@@ -186,6 +195,7 @@ class ProgressingSlowClioAgent(FakeClioAgent):
                         payload={"summary": f"phase {i}"},
                     )
                 )
+                self.progress_times.append(time.monotonic())
         return FakePrediction(answer=self.answer)
 
 
@@ -284,7 +294,7 @@ def test_turn_id_correlates_user_and_assistant_durably(client: TestClient) -> No
 
 
 def app_history(client: TestClient, sid: str) -> list[Any]:
-    return client.app.state.bus._history.get(sid, [])  # type: ignore[attr-defined]
+    return cast(FastAPI, client.app).state.bus._history.get(sid, [])
 
 
 def test_capabilities_and_provider_catalog_report_image_part_support(client: TestClient) -> None:
@@ -480,7 +490,8 @@ def test_running_turn_persists_exact_user_message_count(tmp_path: Path) -> None:
             f"/v1/sessions/{sid}/messages",
             json={"parts": [{"type": "text", "text": "hold this turn"}]},
         )
-        assert response.status_code == 200
+        assert response.status_code == 202
+        assert response.json()["task_handle"]
         # The turn is provably mid-flight: held inside the agent, not merely "posted".
         assert agent.entered.wait(TURN_SIGNAL_BACKSTOP_S), "turn never reached the agent"
 
@@ -684,6 +695,7 @@ def test_an_untyped_forward_failure_logs_its_traceback(
         sid = c.post("/v1/sessions", json={"title": "x"}).json()["id"]
         complete_turn(c, sid, "hi")
     [record] = [r for r in caplog.records if r.name == "clio_agent.gact.turn" and r.exc_info]
+    assert record.exc_info is not None
     assert "simulated agent failure" in str(record.exc_info[1])
     assert sid in record.getMessage()
 
@@ -1118,7 +1130,8 @@ def test_post_message_agent_override_executes_user_agent_for_one_turn(
                 "agent": {"id": "reviewer"},
             },
         )
-        assert ack.status_code == 200, ack.text
+        assert ack.status_code == 202, ack.text
+        assert ack.json()["task_handle"]
         user_id = ack.json()["message_id"]
 
         deadline = time.monotonic() + 10
@@ -1301,12 +1314,13 @@ def test_post_message_tool_user_agent_executes_registered_agent(
 
     def fake_tool_agent(base_agent: Any, agent_def: Any, question: str, session_id: str) -> Any:
         from clio_agent.tools.execution import current_tool_runtime
+        from clio_agent.tools.tool_observation import notify_tool_observer
 
         calls.append((agent_def.id, question, session_id))
         observer = current_tool_runtime().tool_observer
         assert observer is not None
-        observer("fs_read_file", {"path": "README.md"}, "started", None)
-        observer("fs_read_file", {"path": "README.md"}, "completed", None)
+        notify_tool_observer(observer, "fs_read_file", {"path": "README.md"}, "started")
+        notify_tool_observer(observer, "fs_read_file", {"path": "README.md"}, "completed")
         return FakePrediction(
             answer="TOOL_USER_AGENT_OK",
             selected_expert=agent_def.id,
@@ -1547,7 +1561,7 @@ def test_post_message_live_discovered_model_override_executes_and_records_route(
 
     from .conftest import complete_turn
 
-    client.app.state.provider_catalog = {
+    cast(FastAPI, client.app).state.provider_catalog = {
         "providers": [
             {
                 "id": "codex",
@@ -1578,7 +1592,12 @@ def test_post_message_live_discovered_model_override_executes_and_records_route(
         },
     )
     messages = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
-    user = next(row for row in messages if row["id"] == "msg_spark_route")
+    user = next(
+        row
+        for row in messages
+        if row["role"] == "user"
+        and row.get("metadata", {}).get("client_message_id") == "msg_spark_route"
+    )
 
     assert fake_agent.calls == [("route this turn", sid)]
     assert user["metadata"]["effective_model"] == {
@@ -1613,7 +1632,7 @@ def test_accepted_per_message_model_becomes_the_session_model(
 
     from .conftest import complete_turn
 
-    client.app.state.provider_catalog = {
+    cast(FastAPI, client.app).state.provider_catalog = {
         "providers": [
             {
                 "id": "codex",
@@ -1650,7 +1669,11 @@ def test_accepted_per_message_model_becomes_the_session_model(
         "codex",
         "gpt-5.3-cg-spark",
     )
-    updates = [e for e in client.app.state.bus._history.get(sid, []) if e.type == "session.updated"]
+    updates = [
+        e
+        for e in cast(FastAPI, client.app).state.bus._history.get(sid, [])
+        if e.type == "session.updated"
+    ]
     assert any(e.payload["model"]["model_id"] == "gpt-5.3-cg-spark" for e in updates)
 
 
@@ -1731,33 +1754,82 @@ def test_post_message_preserves_mismatched_session_model_when_global_lm_active(
 def _run_wedged_turn_to_timeout(tmp_path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     """Run one turn against a provider that never answers; return (assistant, session).
 
-    The provider is released only after the settled turn has been read, then the
-    test waits for ``forward`` to actually return and re-reads the transcript, so
-    work that finishes after the watchdog settled the turn is proven not to
-    rewrite it (#1377).
+    The explicit watchdog requests stopping. The slot and task remain active
+    until the held provider exits, then the timeout settles and discards its
+    late prediction. No terminal transcript is fabricated before retirement.
     """
 
-    from .conftest import complete_turn
+    from .conftest import settle_turn_slot
 
     set_config("limits.turn_timeout_s", 0.2)  # file-layer (file > env); #985 config-first
     agent = WedgedClioAgent()
     app = build_app(sessions_path=tmp_path / "sessions.json", agent=agent)
     with TestClient(app) as c:
         sid = _create_session(c)
+        stopping = threading.Event()
+
+        def observed(_revision: int) -> None:
+            current = app.state.task_history.latest_assignment(sid)
+            if current is not None and current.activity == "stopping":
+                stopping.set()
+
+        unlisten = app.state.task_history.listen(observed)
+        before = app.state.bus.latest_session_event_id([sid])
         try:
-            # complete_turn's documented 30s default absorbs the first dispatch's
-            # cold-process cost (PR #1375); the 0.2s window under test is unrelated.
-            assistant = complete_turn(c, sid, "hi")
-            sess = c.get(f"/v1/sessions/{sid}").json()
+            accepted = c.post(
+                f"/v1/sessions/{sid}/messages",
+                json={"parts": [{"type": "text", "text": "hi"}]},
+            )
+            assert accepted.status_code == 202, accepted.text
+            handle = accepted.json()["task_handle"]
+            user_id = accepted.json()["message_id"]
+            # Preserve complete_turn's existing 30s diagnostic budget across
+            # entry, stopping and settlement; the configured timeout stays 0.2s.
+            deadline = time.monotonic() + 30.0
+            assert agent.entered.wait(max(0.0, deadline - time.monotonic())), (
+                "turn never reached the provider"
+            )
+            assert stopping.wait(max(0.0, deadline - time.monotonic())), (
+                "watchdog did not request stopping"
+            )
+            assert app.state.turn_runner.busy(sid)
+            assert app.state.turn_runner.stop_requested(sid)
+            assert not agent.returned.is_set()
+            held = app.state.task_history.task_snapshot(handle)
+            assert held is not None and held.activity == "stopping" and held.terminal_at is None
+            pending = c.get(f"/v1/sessions/{sid}/messages").json()["messages"]
+            assert not any(
+                row["role"] == "assistant"
+                and not row.get("metadata", {}).get("live")
+                and row.get("stop_reason")
+                for row in pending
+            )
         finally:
             agent.release.set()
+            unlisten()
         if agent.calls:
             assert agent.returned.wait(timeout=TURN_SIGNAL_BACKSTOP_S)
+        remaining = deadline - time.monotonic()
+        assert remaining > 0, "turn did not retire within its existing 30s diagnostic budget"
+        assert (
+            wait_for_terminal_status(
+                app.state.bus, sid, after_event_id=before, backstop_s=remaining
+            )
+            == "error"
+        )
+        settle_turn_slot(c, sid, timeout=max(1.0, deadline - time.monotonic()))
+        assert not app.state.turn_runner.busy(sid)
+        messages = c.get(f"/v1/sessions/{sid}/messages").json()["messages"]
+        index = next(i for i, row in enumerate(messages) if row["id"] == user_id)
+        assert index > 0 and messages[index - 1]["role"] == "assistant"
+        assistant = messages[index - 1]
+        assert not assistant.get("metadata", {}).get("live")
+        sess = c.get(f"/v1/sessions/{sid}").json()
         after = c.get(f"/v1/sessions/{sid}/messages").json()["messages"]
         sess_after = c.get(f"/v1/sessions/{sid}").json()
 
     assert len(agent.calls) <= 1
-    # The late provider return changed nothing: same settled assistant row.
+    # The late prediction is discarded after physical retirement and remains settled.
     settled = next(m for m in after if m["id"] == assistant["id"])
     assert settled["stop_reason"] == "error"
     assert settled["error_info"]["error"] == "provider_timeout"
@@ -1837,7 +1909,19 @@ def test_post_message_progressing_turn_outlives_no_progress_window(
         assistant = complete_turn(c, sid, "hi", timeout=5.0)
         sess = c.get(f"/v1/sessions/{sid}").json()
 
-    assert assistant.get("error_info") is None
+    assert assistant.get("error_info") is None, {
+        "error": assistant.get("error_info"),
+        "forward_started": agent.started_at is not None,
+        "phase_count": len(agent.progress_times),
+        "phase_gaps_s": [
+            end - start
+            for start, end in zip(
+                [agent.started_at or 0.0, *agent.progress_times],
+                agent.progress_times,
+                strict=False,
+            )
+        ],
+    }
     assert assistant["stop_reason"] != "error"
     assert assistant["parts"][-1]["text"] == "progressing done"
     assert sess["status"] != "error"
@@ -1972,7 +2056,8 @@ def test_post_message_reserved_metadata_key_rejected_on_busy_steer_path(
             f"/v1/sessions/{sid}/messages",
             json={"parts": [{"type": "text", "text": "first"}]},
         )
-        assert first.status_code == 200, first.text
+        assert first.status_code == 202, first.text
+        assert first.json()["task_handle"]
 
         # Poll until the turn is actually in flight: a benign steer acks 202.
         deadline = time.monotonic() + 5.0
@@ -2083,7 +2168,7 @@ def test_post_message_reasoning_effort_with_unknown_levels_passes_through(
 
     from .conftest import complete_turn
 
-    client.app.state.lm_config = {
+    cast(FastAPI, client.app).state.lm_config = {
         "provider_id": "openai",
         "provider": "openai",
         "model": "gpt-undiscovered-9",
@@ -2121,7 +2206,11 @@ def test_post_message_reasoning_effort_is_applied_and_recorded(
     # KNOWN-levels path is what this test exercises.
     seed_litellm_cost_map()
     # A real active provider, so the recorded level is the provider-mapped one.
-    client.app.state.lm_config = {"provider_id": "openai", "provider": "openai", "model": "gpt-5"}
+    cast(FastAPI, client.app).state.lm_config = {
+        "provider_id": "openai",
+        "provider": "openai",
+        "model": "gpt-5",
+    }
     sid = _create_session(client)
     with_effort = complete_turn(
         client,
@@ -2136,7 +2225,9 @@ def test_post_message_reasoning_effort_is_applied_and_recorded(
         client, sid, "default please", json_override={"client_message_id": "msg_plain"}
     )
     messages = {
-        row["id"]: row for row in client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
+        row["metadata"]["client_message_id"]: row
+        for row in client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
+        if row["role"] == "user" and row.get("metadata", {}).get("client_message_id")
     }
 
     reasoning = with_effort["metadata"]["agent_runtime"]["reasoning"]

@@ -70,7 +70,6 @@ from clio_agent.gact.providers.selection_store import (
     persist_lm_selection,
     selection_status_fields,
 )
-from clio_agent.gact.relay_wiring import construct_agent_with_relay
 from clio_agent.gact.routes.provider_auth import supports_logout
 from clio_agent.gact.routes.provider_catalog_routes import register_provider_catalog_routes
 from clio_agent.gact.runtime.globals import _set_app_arc
@@ -591,13 +590,11 @@ def register_providers_routes(app: FastAPI, deps: "GactDeps") -> None:
                 # win over a from-scratch rebuild.
                 agent = _copy.copy(existing)
             else:
-                # Build the first agent directly with the selected, handshake-applied provider
-                # (never a throwaway ambient-default LM Studio agent first); the ARC is awaited
-                # off-loop, sharing any in-flight boot construction (server_boot).
-                agent = await construct_agent_with_relay(
-                    app,
-                    arc=await process_arc_off_loop(app),
-                    provider_config=cfg,
+                from clio_agent.agent import ClioAgent  # noqa: PLC0415
+
+                arc = await process_arc_off_loop(app)
+                agent = await asyncio.to_thread(
+                    ClioAgent, verbose=False, arc=arc, provider_config=cfg
                 )
             agent.rebind_lms(cfg)  # both paths need this cfg bound; done once, unconditionally
         except HTTPException:

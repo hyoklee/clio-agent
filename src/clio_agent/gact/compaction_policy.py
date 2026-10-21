@@ -140,6 +140,8 @@ def _units(live: Sequence[Any]) -> list[_Unit]:
             units[-1].ids.append(seg.id)
         elif kind in _STEP_KINDS:
             units.append(_Unit("step", turn, [seg.id]))
+        elif kind == "recipient_input" and seg.content.get("rendered_content"):
+            units.append(_Unit("user", turn, [seg.id], head=bool(seg.content.get("human_input"))))
         elif kind == "user":
             content = getattr(seg, "content", None)
             head = isinstance(content, Mapping) and "actor" not in content

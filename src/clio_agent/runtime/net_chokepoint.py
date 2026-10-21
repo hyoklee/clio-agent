@@ -288,7 +288,7 @@ class Chokepoint:
         with self._channels_lock:
             channel = self._channels.pop(child_id, None)
         if channel is not None:
-            _safe_close(channel.listener)
+            _close_listener(channel.listener)
             channel.thread.join(timeout=1.0)
 
     def _accept_loop(self, listener: socket.socket, child_id: str) -> None:
@@ -513,13 +513,13 @@ class Chokepoint:
         """Close every listener + all live tunnels and join the accept loops (idempotent)."""
         self._stopping.set()
         if self._listener is not None:
-            _safe_close(self._listener)
+            _close_listener(self._listener)
             self._listener = None
         with self._channels_lock:
             channels = list(self._channels.values())
             self._channels.clear()
         for channel in channels:
-            _safe_close(channel.listener)
+            _close_listener(channel.listener)
         with self._conns_lock:
             conns = list(self._conns)
             self._conns.clear()
@@ -571,6 +571,15 @@ def _copy(
             dst.shutdown(socket.SHUT_WR)
         except OSError:
             pass
+
+
+def _close_listener(listener: socket.socket) -> None:
+    """Wake an accept blocked on another thread before releasing its socket."""
+    try:
+        listener.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass  # Already closed or not connected; closing remains idempotent.
+    _safe_close(listener)
 
 
 def _safe_close(sock: socket.socket) -> None:

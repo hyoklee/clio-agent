@@ -1,0 +1,362 @@
+{
+  "verified_at": "2026-10-13T14:27:32.181421+00:00",
+  "scope": "Actual-model root Question repetitions; wider V3 task qualification remains incomplete",
+  "families": [
+    {
+      "proof": "D:\\Temp\\clio-v3-question-final-f3\\proof",
+      "head": "c5bcf10f18684644f7d43ecc9e589cc1bc9f3742",
+      "gact": "5809961b6de3e46b29518adecc9520bd66eed699",
+      "runtime_sha256": "cf8950814e8172d93736ff8689b5c532e516a3131068320b407efc4d4bca5d71",
+      "python": "3.14.6",
+      "libraries": {
+        "fastmcp": "4.0.0b5",
+        "dspy": "3.4.0",
+        "mcp": "2.0.0"
+      },
+      "baseline_elapsed_seconds": 51.06160710006952,
+      "baseline_pass": true,
+      "repetition_pass": true,
+      "cases": [
+        {
+          "cycle": 1,
+          "mode": "idle",
+          "session_id": "sess_dd21b16790fe",
+          "handle": "task_43b9f43f878f4f7d8b6ba8aef0bc45e3",
+          "assignment": "task_d8d8d2b58cbd4da0987ea8ce93c64c2d",
+          "human_successor": "task_8c0793605b7d462c80501b84bb48d0e3",
+          "wake_ids": [
+            "msg_user_9abf7f9a7378"
+          ],
+          "prior_segment": "idle",
+          "pass": true
+        },
+        {
+          "cycle": 1,
+          "mode": "stop",
+          "session_id": "sess_c9e719e38b95",
+          "handle": "task_feba15f8c4ca4cf3afecb1d89b5f0c6f",
+          "assignment": "task_3a05d7b43696490c8d7989df88d2b636",
+          "human_successor": "task_6b358ddb69554496baed191d9368b884",
+          "wake_ids": [
+            "msg_user_c4db6e58105a"
+          ],
+          "prior_segment": "cancelled",
+          "pass": true
+        },
+        {
+          "cycle": 2,
+          "mode": "idle",
+          "session_id": "sess_a890f25ed5e5",
+          "handle": "task_decb94f49fc3499ab598188983ba1191",
+          "assignment": "task_9979cb5af0184498aed3cfc93a9a8afc",
+          "human_successor": "task_6e3d022f4a29455f85edd7495dd3cbce",
+          "wake_ids": [
+            "msg_user_9eb9c5435b29"
+          ],
+          "prior_segment": "idle",
+          "pass": true
+        },
+        {
+          "cycle": 2,
+          "mode": "stop",
+          "session_id": "sess_3753bfb3c567",
+          "handle": "task_3208c9cd7d9742d982ddde1435a3fddf",
+          "assignment": "task_f9e150b7b603442ba94af3beed574715",
+          "human_successor": "task_8a0349b8fd254dd0954a2f2ff53cf852",
+          "wake_ids": [
+            "msg_user_120a947fdfb1"
+          ],
+          "prior_segment": "cancelled",
+          "pass": true
+        },
+        {
+          "cycle": 3,
+          "mode": "idle",
+          "session_id": "sess_06d47434baee",
+          "handle": "task_9ed3d8e283f0420c97588e4e4a4b5a85",
+          "assignment": "task_336ba1cfb7eb4303ac81c151a14ab451",
+          "human_successor": "task_904500be2def480ba779e8e9f01a9e28",
+          "wake_ids": [
+            "msg_user_2668c7e68db5"
+          ],
+          "prior_segment": "idle",
+          "pass": true
+        },
+        {
+          "cycle": 3,
+          "mode": "stop",
+          "session_id": "sess_f11a52c22867",
+          "handle": "task_75b2201be67f45198381265fca3b48ab",
+          "assignment": "task_1d8fae461fa9457ba85e727c80439f92",
+          "human_successor": "task_f5fd7f6b1b7a499c8e32d86c9d1b8cc2",
+          "wake_ids": [
+            "msg_user_95de46d36168"
+          ],
+          "prior_segment": "cancelled",
+          "pass": true
+        },
+        {
+          "cycle": 4,
+          "mode": "idle",
+          "session_id": "sess_c57a9ab23c36",
+          "handle": "task_e23057893f87472abc682f2a7172a1f6",
+          "assignment": "task_ad9301382fd345a9a99e67dd54d5f546",
+          "human_successor": "task_acf498ff137b4052801f6dec2b6ff8ed",
+          "wake_ids": [
+            "msg_user_b7101067c932"
+          ],
+          "prior_segment": "idle",
+          "pass": true
+        },
+        {
+          "cycle": 4,
+          "mode": "stop",
+          "session_id": "sess_420422c9c58d",
+          "handle": "task_0a5bb0ed574b4a5097ed2ea233b4a02f",
+          "assignment": "task_40d862524d4a4979ace399b8249482d2",
+          "human_successor": "task_9c759f1c4b3d4501b0d3afad64aaa549",
+          "wake_ids": [
+            "msg_user_5545394c2e9f"
+          ],
+          "prior_segment": "cancelled",
+          "pass": true
+        },
+        {
+          "cycle": 5,
+          "mode": "idle",
+          "session_id": "sess_6e8dcbd61829",
+          "handle": "task_e2bd6ac6ac184bbd8253df190a208f08",
+          "assignment": "task_f02314821e4547479c72f1e5d3eb55b1",
+          "human_successor": "task_ff694e3a9a8d4a398e1447febb91a34b",
+          "wake_ids": [
+            "msg_user_c8fa590f6ccd"
+          ],
+          "prior_segment": "idle",
+          "pass": true
+        },
+        {
+          "cycle": 5,
+          "mode": "stop",
+          "session_id": "sess_6fbdd1a51533",
+          "handle": "task_5372cbb82ab746208eeff47e96fb894e",
+          "assignment": "task_a0d7664d358c475f9a7ba44961ececc8",
+          "human_successor": "task_95531c8da8fe48b597f865ac34f9ced8",
+          "wake_ids": [
+            "msg_user_63c878dc0e4b"
+          ],
+          "prior_segment": "cancelled",
+          "pass": true
+        }
+      ],
+      "core_settled": {
+        "identity": [
+          60308,
+          1791900764.360223
+        ],
+        "runtime_absent": true,
+        "settled": true
+      },
+      "disposable_state_absent": {
+        "private-codex": true,
+        "private-claude": true,
+        "clio-home": true,
+        "clio-kit-cache": true,
+        "uv-cache": true,
+        "web-state": true,
+        "workspace": true
+      }
+    },
+    {
+      "proof": "D:\\Temp\\clio-v3-question-final-f2\\proof",
+      "head": "c5bcf10f18684644f7d43ecc9e589cc1bc9f3742",
+      "gact": "5809961b6de3e46b29518adecc9520bd66eed699",
+      "runtime_sha256": "cf8950814e8172d93736ff8689b5c532e516a3131068320b407efc4d4bca5d71",
+      "python": "3.14.6",
+      "libraries": {
+        "fastmcp": "4.0.0b5",
+        "dspy": "3.4.0",
+        "mcp": "2.0.0"
+      },
+      "baseline_elapsed_seconds": 47.001113799982704,
+      "baseline_pass": true,
+      "repetition_pass": true,
+      "cases": [
+        {
+          "cycle": 1,
+          "mode": "idle",
+          "session_id": "sess_aae79fc127a4",
+          "handle": "task_afd295964dec4e0e8c764aafec53c77a",
+          "assignment": "task_95200e0d8adf47e09eff1e78760af0ba",
+          "human_successor": "task_7aae0c21bc1749148a4072b787c3217b",
+          "wake_ids": [
+            "msg_user_163cd5673b85"
+          ],
+          "prior_segment": "idle",
+          "pass": true
+        },
+        {
+          "cycle": 1,
+          "mode": "stop",
+          "session_id": "sess_cf3d66d92447",
+          "handle": "task_1ad3a612e3634f1d8ad412cccefb0c6f",
+          "assignment": "task_35ae3e87c854417c9bb5afe847ef7b1d",
+          "human_successor": "task_4ac86e04644e4aada3b862862c78c793",
+          "wake_ids": [
+            "msg_user_6c7f2fae8b05"
+          ],
+          "prior_segment": "cancelled",
+          "pass": true
+        },
+        {
+          "cycle": 2,
+          "mode": "idle",
+          "session_id": "sess_e1f5a6049162",
+          "handle": "task_a586bc7b0f224fbf9f7b4480dc888b9a",
+          "assignment": "task_29b7551adc3e4ddfaf85cc6d1891ab28",
+          "human_successor": "task_6c857cc40e184c84ab6e2cfe87261f0f",
+          "wake_ids": [
+            "msg_user_e35368926695"
+          ],
+          "prior_segment": "idle",
+          "pass": true
+        },
+        {
+          "cycle": 2,
+          "mode": "stop",
+          "session_id": "sess_89a10b1cfc54",
+          "handle": "task_fb520d0b695f48768c78d1a89e67fe3f",
+          "assignment": "task_653d17bf71f744bdb2635e603dda29ab",
+          "human_successor": "task_4938b5b797af43d58cbe0a30c54e43fb",
+          "wake_ids": [
+            "msg_user_adee62e306d4"
+          ],
+          "prior_segment": "cancelled",
+          "pass": true
+        },
+        {
+          "cycle": 3,
+          "mode": "idle",
+          "session_id": "sess_89dc788d12f6",
+          "handle": "task_73b11aae9f8841e8ab8a30ee1605c642",
+          "assignment": "task_e9728a4e07f44d129ad299e1aaa05b01",
+          "human_successor": "task_4e2340ead4da46c58b25d0908f9a154d",
+          "wake_ids": [
+            "msg_user_a8aa7a5741df"
+          ],
+          "prior_segment": "idle",
+          "pass": true
+        },
+        {
+          "cycle": 3,
+          "mode": "stop",
+          "session_id": "sess_4af3a5f2ac33",
+          "handle": "task_4813edae020344928599353bc9830a66",
+          "assignment": "task_eb51a63e559d4c20a630e95076d0cf48",
+          "human_successor": "task_34fab4b6a03c475a87a33915c495d5af",
+          "wake_ids": [
+            "msg_user_8e8f5ff22b37"
+          ],
+          "prior_segment": "cancelled",
+          "pass": true
+        },
+        {
+          "cycle": 4,
+          "mode": "idle",
+          "session_id": "sess_f4ce8cfaa161",
+          "handle": "task_0b3f3253d4c948e3b232f70a38b8c121",
+          "assignment": "task_6562c44c942048799b405dc5b68f62e5",
+          "human_successor": "task_295a47732af8435ca6279f813b6aea40",
+          "wake_ids": [
+            "msg_user_bb05e650e84d"
+          ],
+          "prior_segment": "idle",
+          "pass": true
+        },
+        {
+          "cycle": 4,
+          "mode": "stop",
+          "session_id": "sess_580534a559b4",
+          "handle": "task_15bd02626ac04e86a255e5fa3f9646c8",
+          "assignment": "task_c0a8125e59704c3c809736057fdeb8cb",
+          "human_successor": "task_c8601a067c384b8b91c33767f3178b36",
+          "wake_ids": [
+            "msg_user_4c1b2a7f71ab"
+          ],
+          "prior_segment": "cancelled",
+          "pass": true
+        },
+        {
+          "cycle": 5,
+          "mode": "idle",
+          "session_id": "sess_aa5b059fd410",
+          "handle": "task_43fb5950b2c048f0a177973d54b1473b",
+          "assignment": "task_2d12c47166d14b9e9e49a700dcbc6582",
+          "human_successor": "task_88db4bc043ae49a0a371598f10dae8a7",
+          "wake_ids": [
+            "msg_user_48137f327293"
+          ],
+          "prior_segment": "idle",
+          "pass": true
+        },
+        {
+          "cycle": 5,
+          "mode": "stop",
+          "session_id": "sess_b2122187ca9b",
+          "handle": "task_7330e5eede134c499f3d9c23adc31fc0",
+          "assignment": "task_4ce8b12d59a94eadb96805d4a7f1cf5f",
+          "human_successor": "task_2f2e49c686df40bf86b7e51181cc3fdb",
+          "wake_ids": [
+            "msg_user_29a12b82cb94"
+          ],
+          "prior_segment": "cancelled",
+          "pass": true
+        }
+      ],
+      "core_settled": {
+        "identity": [
+          41240,
+          1791901229.2959344
+        ],
+        "runtime_absent": true,
+        "settled": true
+      },
+      "disposable_state_absent": {
+        "private-codex": true,
+        "private-claude": true,
+        "clio-home": true,
+        "clio-kit-cache": true,
+        "uv-cache": true,
+        "web-state": true,
+        "workspace": true
+      }
+    }
+  ],
+  "accepted_repetition_cycles": 20,
+  "failed_setup": {
+    "proof": "D:\\Temp\\clio-v3-question-final-f1\\proof",
+    "reason": "Operator passed display alias luna instead of canonical model ID gpt-6-luna",
+    "provider_errors": [
+      {
+        "error": "agent_error",
+        "message": "agent.forward raised: [codex_direct/luna] The 'luna' model is not supported when using Codex with a ChatGPT account.",
+        "details": {
+          "original_error": "LMProviderError",
+          "partial_output": false
+        },
+        "recoverable": true
+      }
+    ],
+    "accepted_tasks": 0,
+    "disposable_state_absent": {
+      "private-codex": true,
+      "private-claude": true,
+      "clio-home": true,
+      "clio-kit-cache": true,
+      "uv-cache": true,
+      "web-state": true,
+      "workspace": true
+    },
+    "pass": false
+  },
+  "website_cleanup_rejection": "D:/Temp/v3-site-cleanup-rejection-753.json"
+}

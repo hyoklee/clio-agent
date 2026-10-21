@@ -12,9 +12,11 @@ from pydantic import BaseModel, ConfigDict, StrictBool, StrictFloat, StrictInt
 
 from clio_agent import conf
 from clio_agent.arc import history_mode
-from clio_agent.gact.agent_task_limits import DEFAULT_MAX_SPAWN_DEPTH
+from clio_agent.gact.agent_task_limits import (
+    DEFAULT_MAX_CONCURRENT_AGENT_TASKS,
+    DEFAULT_MAX_SPAWN_DEPTH,
+)
 from clio_agent.gact.context_preferences_types import DEFAULT_AUTOCOMPACT_PCT
-from clio_agent.gact.turn_spawn_executor import DEFAULT_MAX_CONCURRENT_AGENT_TASKS
 from clio_agent.user_config_document import (
     USER_CONFIG_LOCK,
     read_document,
@@ -57,10 +59,10 @@ _DEFINITIONS = (
         "agent_tasks.max_concurrent",
         "CLIO_MAX_CONCURRENT_AGENT_TASKS",
         "Concurrent subagents",
-        "Maximum running child tasks at each nesting level across this service. Extra tasks queue. Agent-specific limits may be lower.",
+        "Maximum reserved or in-flight child model calls at each nesting level. Tools and waits release permits. Agent-specific inference limits may be lower.",
         "Subagents",
         float(DEFAULT_MAX_CONCURRENT_AGENT_TASKS),
-        "Applies immediately. Running tasks finish; queued tasks use the new limit.",
+        "Applies immediately to inference admission. Active model calls finish; waiting calls use the new limit.",
         minimum=0,
         integer=True,
         unlimited_value=0,

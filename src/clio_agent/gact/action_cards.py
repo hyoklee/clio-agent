@@ -33,13 +33,14 @@ import logging
 import uuid
 from typing import TYPE_CHECKING, Any, Optional
 
+from clio_agent.arc.task_types import TaskSnapshot
 from clio_agent.gact.parts import Part
+from clio_agent.gact.task_access import TaskAccess
 from clio_agent.runtime import trace
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
-    from clio_agent.gact.agent_tasks import AgentTask
 
 logger = logging.getLogger(__name__)
 
@@ -171,37 +172,6 @@ def emit_action_card_part(app: "FastAPI", session_id: str, part: Part) -> bool:
     return True
 
 
-def _calling_task(app: "FastAPI", session_id: str) -> tuple[Optional["AgentTask"], str]:
-    """The calling session's OWN :class:`~clio_agent.gact.agent_tasks.AgentTask` row.
-
-    Looked up by ``child_session_id == session_id`` over its parent's task index
-    (``AgentTaskRegistry.for_parent``) — the cheap, indexed lookup, since a spawned
-    child always knows its own ``parent_session_id``.
-
-    Returns:
-        ``(task, "")`` on success. On failure, two DISTINCT typed realities:
-        ``(None, "no_parent_session")`` when ``session_id`` has no
-        ``parent_session_id`` at all (a bare/root session, never spawned), or
-        ``(None, "task_row_missing")`` when it DOES have a parent but the
-        registry has no matching row (a race with the spawn record, or a
-        session predating the agent-task projection).
-    """
-
-    registry = getattr(app.state, "agent_task_registry", None)
-    if registry is None:
-        return None, "task_row_missing"
-    session = app.state.sessions.get(session_id)
-    parent_id = str(getattr(session, "parent_session_id", "") or "") if session is not None else ""
-    if not parent_id:
-        return None, "no_parent_session"
-    task = next(
-        (t for t in registry.for_parent(parent_id) if t.child_session_id == session_id), None
-    )
-    if task is None:
-        return None, "task_row_missing"
-    return task, ""
-
-
 def _coerce_stub_actions(raw: Any) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     """Coerce a model-supplied ``stub_actions`` argument into wire action rows.
 
@@ -259,6 +229,27 @@ def _coerce_stub_actions(raw: Any) -> tuple[list[dict[str, Any]], list[dict[str,
     return actions, skipped
 
 
+def _calling_assignment(app: Any, sid: str) -> tuple[TaskSnapshot | None, TaskSnapshot | None, str]:
+    """Resolve the active child and its permitted return-message destination."""
+    from clio_agent.gact import context
+
+    session = app.state.sessions.get(sid)
+    if session is None or not session.parent_session_id:
+        return None, None, "no_parent_session"
+    history = app.state.task_history
+    current = history.task_snapshot(context.active_assignment_handle())
+    if current is None or current.kind != "Subagent" or current.owner.session_id != sid:
+        return None, None, "assignment_unavailable"
+    parent = history.task_snapshot(current.owner.parent_handle or "")
+    if parent is None:
+        return None, None, "assignment_unavailable"
+    access = TaskAccess(history, app.state.conversations.caller(sid))
+    if not access.session_message_right(parent.owner.session_id):
+        return None, None, "return_channel_unavailable"
+    app.state.conversations.require_admission(current)
+    return current, parent, ""
+
+
 def build_raise_alert_card_tool(agent_def: Any) -> Any:
     """Build the ``raise_alert_card`` dspy.Tool (auto-attached runtime infrastructure).
 
@@ -314,10 +305,12 @@ def build_raise_alert_card_tool(agent_def: Any) -> Any:
 
         app = _ctx.active_app()
         sid = _ctx.active_session_id()
-        task, fail_reason = (
-            _calling_task(app, sid) if app is not None and sid else (None, "no_parent_session")
+        task, parent, fail_reason = (
+            _calling_assignment(app, sid)
+            if app is not None and sid
+            else (None, None, "no_parent_session")
         )
-        if task is None:
+        if task is None or parent is None:
             error = (
                 ALERT_CARD_NO_PARENT_ERROR
                 if fail_reason == "no_parent_session"
@@ -329,11 +322,11 @@ def build_raise_alert_card_tool(agent_def: Any) -> Any:
                 "error": error,
                 "message": (
                     "raise_alert_card requires a spawned-child session with a live "
-                    "parent AgentTask; this session has "
+                    "parent assignment; this session has "
                     + (
                         "no parent session at all."
                         if error == ALERT_CARD_NO_PARENT_ERROR
-                        else "a parent, but no matching AgentTask row."
+                        else "a parent, but no permitted active assignment."
                     )
                 ),
             }
@@ -343,7 +336,7 @@ def build_raise_alert_card_tool(agent_def: Any) -> Any:
                 "id": "discuss",
                 "label": "Discuss",
                 "enabled": True,
-                "behavior": {"kind": "focus_session", "handle_id": task.task_id},
+                "behavior": {"kind": "focus_session", "handle_id": task.handle},
             }
         ]
         stub_rows, skipped = _coerce_stub_actions(stub_actions)
@@ -357,7 +350,7 @@ def build_raise_alert_card_tool(agent_def: Any) -> Any:
             from clio_agent.gact.attention.finding_evidence import finding_attention_action
 
             evidence_action, uncertainty = finding_attention_action(
-                app, task.parent_session_id, task.task_id, attention_evidence
+                app, parent.owner.session_id, task.handle, attention_evidence
             )
             actions.insert(0, evidence_action)
             if uncertainty:
@@ -382,14 +375,14 @@ def build_raise_alert_card_tool(agent_def: Any) -> Any:
             actions=actions,
             agent_id=caller_expert_id,
         )
-        emitted = emit_action_card_part(app, task.parent_session_id, part)
+        emitted = emit_action_card_part(app, parent.owner.session_id, part)
         result: dict[str, Any] = (
-            {"emitted": True, "session_id": task.parent_session_id, "part_id": part.id}
+            {"emitted": True, "session_id": parent.owner.session_id, "part_id": part.id}
             if emitted
             else {
                 "emitted": False,
                 "reason": ALERT_CARD_PARENT_TRANSCRIPT_FROZEN,
-                "session_id": task.parent_session_id,
+                "session_id": parent.owner.session_id,
             }
         )
         if skipped:

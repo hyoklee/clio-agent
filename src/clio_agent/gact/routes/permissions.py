@@ -110,49 +110,6 @@ def register_permissions_routes(app: FastAPI, deps: "GactDeps") -> None:
 
     # ---- /v1/questions (unscoped attention lane) ----------------------
 
-    @app.get("/v1/questions")
-    async def list_all_user_questions(
-        status: str = "",
-        session_id: str = "",
-        limit: int = 100,
-    ) -> dict[str, Any]:
-        """List ask-user questions across every session, newest first.
-
-        The unscoped sibling of ``GET /v1/sessions/{sid}/questions`` and of
-        ``GET /v1/permissions``: the gact-tui attention lane needs "what is
-        waiting on me anywhere?" without fanning out one request per session.
-        The row shape is IDENTICAL to the per-session route (same
-        ``UserQuestion.model_dump(exclude_none=True)``), so a client renders
-        either response with one code path.
-
-        ``?status=pending`` narrows to unanswered questions; ``?session_id=``
-        narrows to one session (the same filter ``/v1/permissions`` accepts).
-        """
-
-        rows = list(app.state.user_questions.values())
-        total_before_filters = len(rows)
-        if session_id:
-            rows = [q for q in rows if q.session_id == session_id]
-        if status:
-            rows = [q for q in rows if q.status == status]
-        total = len(rows)
-        rows.sort(key=lambda q: str(q.created_at or ""), reverse=True)
-        if limit <= 0:
-            limit = 100
-        limit = min(limit, 500)
-        return {
-            "questions": [q.model_dump(exclude_none=True) for q in rows[:limit]],
-            "metadata": {
-                "session_id": session_id,
-                "status": status or "all",
-                "limit": limit,
-                "total": total,
-                "returned": min(total, limit),
-                "truncated": total > limit,
-                "total_before_filters": total_before_filters,
-            },
-        }
-
     @app.post("/v1/permissions/{pid}")
     async def respond_permission(pid: str, request: Request) -> Response:
         """Resolve a pending permission. Body: ``{action}`` where
@@ -162,6 +119,24 @@ def register_permissions_routes(app: FastAPI, deps: "GactDeps") -> None:
         """
 
         row = app.state.permissions.get(pid)
+        if row is None:
+
+            def projected() -> dict[str, Any] | None:
+                from clio_agent.gact.hooks.turn_approval import project
+                from clio_agent.gact.question_surface import question_view
+
+                task = app.state.task_history.task_snapshot(pid)
+                if (
+                    task is None
+                    or task.kind != "Question"
+                    or task.tool != "hook_defer"
+                    or task.owner.human_id != app.state.human_principal
+                ):
+                    return None
+                project(app, task, question_view(app, task))
+                return app.state.permissions[pid]
+
+            row = await run_off_loop(projected)
         if row is None:
             raise HTTPException(
                 status_code=404,
@@ -205,15 +180,20 @@ def register_permissions_routes(app: FastAPI, deps: "GactDeps") -> None:
             intercept = {"input": body["input"]}
         elif "result" in body:
             intercept = {"result": body["result"]}
-        await run_off_loop(
-            lambda: resolve_permission(
-                app,
-                pid,
-                action,
-                grantor=GRANTOR_USER,
-                intercept=intercept,
+        try:
+            await run_off_loop(
+                lambda: resolve_permission(
+                    app,
+                    pid,
+                    action,
+                    grantor=GRANTOR_USER,
+                    intercept=intercept,
+                )
             )
-        )
+        except (ValueError, PermissionError) as error:
+            raise HTTPException(
+                status_code=403 if isinstance(error, PermissionError) else 409, detail=str(error)
+            ) from error
         return Response(status_code=204)
 
     # ---- /v1/policies (SPEC §6.11.b permission policies) -------------

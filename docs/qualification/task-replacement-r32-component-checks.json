@@ -1,0 +1,84 @@
+{
+  "reviewed_core": "a529569d854d2a294016780ce3005c3392de3e42",
+  "reviewed_gact": "458313c3783e71051cd48d2f394412bc398236dd",
+  "latest_core": "504fc2329d62034a65c79751a9495645f0dafb72",
+  "latest_gact": "d0e03b5a14c95a6940fa3d98b0137cbf4f47e9eb",
+  "execution_repository": "D:/Libraries/Documents/projects/clio-agent-task-qualification",
+  "test_state": ".pytest-runtime/run-*/",
+  "execution": "individual selected pytest cases, sequential, -n 0",
+  "model_acceptance": false,
+  "passed": [
+    {
+      "case": "tests/test_test_runtime_isolation.py::test_launcher_isolates_plugin_imports_and_cleans_help_exit",
+      "core": "b69e9a3c",
+      "count": 1,
+      "duration_s": 15.66,
+      "proof": "Explicit plugin observed every asserted writable path inside the D repository, before application conftest. Child run absent after help exit."
+    },
+    {
+      "case": "tests/test_cte_isolation_cleanup.py::test_cleanup_does_not_signal_a_process_without_its_matching_recorded_identity[missing_birth]",
+      "core": "b69e9a3c",
+      "count": 1,
+      "duration_s": 12.05,
+      "proof": "Unconfirmed process identity refused; actual owned process remained alive until verified identity supplied, then retired."
+    },
+    {
+      "case": "tests/test_arc/test_task_retirement_contracts.py::test_stop_retirement_preserves_buffered_feedback_without_replaying_committed_input[admission]",
+      "core": "504fc232",
+      "count": 1,
+      "proof": "Real Core and TurnRunner; original IDs/order, Stop hold, no hint-only replay, accepted feedback continuation and clean retirement."
+    },
+    {
+      "case": "tests/test_arc/test_task_retirement_contracts.py::test_stop_retirement_preserves_buffered_feedback_without_replaying_committed_input[busy_write]",
+      "core": "504fc232",
+      "count": 1,
+      "proof": "Real Core and TurnRunner; original IDs/order, Stop hold, no hint-only replay, accepted feedback continuation and clean retirement."
+    },
+    {
+      "case": "tests/test_arc/test_task_retirement_contracts.py::test_stop_retirement_preserves_buffered_feedback_without_replaying_committed_input[final_write]",
+      "core": "504fc232",
+      "count": 1,
+      "proof": "Real Core and TurnRunner; original IDs/order, Stop hold, no hint-only replay, accepted feedback continuation and clean retirement."
+    },
+    {
+      "case": "tests/test_arc/test_task_retirement_contracts.py::test_stop_retirement_preserves_buffered_feedback_without_replaying_committed_input[recording_failure]",
+      "core": "504fc232",
+      "count": 1,
+      "proof": "Real Core and TurnRunner; original IDs/order, Stop hold, no hint-only replay, accepted feedback continuation and clean retirement."
+    }
+  ],
+  "retained_failures": [
+    {
+      "core": "a529569d",
+      "case": "test_launcher_isolates_plugin_imports_and_cleans_help_exit",
+      "reason": "Nested --help included unrelated application conftest startup and exceeded unchanged 30-second probe budget.",
+      "correction": "--noconftest isolates the explicitly loaded pre-plugin containment probe; timeout retained."
+    },
+    {
+      "core": "b69e9a3c",
+      "case": "Stop retirement [admission]",
+      "reason": "Final test assertion called Core pending_mail on the application loop.",
+      "correction": "Durable test reads moved through asyncio.to_thread; assertions unchanged."
+    },
+    {
+      "gact": "458313c",
+      "check": "TypeScript",
+      "reason": "Shared UI fixture retained removed detached/Detach/Dismiss fields.",
+      "correction": "Fixture migrated to the supported common task actions."
+    }
+  ],
+  "static": {
+    "core": "Scoped Ruff/format, Linux-target Mypy, removal/size/class/hidden-swallow guards pass.",
+    "gact": "Scoped Prettier/Oxlint, all six guards and both core/web TypeScript checks pass. TypeScript final pass after d0e03b5a."
+  },
+  "cleanup": {
+    "owned_test_processes_remaining": 0,
+    "run_directories_remaining": 0,
+    "remote_fable_source_absent": true,
+    "remote_fable_result_absent": true,
+    "local_review_removal": "New automatic-review rejection blocked by policy; command did not run. Exact .pytest-runtime/review/r32 and controller.py/fetch.py remain manual-only. Never retry/bypass or delete parent.",
+    "rejected_residue_bytes": 10084,
+    "active_environment": "D virtualenv/node_modules/caches retained for unfinished qualification."
+  },
+  "qualification": "Architecture conforms according to both R32 reviewers; source NO-GO. Full focused batch, legacy migration, required CI, F03, Q1-Q9 and R1-R6 remain unaccepted. Combined source adjudication requested from Astra."
+}

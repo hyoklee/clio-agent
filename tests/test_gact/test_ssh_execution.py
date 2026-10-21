@@ -224,6 +224,7 @@ def test_actual_approval_gate_precedes_connection(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, decision: str
 ) -> None:
     from clio_agent.gact.app import _gact_app_context, _tool_session_context
+    from tests.test_gact.task_records import record_assignment_fixture
     from tests.test_gact.test_a2ui_v3 import HEADERS, _session_client
 
     client, sid, _ = _session_client(tmp_path)
@@ -248,6 +249,9 @@ def test_actual_approval_gate_precedes_connection(
     with client:
         app = client.app
         assert isinstance(app, FastAPI)
+        # SSH must traverse admission for a confirmed assignment before asking
+        # permission or opening the connector, just like a production tool call.
+        record_assignment_fixture(app, sid)
         assert (
             client.patch(
                 f"/v1/sessions/{sid}", headers=HEADERS, json={"approval_mode": mode}

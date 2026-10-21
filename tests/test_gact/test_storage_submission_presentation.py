@@ -1,11 +1,12 @@
 """Source-task acceptance is not an unavailable inventory or a completed transfer."""
 
+from functools import partial
 from typing import Any
 
 import pytest
 
+from clio_agent.gact.agents.native_presenters import native_presentation
 from clio_agent.gact.storage.setup_tool import setup_presentation
-from clio_agent.gact.task_tools import task_presentation
 from clio_agent.gact.tool_result_presentation import ToolPresentation
 
 
@@ -31,7 +32,7 @@ def test_submission_has_a_truthful_typed_receipt(
         "status": status,
         "connection": {"source_id": "source_1", "state": "indexing"},
     }
-    for presenter in (setup_presentation, task_presentation):
+    for presenter in (setup_presentation, partial(native_presentation, "tasks")):
         for raw, structured in ((result, None), (None, result)):
             receipt = ToolPresentation.model_validate(presenter({}, raw, structured))
             assert receipt.summary == f"{kind} {summary}"
@@ -47,4 +48,59 @@ def test_submission_has_a_truthful_typed_receipt(
 @pytest.mark.parametrize("result", [{}, {"accepted": True}, {"accepted": True, "handle": ""}])
 def test_missing_task_identity_does_not_claim_an_acceptance(result: dict[str, Any]) -> None:
     """An incomplete return does not become a fake task handle."""
-    assert task_presentation({}, result, None)["summary"] == "0 task outcomes"
+    presentation = native_presentation("tasks", {}, result, None)
+    assert presentation["summary"] == "Tasks"
+    assert all(block["id"] != "task-submission" for block in presentation["blocks"])
+
+
+def test_spawn_and_question_receipts_keep_their_shared_presentation() -> None:
+    """Storage acceptance rendering cannot remove child navigation or Question state."""
+    spawn = native_presentation(
+        "tasks",
+        {},
+        {"accepted": True, "handle": "task_child", "kind": "Subagent", "session_id": "child"},
+        None,
+    )
+    assert any(
+        block.get("target") == "session" and block["uri"] == "child" for block in spawn["blocks"]
+    )
+    question = native_presentation(
+        "tasks",
+        {},
+        {
+            "accepted": True,
+            "handle": "task_question",
+            "kind": "Question",
+            "status": "input_required",
+        },
+        None,
+    )
+    assert any(
+        block.get("label") == "Question" and "input_required" in block.get("text", "")
+        for block in question["blocks"]
+    )
+    assert all(
+        block["id"] != "task-submission" for block in (*spawn["blocks"], *question["blocks"])
+    )
+
+
+@pytest.mark.parametrize("kind", ["Download", "Indexing"])
+def test_recording_uncertainty_keeps_its_error_without_claiming_completion(kind: str) -> None:
+    """A retained handle with uncertain recording remains distinguishable from normal acceptance."""
+    result = {
+        "accepted": True,
+        "handle": "task_uncertain",
+        "kind": kind,
+        "acceptance": "accepted_recording_unconfirmed",
+        "status": "task_state_uncertain",
+        "error": "Accepted work has unconfirmed recording; inspect its handle before retrying.",
+    }
+    for presenter in (setup_presentation, partial(native_presentation, "tasks")):
+        shown = presenter({}, result, None)
+        assert shown["status"] == "failed"
+        assert any(
+            block.get("severity") == "error" and result["error"] in block.get("text", "")
+            for block in shown["blocks"]
+        )
+        assert all(block.get("result_kind") != "completion" for block in shown["blocks"])
+        assert "requested" not in shown["summary"]

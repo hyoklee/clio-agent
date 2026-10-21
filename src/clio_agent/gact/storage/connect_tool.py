@@ -2,77 +2,144 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
-from typing import Any
-
-from fastapi import FastAPI
+from typing import TYPE_CHECKING, Any
 
 from clio_agent.gact import context
 from clio_agent.gact.agents.tool_instrumentation import native_tool
 from clio_agent.gact.permission_gate import _invoke_permission_gate
-from clio_agent.gact.storage.models import CreateSource, SourceRecord
-from clio_agent.gact.storage.service import StorageService
-from clio_agent.gact.storage.setup_tool import connected_data_status, setup_presentation
-from clio_agent.tools.task_call_context import require_admission
+from clio_agent.gact.storage.models import CreateSource, SourceConfiguration, SourceRecord
+from clio_agent.gact.storage.setup_tool import session_data_status, setup_presentation
+
+if TYPE_CHECKING:
+    from clio_agent.gact.storage.service import StorageService
 
 
-def connected_data_connect(
-    provider: str,
-    root: str,
-    label: str,
-    mode: str = "read_only",
-    configuration: dict[str, Any] | None = None,
+def approved_source(
+    service: StorageService, workspace_id: str, body: CreateSource
+) -> SourceRecord | None:
+    """Find an existing exact approval without creating a source or opening a transport."""
+    root = body.root
+    if body.provider in {"local", "obsidian"}:
+        from clio_agent.gact.storage.adapters import LocalSource
+
+        root = str(LocalSource(root, writable=body.mode != "read_only").root)
+    elif body.provider == "google_drive":
+        from clio_agent.gact.storage.drive import drive_folder_id
+
+        root = drive_folder_id(root)
+    return next(
+        (
+            record
+            for record in service.sources(workspace_id)
+            if record.connected
+            and record.principal == service.principal
+            and record.source.owner.clio_id == service.store.clio_id
+            and record.source.provider == body.provider
+            and record.source.root == root
+            and record.source.mode == body.mode
+            and record.configuration == body.configuration
+        ),
+        None,
+    )
+
+
+def connection_approval(
+    service: StorageService, workspace_id: str, arguments: dict[str, Any]
+) -> tuple[SourceRecord | None, dict[str, Any], str | None]:
+    """Validate an observed selection before approval, without attaching or indexing."""
+    if arguments["provider"] != "ndp":
+        body = CreateSource.model_validate(
+            {**arguments, "configuration": arguments.get("configuration") or {}}
+        )
+        return approved_source(service, workspace_id, body), arguments, None
+    from clio_agent.arc.task_types import argument_digest
+    from clio_agent.gact.storage.ndp_selection import NDPConnectionSelection, existing_selection
+
+    if arguments.get("mode", "read_only") != "read_only":
+        raise ValueError("NDP connections are read-only; download an editable local copy instead")
+    choice = NDPConnectionSelection.model_validate(arguments.get("configuration") or {})
+    dataset = service.ndp.selected(choice.endpoint_id, arguments["root"], choice.resource_ids)
+    with service.ndp_selection_lock:
+        existing = existing_selection(service, workspace_id, dataset)
+    return (
+        existing,
+        {
+            **arguments,
+            "endpoint": dataset.endpoint.name,
+            "resources": [item.name for item in dataset.resources],
+        },
+        argument_digest(dataset.model_dump(mode="json")),
+    )
+
+
+def prepare_connect(
+    app: Any,
+    arguments: dict[str, Any],
+    *,
+    human_action: bool = False,
+    session_id: str = "",
+    approved_source_id: str | None = None,
 ) -> dict[str, Any]:
-    """Attach a requested source to this workspace after permission approval.
-
-    Reuse an approved source with the same provider, location and access mode.
-    A new connection uses the normal approval gate, including bypass mode.
-    Default to read_only; working_copy stages edits for review, write_enabled
-    changes originals. Sign-in remains private and user-operated; if missing,
-    return the login action for an A2UI Button in the answer. No credentials
-    may be passed in configuration. Linking exposes references, not a shell mount.
-    A GitHub URL or a request to inspect, clone or work on a repository does not
-    request source attachment: use gh through the normal shell for that work.
-
-    NDP tools require an active NDP source in this workspace; if absent, use
-    Attach > NDP to select a dataset or connect an Endpoint, then continue on
-    the next turn. When enabled, discover with connected_data_search_ndp. Set root to the
-    returned dataset id, mode=read_only, and configuration to
-    {"endpoint_id": its endpoint_id, "resource_ids": [selected resource ids]}.
-    Only those server-observed resources are connected. Public HTTP resources
-    need no sign-in; protected resources return the private NDP login action.
-
-    When indexing is needed, return a durable Indexing task handle immediately;
-    acceptance is not a complete source manifest. Continue independent work and
-    use query_tasks, observe_tasks, wait_tasks, get_task_result or cancel_tasks
-    with the handle. Completion arrives at the next model iteration or wakes you
-    when idle; Conversation Stop leaves accepted indexing running. An already
-    linked source or a sign-in requirement returns its connection status directly.
-    """
-    app = context.active_app()
-    sid = context.active_session_id()
+    """Approve source attachment and reserve inputs before native indexing submission."""
+    provider, root, label = (arguments[key] for key in ("provider", "root", "label"))
+    mode, configuration = arguments.get("mode", "read_only"), arguments.get("configuration")
+    sid = session_id or context.active_session_id()
     session = app.state.sessions.get(sid) if app is not None and sid else None
     if app is None or session is None:
         raise ValueError("Source connection requires an active CLIO workspace session")
-    require_admission(app, sid)
     workspace = app.state.workspaces.get(session.workspace_id)
     if workspace is None:
         raise ValueError("The session workspace is unavailable on this CLIO")
     service = app.state.connected_storage
     if provider == "ndp":
-        existing = _ndp_connection(
-            app,
-            service,
-            session.workspace_id,
-            Path(workspace.root_path),
-            root,
-            label,
-            mode,
-            configuration or {},
+        from clio_agent.gact.storage.ndp_selection import (
+            NDPConnectionSelection,
+            existing_selection,
+            select_source,
         )
+
+        if mode != "read_only":
+            raise ValueError(
+                "NDP connections are read-only; download an editable local copy instead"
+            )
+        choice = NDPConnectionSelection.model_validate(configuration or {})
+        dataset = service.ndp.selected(choice.endpoint_id, root, choice.resource_ids)
+        with service.ndp_selection_lock:
+            existing = existing_selection(service, session.workspace_id, dataset)
+        if approved_source_id is not None and (
+            existing is None or existing.source.id != approved_source_id
+        ):
+            raise PermissionError("Approved NDP selection changed before execution")
+        if existing is None:
+            gate = (
+                getattr(app.state, "pending_permission_gate", None)
+                or app.state.make_permission_gate()
+            )
+            args = {
+                "provider": provider,
+                "root": root,
+                "label": label,
+                "mode": mode,
+                "configuration": choice.model_dump(),
+                "endpoint": dataset.endpoint.name,
+                "resources": [item.name for item in dataset.resources],
+            }
+            if not human_action and (
+                _invoke_permission_gate(
+                    gate,
+                    "connected_data_connect",
+                    args,
+                    {"kind": "native", "summary": f"Connect {label}"},
+                )
+                != "allow"
+            ):
+                raise PermissionError("Source connection was not approved")
+            existing = select_source(
+                service, session.workspace_id, dataset, Path(workspace.root_path)
+            )
     else:
-        existing = _ordinary_connection(
+        existing = _ordinary_source(
             app,
             service,
             session.workspace_id,
@@ -81,57 +148,30 @@ def connected_data_connect(
             root,
             label,
             mode,
-            configuration or {},
+            configuration,
+            human_action,
+            approved_source_id,
         )
-    return _finish_connection(app, sid, existing, label, root)
+    from clio_agent.gact.storage.ndp_source import public_selection
 
-
-def _ndp_connection(
-    app: FastAPI,
-    service: StorageService,
-    workspace_id: str,
-    workspace_root: Path,
-    root: str,
-    label: str,
-    mode: str,
-    configuration: dict[str, Any],
-) -> SourceRecord:
-    from clio_agent.gact.storage.ndp_selection import (
-        NDPConnectionSelection,
-        existing_selection,
-        select_source,
-    )
-
-    if mode != "read_only":
-        raise ValueError("NDP connections are read-only; download an editable local copy instead")
-    choice = NDPConnectionSelection.model_validate(configuration)
-    dataset = service.ndp.selected(choice.endpoint_id, root, choice.resource_ids)
-    with service.ndp_selection_lock:
-        existing = existing_selection(service, workspace_id, dataset)
-    if existing is not None:
-        return existing
-    gate = getattr(app.state, "pending_permission_gate", None) or app.state.make_permission_gate()
-    args = {
-        "provider": "ndp",
-        "root": root,
-        "label": label,
-        "mode": mode,
-        "configuration": choice.model_dump(),
-        "endpoint": dataset.endpoint.name,
-        "resources": [item.name for item in dataset.resources],
-    }
+    public_ndp = provider == "ndp" and public_selection(service.store, existing)
     if (
-        _invoke_permission_gate(
-            gate, "connected_data_connect", args, {"kind": "native", "summary": f"Connect {label}"}
-        )
-        != "allow"
+        provider in {"github", "google_drive", "globus", "ndp"}
+        and not public_ndp
+        and not service.auth.connected(existing)
     ):
-        raise PermissionError("Source connection was not approved")
-    return select_source(service, workspace_id, dataset, workspace_root)
+        status = session_data_status(app, sid)
+        status["connection"] = {"source_id": existing.source.id, "state": "sign_in_required"}
+        status["error"] = {
+            "code": "source_sign_in_required",
+            "message": "Sign in before indexing this source.",
+        }
+        return {"immediate_result": status}
+    return _index_request(app, sid, session.workspace_id, workspace.root_path, service, existing)
 
 
-def _ordinary_connection(
-    app: FastAPI,
+def _ordinary_source(
+    app: Any,
     service: StorageService,
     workspace_id: str,
     workspace_root: Path,
@@ -139,7 +179,9 @@ def _ordinary_connection(
     root: str,
     label: str,
     mode: str,
-    configuration: dict[str, Any],
+    configuration: dict[str, Any] | None,
+    human_action: bool,
+    approved_source_id: str | None,
 ) -> SourceRecord:
     body = CreateSource.model_validate(
         {
@@ -150,27 +192,17 @@ def _ordinary_connection(
             "configuration": configuration or {},
         }
     )
-    prepared = service._prepare_source(workspace_id, body, workspace_root)
-    existing = next(
-        (
-            record
-            for record in service.sources(workspace_id)
-            if record.connected
-            and record.principal == service.principal
-            and record.source.owner.clio_id == service.store.clio_id
-            and record.source.provider == prepared.source.provider
-            and record.source.root == prepared.source.root
-            and record.source.mode == prepared.source.mode
-            and record.configuration == prepared.configuration
-        ),
-        None,
-    )
+    existing = approved_source(service, workspace_id, body)
+    if approved_source_id is not None and (
+        existing is None or existing.source.id != approved_source_id
+    ):
+        raise PermissionError("Approved source access changed before execution")
     if existing is None:
         gate = (
             getattr(app.state, "pending_permission_gate", None) or app.state.make_permission_gate()
         )
         args = body.model_dump(mode="json")
-        if (
+        if not human_action and (
             _invoke_permission_gate(
                 gate,
                 "connected_data_connect",
@@ -180,27 +212,21 @@ def _ordinary_connection(
             != "allow"
         ):
             raise PermissionError("Source connection was not approved")
+        prepared = service._prepare_source(workspace_id, body, workspace_root)
         service.store.put("source", prepared.source.id, prepared)
         existing = prepared
     return existing
 
 
-def _finish_connection(
-    app: FastAPI, sid: str, existing: SourceRecord, label: str, root: str
+def _index_request(
+    app: Any,
+    sid: str,
+    workspace_id: str,
+    workspace_root: str,
+    service: StorageService,
+    existing: SourceRecord,
 ) -> dict[str, Any]:
-    service = app.state.connected_storage
     provider = existing.source.provider
-    from clio_agent.gact.storage.ndp_source import public_selection
-
-    public_ndp = provider == "ndp" and public_selection(service.store, existing)
-    if (
-        provider in {"github", "google_drive", "globus", "ndp"}
-        and not public_ndp
-        and not service.auth.connected(existing)
-    ):
-        result = connected_data_status()
-        result["connection"] = {"source_id": existing.source.id, "state": "sign_in_required"}
-        return result
     if not existing.linked_manifest_id:
         if provider == "github":
             from clio_agent.gact.storage.github_preflight import source_cli
@@ -214,41 +240,89 @@ def _finish_connection(
                 existing,
                 ["api", f"repos/{org}/{repo}/contents" + (f"/{folder}" if folder else "")],
             )
-        from clio_agent.gact.artifacts.observer_bridge import observer_call_id
 
-        invocation = observer_call_id()
-
-        async def submit() -> dict[str, Any]:
-            from clio_agent.gact.storage.indexing import start_index
-            from clio_agent.gact.storage.task_adapter import storage_handle
-
-            require_admission(app, sid)
-            operation = start_index(service, existing)
-            accepted = storage_handle(app, sid, operation, f"Index {label}: {root}", invocation)
-            accepted["connection"] = {"source_id": existing.source.id, "state": "indexing"}
-            return accepted
-
-        return asyncio.run_coroutine_threadsafe(submit(), app.state.mcp_app_loop).result()
-    result = connected_data_status()
+        return {
+            "source_id": existing.source.id,
+            "workspace_id": workspace_id,
+            "workspace_root": workspace_root,
+        }
+    result = session_data_status(app, sid)
     result["connection"] = {"source_id": existing.source.id, "state": "linked"}
-    return result
+    return {"immediate_result": result}
 
 
 def build_connected_data_connect_tool() -> Any:
     """Declare source attachment as an effectful, observed native tool."""
     return native_tool(
-        connected_data_connect,
+        _native_connect,
         name="connected_data_connect",
-        desc=connected_data_connect.__doc__,
+        desc="Connect and index an approved source folder. Returns an Indexing task handle immediately; files are downloaded only by connected_data_download. Use observe_tasks/wait_tasks or continue independent work; completion wakes an idle agent. cancel_tasks cancels explicitly. Stop leaves accepted indexing running. Existing links return their status; a sign-in requirement returns its connection status directly.",
         args={
             "provider": {"type": "string", "description": "Provider reported by source status."},
             "root": {"type": "string", "description": "Requested folder or repository location."},
             "label": {"type": "string", "description": "User-facing name for this source."},
             "mode": {"type": "string", "description": "read_only, working_copy or write_enabled."},
-            "configuration": {"type": "object", "description": "Nonsecret provider settings."},
+            "configuration": {
+                "anyOf": [
+                    SourceConfiguration.model_json_schema(),
+                    {
+                        "type": "object",
+                        "properties": {
+                            "endpoint_id": {"type": "string"},
+                            "resource_ids": {"type": "array", "items": {"type": "string"}},
+                        },
+                        "required": ["endpoint_id", "resource_ids"],
+                        "additionalProperties": False,
+                    },
+                    {"type": "null"},
+                ],
+                "description": "Nonsecret provider settings. For NDP use discovered endpoint_id and selected resource_ids; public resources require no sign-in.",
+            },
         },
         presentation=setup_presentation,
         title="Connect source",
+        domain="resources",
+        read_only=False,
+    )
+
+
+async def _native_connect(
+    provider: str,
+    root: str,
+    label: str,
+    mode: str = "read_only",
+    configuration: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Submit indexing through the application-owned native storage client."""
+    from clio_agent.gact.builtin_boundary import submit_native_tool
+
+    return await submit_native_tool(
+        "connected_data_connect",
+        {
+            "provider": provider,
+            "root": root,
+            "label": label,
+            "mode": mode,
+            "configuration": configuration,
+        },
+    )
+
+
+def build_connected_data_index_tool() -> Any:
+    """Declare explicit manifest refresh through the same native storage workload."""
+
+    async def index(source_id: str) -> dict[str, Any]:
+        from clio_agent.gact.builtin_boundary import submit_native_tool
+
+        return await submit_native_tool("connected_data_index", {"source_id": source_id})
+
+    return native_tool(
+        index,
+        name="connected_data_index",
+        desc="Refresh a connected folder's index and immediately receive an Indexing handle. Continue work or wait_tasks; Stop leaves it running. Failure or cancellation retains the previous manifest.",
+        args={"source_id": {"type": "string"}},
+        presentation=setup_presentation,
+        title="Refresh folder index",
         domain="resources",
         read_only=False,
     )

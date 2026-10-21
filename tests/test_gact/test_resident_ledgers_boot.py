@@ -100,6 +100,7 @@ def test_boot_settles_restart_interrupted_session_without_resident_body(
         "reason": "server_restart_interrupted",
         "previous_status": "running",
     }
+    app2.state.messages.clear()
     assert app2.state.messages.resident_count == 0
     recovered_messages = app2.state.message_store.load_session(sid)
     assert recovered_messages is not None

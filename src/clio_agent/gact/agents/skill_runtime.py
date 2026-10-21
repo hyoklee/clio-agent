@@ -736,7 +736,6 @@ def build_spawn_skill_task_tool(agent_def: "AgentDef", runtime: SkillRuntime) ->
         apply_spawn_skill_effect,
         parse_skill_effect,
     )
-    from clio_agent.gact.agents.spawn_runtime import emit_spawn_started  # noqa: PLC0415
     from clio_agent.gact.agents.tool_instrumentation import native_tool  # noqa: PLC0415
 
     spawnable: dict[str, Any] = {}
@@ -749,7 +748,7 @@ def build_spawn_skill_task_tool(agent_def: "AgentDef", runtime: SkillRuntime) ->
             spawnable[skill_id] = ref
     agent_id = str(getattr(agent_def, "id", "") or "")
 
-    def spawn_skill_task(skill_id: str, task: str) -> str:
+    async def spawn_skill_task(skill_id: str, task: str) -> dict[str, Any]:
         wanted = str(skill_id or "").strip()
         ref = spawnable.get(wanted)
         if ref is None:
@@ -757,22 +756,7 @@ def build_spawn_skill_task_tool(agent_def: "AgentDef", runtime: SkillRuntime) ->
                 f"skill {wanted!r} is not a declared child-task skill; "
                 f"available: {sorted(spawnable)}"
             )
-        output, spawned, child_id = apply_spawn_skill_effect(
-            ref, agent_id=agent_id, task=str(task or "")
-        )
-        app = _ctx.active_app()
-        session_id = _ctx.active_session_id()
-        assert app is not None and session_id
-        emit_spawn_started(
-            app,
-            session_id,
-            agent_def,
-            child_id,
-            str(task or "").strip(),
-            int(getattr(spawned, "depth", 0) or 0),
-            spawned,
-        )
-        return output
+        return await apply_spawn_skill_effect(ref, agent_id=agent_id, task=str(task or ""))
 
     return native_tool(
         spawn_skill_task,

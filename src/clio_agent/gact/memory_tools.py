@@ -1,12 +1,9 @@
-"""Policy-gated retained-memory tools for dynamic agents."""
+"""Compatibility names for session/transcript tools; Tasks is the default surface."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
-
-from clio_agent.gact.runtime.memory_search import _memory_search_response
-from clio_agent.gact.workspace_scope import GLOBAL_WORKSPACE_ID
 
 
 def _active() -> tuple[Any, str, Any]:
@@ -26,6 +23,26 @@ def _caller(agent_def: Any) -> dict[str, str]:
     return {"agent_id": str(getattr(agent_def, "id", "") or "main")}
 
 
+def _session_address(app: Any, session_id: str) -> dict[str, Any]:
+    """Link authorized recall results to stable mail and exact finite-run handles."""
+    from clio_agent.gact.task_access import TaskAccess
+
+    _, caller_id, _ = _active()
+    access = TaskAccess(app.state.task_history, app.state.conversations.caller(caller_id))
+    if session_id not in access.session_candidates("read"):
+        raise ValueError("Session is unavailable for this operation")
+    task = app.state.task_history.latest_assignment(session_id)
+    return {
+        "session_id": session_id,
+        "task_handle": task.handle if task else None,
+        "kind": task.kind if task else "Session",
+        "status": task.status if task else "unassigned",
+        "activity": task.activity if task else "idle",
+        "supported_actions": access.view(task)["supported_actions"] if task else [],
+        "message_target": session_id if access.session_message_right(session_id) else None,
+    }
+
+
 def _search_result(
     agent_def: Any,
     query: str,
@@ -33,7 +50,7 @@ def _search_result(
     limit: int,
     user_intent: str,
 ) -> dict[str, Any]:
-    from clio_agent.gact.routes.memory import _memory_tool_audit, _raise_memory_policy_denied
+    from clio_agent.gact.routes.memory import _memory_tool_audit
 
     app, session_id, active = _active()
     normalized_scope = scope.strip() or "session"
@@ -42,79 +59,13 @@ def _search_result(
     active_workspace = str(getattr(active, "workspace_id", "") or "")
     caller = _caller(agent_def)
 
-    if normalized_scope in {"global", "user", "user_global"}:
-        if not normalized_intent:
-            policy = {
-                "decision": "deny_global_requires_intent",
-                "scope": "global",
-                "workspace_id": active_workspace,
-                "target_workspace_id": GLOBAL_WORKSPACE_ID,
-                "user_intent": normalized_intent,
-            }
-            _raise_memory_policy_denied(
-                app,
-                tool_name="memory_search_sessions",
-                session_id=session_id,
-                target_session_id="",
-                caller=caller,
-                policy=policy,
-                query=query,
-            )
-        response = _memory_search_response(
-            app,
-            query=query,
-            workspace_id=GLOBAL_WORKSPACE_ID,
-            include_cross_session=True,
-            limit=bounded_limit,
-        )
-        policy_decision = "allow_global_user_intent"
-        policy_scope = "global"
-    elif normalized_scope in {"current_workspace", "workspace", "cross_session"}:
-        if not normalized_intent:
-            policy = {
-                "decision": "deny_cross_session_requires_intent",
-                "scope": "current_workspace",
-                "workspace_id": active_workspace,
-                "user_intent": normalized_intent,
-            }
-            _raise_memory_policy_denied(
-                app,
-                tool_name="memory_search_sessions",
-                session_id=session_id,
-                target_session_id="",
-                caller=caller,
-                policy=policy,
-                query=query,
-            )
-        response = _memory_search_response(
-            app,
-            query=query,
-            session_id=session_id,
-            workspace_id=active_workspace,
-            include_cross_session=True,
-            limit=bounded_limit,
-        )
-        response = response.model_copy(
-            update={
-                "searched_sessions": [
-                    candidate for candidate in response.searched_sessions if candidate != session_id
-                ],
-                "hits": [hit for hit in response.hits if hit.session_id != session_id],
-            }
-        )
-        policy_decision = "allow_same_workspace_user_intent"
-        policy_scope = "current_workspace"
-    else:
-        response = _memory_search_response(
-            app,
-            query=query,
-            session_id=session_id,
-            include_cross_session=False,
-            limit=bounded_limit,
-        )
-        policy_decision = "allow_same_session"
-        policy_scope = "session"
+    from clio_agent.gact.runtime.memory_search import agent_memory_search
 
+    response = agent_memory_search(
+        app, session_id, query=query, scope=normalized_scope, limit=bounded_limit
+    )
+    policy_decision = response.metadata["policy_decision"]
+    policy_scope = response.metadata["policy_scope"]
     audit = _memory_tool_audit(
         app,
         tool_name="memory_search_sessions",
@@ -135,7 +86,10 @@ def _search_result(
         "tool": "memory_search_sessions",
         "query": response.query,
         "searched_sessions": response.searched_sessions,
-        "hits": [hit.model_dump() for hit in response.hits],
+        "hits": [
+            {**hit.model_dump(), "agent_target": _session_address(app, hit.session_id)}
+            for hit in response.hits
+        ],
         "metadata": response.metadata
         | {
             "policy_decision": policy_decision,
@@ -178,7 +132,7 @@ def _summary_result(
             caller=caller,
             policy=policy,
         )
-    summary = _memory_session_summary(app, target_id)
+    summary = _memory_session_summary(app, target_id, caller_id=session_id)
     audit = _memory_tool_audit(
         app,
         tool_name="memory_read_session_summary",
@@ -197,6 +151,7 @@ def _summary_result(
     return {
         "tool": "memory_read_session_summary",
         "summary": summary,
+        "agent_target": _session_address(app, target_id),
         "metadata": {
             "policy_decision": policy.get("decision", ""),
             "policy_scope": policy.get("scope", ""),
@@ -306,17 +261,17 @@ def build_memory_search_tool(agent_def: Any) -> Any:
         name="memory_search_sessions",
         presentation="memory",
         domain="memory",
-        title="Search memory",
+        title="Search sessions (compatibility alias)",
         representation="row",
         desc=(
-            "Search retained session memory. Same-workspace or global search requires explicit "
-            "user intent and returns bounded provenance-bearing excerpts."
+            "Search retained transcript excerpts in your session, delegated tree and explicitly granted peers. "
+            "Scope authorized includes permitted sessions across workspaces. Intent text grants no rights."
         ),
         args={
             "query": {"type": "string", "description": "Text to find."},
             "scope": {
                 "type": "string",
-                "description": "session, current_workspace, or global.",
+                "description": "session, current_workspace, global, or authorized.",
             },
             "limit": {"type": "integer", "description": "Maximum matches from 1 through 50."},
             "user_intent": {
@@ -345,9 +300,9 @@ def build_memory_summary_tool(agent_def: Any) -> Any:
         name="memory_read_session_summary",
         presentation="memory",
         domain="memory",
-        title="Read session summary",
+        title="Read recent session activity (compatibility alias)",
         representation="row",
-        desc="Read a bounded summary of one retained session without returning its full transcript.",
+        desc="Compatibility alias for recent session activity. Prefer query_tasks and observe_tasks(view='transcript' or 'summary') on an authorized task handle.",
         args={
             "target_session_id": {"type": "string", "description": "Session to summarize."},
             "scope": {"type": "string", "description": "Requested memory scope."},
@@ -378,7 +333,7 @@ def build_memory_context_frame_tool(agent_def: Any) -> Any:
         name="memory_read_context_frame",
         presentation="memory",
         domain="memory",
-        title="Read context frame",
+        title="Read context frame (compatibility alias)",
         representation="row",
         desc=(
             "Read one bounded retained context frame with source and policy provenance. "

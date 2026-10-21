@@ -36,6 +36,8 @@ from clio_agent.gact.artifacts.proposals import (
 from clio_agent.gact.artifacts.records import ArtifactKind, Custody, Mechanism
 from clio_agent.gact.sessions import SessionStore
 
+pytestmark = pytest.mark.usefixtures("tool_declaration_scope")
+
 # --------------------------------------------------------------------------- #
 # Fakes: a minimal app whose state carries just what mint/emit/proposals read.
 # --------------------------------------------------------------------------- #

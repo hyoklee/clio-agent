@@ -27,29 +27,67 @@ final texts); the run's state is in clio-core and the session row points at it, 
 answer -- even after a restart -- resumes it at the agent's next forward
 (:func:`resume_pending`). The selected try's line then continues the conversation:
 this turn's own steps on the base scope are retired and the try's line is appended.
-A run that ends without a pick -- a new turn first, a dismissed or expired question --
-is closed as such (:mod:`variant_close`).
+A dismissed or explicitly expired Question closes its run (:mod:`variant_close`).
+Ordinary user feedback does not dismiss an open Question.
 """
 
 from __future__ import annotations
 
 import contextlib
 import functools
+import hashlib
 import threading
 import uuid
 from collections.abc import Callable, Mapping
 from contextvars import Context, copy_context
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import dspy
 
 from clio_agent import conf
+from clio_agent.arc.task_types import (
+    QuestionDefinition,
+    QuestionOption,
+    TaskOwner,
+)
 from clio_agent.errors import ClioError, MCPProtocolError
 from clio_agent.gact import context as _ctx
 from clio_agent.gact.agents import variant_lines
-from clio_agent.gact.agents.variant_close import PENDING_META, close_for_question, latest_question
-from clio_agent.gact.agents.variant_events import emit_selected, emit_try, try_context
+from clio_agent.gact.agents.variant_close import PENDING_META
+from clio_agent.gact.agents.variant_events import emit_try, try_context
 from clio_agent.gact.agents.variant_records import TryRecord, VariantRun, load_run, save_run
+from clio_agent.gact.agents.variant_records import new_variants_id as new_variants_id
+from clio_agent.gact.agents.variant_resume import (
+    _clear_pending as _clear_pending,
+)
+from clio_agent.gact.agents.variant_resume import (
+    _commit as _commit,
+)
+from clio_agent.gact.agents.variant_resume import (
+    _drafting_note as _drafting_note,
+)
+from clio_agent.gact.agents.variant_resume import (
+    _mark_selected as _mark_selected,
+)
+from clio_agent.gact.agents.variant_resume import (
+    _pending_runs as _pending_runs,
+)
+from clio_agent.gact.agents.variant_resume import (
+    _pick as _pick,
+)
+from clio_agent.gact.agents.variant_resume import (
+    _selected_result as _selected_result,
+)
+from clio_agent.gact.agents.variant_resume import (
+    resume_pending as resume_pending,
+)
+from clio_agent.gact.agents.variant_resume import (
+    resume_question as resume_question,
+)
+from clio_agent.gact.agents.variant_resume import (
+    variant_answer_problem as variant_answer_problem,
+)
 
 __all__ = [
     "DRAFT_TOOL",
@@ -96,11 +134,6 @@ class VariantDraftsFailed(ClioError):
             error_type=self.reason,
             details={"variants_id": run.variants_id},
         )
-
-
-def new_variants_id() -> str:
-    """A fresh, stable id for one run."""
-    return f"var_{uuid.uuid4().hex[:16]}"
 
 
 def max_n() -> int:
@@ -374,31 +407,8 @@ def _judge_spec(run: VariantRun) -> Any:
     return parse_module_variant(module, agent_id=run.agent_id)
 
 
-def _mark_selected(app: Any, run: VariantRun, index: int) -> TryRecord:
-    run.selected_index, run.status = index, "selected"
-    save_run(app, run)
-    emit_selected(run)
-    return run.try_at(index)
-
-
-def _drafting_note(run: VariantRun) -> str:
-    who = "you pick one" if run.judge == "user" else "the best is selected against the rubric"
-    if run.strategy == "refine":
-        what = f"one draft at a time, refined up to {run.n} drafts"
-    else:
-        what = f"{run.n} alternatives in parallel"
-    capped = f" ({run.n_requested} asked, capped at {run.n})" if run.n_requested > run.n else ""
-    return f"Drafting {what}{capped}; {who}. Rubric: {run.rubric}"
-
-
 def _pause(app: Any, run: VariantRun) -> None:
-    """Yield the drafts to the user as a ``choice`` question (surfaced after the turn)."""
-    from clio_agent.gact.artifacts.observer_bridge import observer_call_id  # noqa: PLC0415
-    from clio_agent.gact.ask_user_tool import (  # noqa: PLC0415
-        PENDING_ASK_USER_META,
-        ask_user_expires_at,
-    )
-    from clio_agent.gact.permission_delivery import attended_session_id  # noqa: PLC0415
+    """Post one common Core Question immediately; the assignment yields while it is open."""
 
     candidates = [t for t in run.tries if t.status == "completed"]
     if not candidates:
@@ -412,54 +422,85 @@ def _pause(app: Any, run: VariantRun) -> None:
         else ""
     )
     sid = _ctx.active_session_id()
-    run.status = "awaiting_pick"
-    save_run(app, run)
-    pending = {
-        "action": "ask_user",
-        "question": prompt,
-        "kind": "choice",
-        "choices": [
-            {"label": f"Draft {t.try_index + 1}", "value": t.scope, "description": t.text}
-            for t in candidates
-        ],
-        "allow_freeform": True,
-        "reason": f"Pick the draft that best meets: {run.rubric}",
-        # No default lifetime (as ask_user): only the window the agent asked for.
-        "expires_at": ask_user_expires_at(run.pick_expires_in_s),
-        "owner_session_id": sid,
-        "attended_session_id": attended_session_id(app, sid),
-        "tool_name": DRAFT_TOOL,
-        "invocation_id": observer_call_id() or f"{run.variants_id}:{len(run.tries)}",
-        "caller": {"agent_id": run.agent_id},
-        "surfaced": False,
-        "metadata": {
-            "variants_id": run.variants_id,
-            "variant": {
-                "strategy": run.strategy,
-                "judge": run.judge,
-                "n": run.n,
-                "rubric": run.rubric,
-                "refinable": refinable,
-                "candidates": [
-                    {"id": t.scope, "try_index": t.try_index, "text": t.text} for t in candidates
-                ],
+    history = app.state.task_history
+    with history.serialized():
+        assignment = history.task_snapshot(_ctx.active_assignment_handle())
+        if (
+            assignment is None
+            or assignment.kind not in {"Session", "Subagent"}
+            or assignment.owner.session_id != sid
+            or assignment.cancellation_requested_at is not None
+            or assignment.terminal_at is not None
+        ):
+            raise DraftAlternativesError(
+                "Posting a draft choice requires the confirmed current assignment"
+            )
+        stamp = datetime.now(timezone.utc)
+        invocation = f"{run.variants_id}:{len(run.tries)}"
+        handle = (
+            "task_"
+            + hashlib.sha256((sid + "\0variant-question\0" + invocation).encode()).hexdigest()
+        )
+        previous = history.task_snapshot(handle)
+        previous_definition = (
+            QuestionDefinition.model_validate(history.read_content(previous.details))
+            if previous is not None and previous.details is not None
+            else None
+        )
+        definition = QuestionDefinition(
+            prompt=prompt,
+            kind="choice",
+            allow_freeform=False,
+            source=DRAFT_TOOL,
+            options=tuple(
+                QuestionOption(
+                    label=f"Draft {item.try_index + 1}", value=item.scope, description=item.text
+                )
+                for item in candidates
+            ),
+            expires_at=previous_definition.expires_at
+            if previous_definition is not None
+            else (stamp + timedelta(seconds=run.pick_expires_in_s)).isoformat()
+            if run.pick_expires_in_s > 0
+            else None,
+            metadata={
+                "variants_id": run.variants_id,
+                "variant": {
+                    "strategy": run.strategy,
+                    "judge": run.judge,
+                    "n": run.n,
+                    "rubric": run.rubric,
+                    "refinable": refinable,
+                    "candidates": [
+                        {"id": item.scope, "try_index": item.try_index, "text": item.text}
+                        for item in candidates
+                    ],
+                },
             },
-        },
-    }
-    app.state.sessions.update(
-        sid,
-        metadata_patch={
-            PENDING_ASK_USER_META: pending,
-            PENDING_META: {"variants_id": run.variants_id, "agent_id": run.agent_id},
-        },
-    )
-
-
-def _commit(app: Any, run: VariantRun, index: int) -> TryRecord:
-    """The selected try's line continues the conversation on the base scope."""
-    record = _mark_selected(app, run, index)
-    variant_lines.record_winner(record.try_index, record.prefix_ids, cut_id=run.base_cut_id)
-    return record
+        )
+        # Retain the domain association before accepting its Question. A failed
+        # post remains discoverable by this exact run/handle after recovery.
+        run.question_id, run.status = handle, "awaiting_pick"
+        save_run(app, run)
+        if run.origin == "module_variant":
+            pending = _pending_runs(app, sid)
+            pending[run.variants_id] = {
+                "variants_id": run.variants_id,
+                "agent_id": run.agent_id,
+                "question_handle": handle,
+            }
+            app.state.sessions.update(sid, metadata_patch={PENDING_META: pending})
+        app.state.questions.create(
+            TaskOwner(
+                human_id=assignment.owner.human_id,
+                session_id=sid,
+                assignment_id=assignment.handle,
+                parent_handle=assignment.handle,
+            ),
+            definition,
+            invocation_id=invocation,
+            handle=handle,
+        )
 
 
 class _Settle:
@@ -565,24 +606,15 @@ def _draft(n: int, rubric: str, strategy: str, judge: str, expires_in_s: int = 0
             loop.variant_outcome = _Settle(app, run)
             return _selected_result(run)
         _pause(app, run)
-        loop.variant_outcome = _Settle(app, None)
+        loop.variant_claim.release()
     except BaseException:
         loop.variant_claim.release()  # a refused or failed draft leaves the turn free
         raise
     ready = sum(1 for t in run.tries if t.status == "completed")
     return (
-        f"{ready} draft(s) are shown to the user, who picks one. END YOUR TURN now: the "
-        "conversation continues from the user's pick."
-    )
-
-
-def _selected_result(run: VariantRun) -> str:
-    assert run.selected_index is not None
-    chosen = run.try_at(run.selected_index)
-    score = "" if chosen.score is None else f" (score {chosen.score:.2f})"
-    return (
-        f"Draft {chosen.try_index + 1} of {len(run.tries)} was selected{score}. It is the "
-        "answer the user gets; the turn ends with it."
+        f"{ready} draft(s) are shown to the user. Question handle: {run.question_id}. "
+        "Continue independent work, or use wait_tasks to collect the choice. "
+        "The answer uses the normal queued notification path."
     )
 
 
@@ -591,11 +623,12 @@ def build_draft_alternatives_tool() -> Any:
     from clio_agent.gact.agents.tool_instrumentation import native_tool  # noqa: PLC0415
 
     def draft_alternatives(
-        n: int,
-        rubric: str,
+        n: int = 1,
+        rubric: str = "",
         strategy: str = "best_of_n",
         judge: str = "user",
         expiresInSeconds: int = 0,  # noqa: N803 - public tool schema is camelCase (ask_user's)
+        question_handle: str | None = None,
     ) -> str:
         """Draft several alternative answers to the user's request and keep the best.
 
@@ -608,9 +641,30 @@ def build_draft_alternatives_tool() -> Any:
         ``best_of_n`` drafts ``n`` alternatives at once; ``refine`` improves one with
         feedback, up to ``n`` drafts. ``judge``: ``user`` shows the drafts to the user,
         who picks one (and may comment to refine it); ``lm`` scores them against
-        ``rubric``. The selected draft is your answer and the turn ends. If the user
-        sends a new message instead of picking, the drafts are dropped.
+        ``rubric``. A human choice returns a Question handle immediately; continue
+        independent work or wait_tasks for its answer. Then call this tool with
+        question_handle to collect the selected draft or apply the user's refinement
+        comment. Other arguments are ignored when resuming. Human choices do not
+        force the current turn to end or replace work done since drafting. The
+        Question remains open until answered or cancelled.
         """
+        if question_handle:
+            from clio_agent.gact.agents.clio_react import active_loop
+
+            loop = active_loop()
+            if loop is None:
+                raise DraftAlternativesError("Draft continuation requires an active agent")
+            result = resume_question(loop.agent, loop.inputs, question_handle)
+            if result.termination_reason == "variant_closed":
+                return "The draft Question was cancelled or expired."
+            return (
+                str(result.answer)
+                if result.termination_reason == "variant_selected"
+                else (
+                    f"Draft choice remains pending. Question handle: {result.question_handle}. "
+                    "Continue independent work or wait_tasks for the answer."
+                )
+            )
         return _draft(
             int(n),
             str(rubric or ""),
@@ -647,8 +701,12 @@ def build_draft_alternatives_tool() -> Any:
                 "type": "integer",
                 "description": (
                     "judge user only: optional window in seconds for the pick. Omit or 0: "
-                    "the drafts wait until the user picks, dismisses them or moves on."
+                    "the drafts wait until the user picks or dismisses them."
                 ),
+            },
+            "question_handle": {
+                "type": ["string", "null"],
+                "description": "Resume this exact answered draft Question; other arguments are ignored.",
             },
         },
     )
@@ -678,12 +736,44 @@ class UserJudgedVariant(dspy.Module):
 
     def forward(self, **kwargs: Any) -> Any:
         """Resume an answered run, or draft and yield the tries to the user."""
+        from clio_agent.gact.agents import clio_react_record
+        from clio_agent.gact.agents.clio_react import _head
         from clio_agent.gact.injection_parts import emit_injection  # noqa: PLC0415
+
+        # The parent owns the input. Candidate scopes deliberately do not collect
+        # session mail, so confirm the fixed parent input before forking any tries.
+        # This is the same recipient-input boundary used by the ordinary loop.
+        app = _ctx.active_app()
+        ordinary_feedback = False
+        if app is not None and _ctx.active_react_run() < 0:
+            owner = app.state.conversations
+            staged = owner.mail.stage(owner.caller(_ctx.active_session_id()))
+            ordinary_feedback = any(
+                item.kind in {"human", "composer", "peer"} for item in staged.items
+            )
+            arc, session, scope = clio_react_record.arc_scope()
+            recorder = clio_react_record.StepRecorder(
+                arc, session, scope, expert_id=self._clio_agent_id
+            )
+            recorder.expert_span_id = "variant-input-" + uuid.uuid4().hex
+            signature = getattr(self.inner, "signature", None)
+            if signature is None:
+                predictors = self.inner.named_predictors()
+                if len(predictors) != 1:
+                    raise DraftAlternativesError(
+                        "Variant input requires one declared input signature"
+                    )
+                signature = predictors[0][1].signature
+            recorder.user_message(_head(signature, kwargs))
+            recorder.commit_input(0)
 
         resumed = resume_pending(self.inner, kwargs)
         if resumed is not None:
+            if ordinary_feedback:
+                # Feedback is independent of a draft choice. Let the ordinary
+                # agent act on it without dismissing or replacing open Questions.
+                return self.inner(**kwargs)
             return resumed
-        app = _ctx.active_app()
         run = VariantRun(
             variants_id=new_variants_id(),
             session_id=_ctx.active_react_session(),
@@ -706,95 +796,3 @@ class UserJudgedVariant(dspy.Module):
             drafts.one_try(0)
         _pause(app, run)
         return dspy.Prediction(answer="", termination_reason="variant_pick_yield")
-
-
-def _clear_pending(app: Any, sid: str) -> None:
-    app.state.sessions.update(sid, metadata_patch={PENDING_META: {}})
-
-
-def _pick(run: VariantRun, question: Any) -> int:
-    """The try the user picked (typed error when the answer names none of the drafts)."""
-    chosen = list(question.selected_options or [])[:1]
-    for record in run.tries:
-        if chosen and record.scope == chosen[0] and record.status == "completed":
-            return record.try_index
-    raise DraftAlternativesError(f"the answer picks no draft of run {run.variants_id}: {chosen}")
-
-
-def resume_pending(agent: Any, inputs: Mapping[str, Any]) -> dspy.Prediction | None:
-    """Take up this agent's human-judged run once the user answered its question.
-
-    ``None`` when there is nothing to resume (no run waits on this agent, or its
-    question is still open, or it was dismissed or expired -- the run is closed as such,
-    if the close did not happen yet): the forward runs as usual. Otherwise the answer is
-    recorded
-    on the run; a Refine comment (below ``n`` tries) runs another try forked from the
-    pick and yields again; else BestOfN selects the pick and its line continues the
-    conversation -- the forward's answer is the pick's text, with no model call.
-    """
-    if _ctx.active_react_run() >= 0:
-        return None  # a try never resumes anything
-    app, sid = _ctx.active_app(), _ctx.active_session_id()
-    sessions = getattr(getattr(app, "state", None), "sessions", None)
-    row = sessions.get(sid) if sessions is not None and sid else None
-    pending = (getattr(row, "metadata", None) or {}).get(PENDING_META)
-    if not isinstance(pending, Mapping) or not pending.get("variants_id"):
-        return None
-    if pending.get("agent_id") != _ctx.active_react_scope():
-        return None
-    run = load_run(app, _ctx.active_react_session() or sid, str(pending["variants_id"]))
-    question = latest_question(app, run.variants_id)
-    if question is None or question.status == "pending":
-        return None
-    if question.status != "answered":  # cancelled or expired: closed without a pick
-        close_for_question(app, question)
-        return None
-    pick = _pick(run, question)
-    comment = str(question.answer or "").strip()
-    run.pick, run.comment, run.question_id, run.status = pick, comment, question.id, "answered"
-    lm = agent.get_lm() or dspy.settings.lm
-    drafts = _Drafts(
-        run,
-        try_module(agent, rubric=run.rubric if run.origin == DRAFT_TOOL else ""),
-        _candidate_inputs(inputs, run.rubric) if run.origin == DRAFT_TOOL else inputs,
-        lm,
-    )
-    drafts.save()
-    if run.strategy == "refine" and comment and len(run.tries) < run.n:
-        source = run.try_at(pick)
-        drafts.one_try(
-            len(run.tries),
-            source=source.scope,
-            keep_prefix=len(source.prefix_ids),
-            advice=comment,
-            forked_from=pick,
-        )
-        _pause(app, run)
-        return dspy.Prediction(answer="", termination_reason="variant_pick_yield")
-    record = _commit(app, run, drafts.select_pick(pick))
-    _clear_pending(app, sid)
-    return dspy.Prediction(
-        answer=record.text,
-        termination_reason="variant_selected",
-        variant_selection={
-            "variants_id": run.variants_id,
-            "variant": run.strategy,
-            "judge": "user",
-            "winning_index": record.try_index,
-            "pick": pick,
-            "comment": comment,
-        },
-    )
-
-
-def variant_answer_problem(question: Any, selected_options: list[str]) -> str | None:
-    """Why an answer to a drafts question is invalid (``None``: it is valid).
-
-    The answer is ``selected_options: [<draft id>]`` (the pick) plus an optional
-    ``answer`` text (the comment).
-    """
-    if not (getattr(question, "metadata", None) or {}).get("variants_id"):
-        return None
-    if len([s for s in selected_options if s]) != 1:
-        return "pick exactly one draft (selected_options: [<draft id>]); the answer is a comment"
-    return None

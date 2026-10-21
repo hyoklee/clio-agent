@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from fastapi.testclient import TestClient
-from pytest import MonkeyPatch, raises
+from pytest import MonkeyPatch, mark, raises
 
 from clio_agent.gact import a2ui as a2ui_module
 from clio_agent.gact import a2ui_store as a2ui_store_module
@@ -29,6 +29,11 @@ from clio_agent.gact.parts import Part
 from clio_agent.gact.protocol.constants import A2UI_V091
 from clio_agent.gact.protocol.v3.message import transcript_entities
 from clio_agent.gact.types import Message
+from tests.test_gact.input_capture import capture_inputs
+
+from .task_records import hold_model_segment
+
+pytestmark = mark.usefixtures("native_builtin_lifespan", "a2ui_session_lifespan")
 
 HEADERS = {
     "X-GACT-Version": "0.3",
@@ -836,10 +841,7 @@ def test_registered_form_action_gets_a_server_surface_update(
         json={"messages": [_create_message()]},
     )
 
-    def _spawn(coro: Any, **_kwargs: Any) -> None:
-        coro.close()
-
-    monkeypatch.setattr(app.state.turn_runner, "spawn", _spawn)
+    capture_inputs(app, monkeypatch)
     action = {
         "version": "v0.9.1",
         "action": {
@@ -862,7 +864,7 @@ def test_registered_form_action_gets_a_server_surface_update(
     assert body["status"] == "accepted"
     assert body["name"] == "form.submit"
     assert body["destination"] == "agent"
-    assert body["delivery"] == "start"
+    assert body["delivery"] == "steer"
     assert body["state"] == "delivered"
     assert "message_id" in body
     surface = app.state.a2ui_store.get(sid, "surface_1")
@@ -871,7 +873,7 @@ def test_registered_form_action_gets_a_server_surface_update(
     assert record["envelope"]["action"]["context"] == {"selection": "quarantine"}
     assert record["correlation"]["run_id"] == "run_1"
     assert record["state"] == "delivered"
-    assert record["delivery"] == "start"
+    assert record["delivery"] == "steer"
     message = next(m for m in reversed(app.state.messages[sid]) if m.role == "user")
     assert message.metadata["a2ui_action_context"] == {"selection": "quarantine"}
 
@@ -893,10 +895,7 @@ def test_action_route_requires_a2ui_negotiation_and_tolerates_extensions(
         json={"messages": [_create_message()]},
     )
 
-    def _spawn(coro: Any, **_kwargs: Any) -> None:
-        coro.close()
-
-    monkeypatch.setattr(app.state.turn_runner, "spawn", _spawn)
+    capture_inputs(app, monkeypatch)
     action = {
         "version": "v0.9.1",
         "action": {
@@ -924,7 +923,7 @@ def test_action_route_requires_a2ui_negotiation_and_tolerates_extensions(
     assert missing_version.json()["error"]["error"] == "unsupported_protocol"
     assert accepted.status_code == 200, accepted.text
     body = accepted.json()
-    assert body["delivery"] == "start"
+    assert body["delivery"] == "steer"
     surface = app.state.a2ui_store.get(sid, "surface_1")
     assert surface is not None
     [record] = surface.actions
@@ -1303,10 +1302,7 @@ def test_agent_submit_delivers_without_any_text_or_prompt_context(
     )
     assert define_response.status_code == 200
 
-    def _spawn(coro: Any, **_kwargs: Any) -> None:
-        coro.close()
-
-    monkeypatch.setattr(app.state.turn_runner, "spawn", _spawn)
+    capture_inputs(app, monkeypatch)
     action = {
         "version": "v0.9.1",
         "action": {
@@ -1323,7 +1319,7 @@ def test_agent_submit_delivers_without_any_text_or_prompt_context(
 
     assert dispatch_response.status_code == 200, dispatch_response.text
     body = dispatch_response.json()
-    assert body["delivery"] == "start"
+    assert body["delivery"] == "steer"
     assert body["state"] == "delivered"
     message = next(m for m in reversed(app.state.messages[sid]) if m.role == "user")
     assert message.metadata["a2ui_action_context"] == {"scope": "bounded_follow_up"}
@@ -1789,8 +1785,9 @@ def _agent_submit(
     }
 
 
-def test_agent_submit_queues_on_the_existing_inbox_while_a_turn_is_in_flight(
+def test_agent_submit_remains_core_pending_while_real_runner_is_busy(
     tmp_path: Path,
+    monkeypatch: MonkeyPatch,
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
     app = client.app
@@ -1801,9 +1798,10 @@ def test_agent_submit_queues_on_the_existing_inbox_while_a_turn_is_in_flight(
     )
     # A cancel flips the projected status while the turn keeps running, which is
     # exactly the window a status-based gate lets a second turn through.
+    hold_model_segment(app, sid, monkeypatch)
     app.state.sessions.update(sid, status="cancelled")
-    app.state.in_flight_turns[sid] = _LiveTurn()
     staged_users_before = sum(message.role == "user" for message in app.state.messages.get(sid, []))
+    pending_before = {item.id for item in app.state.task_history.pending_mail(sid)}
 
     response = client.post(
         f"/v1/sessions/{sid}/a2ui/actions",
@@ -1816,14 +1814,21 @@ def test_agent_submit_queues_on_the_existing_inbox_while_a_turn_is_in_flight(
     assert response.json()["state"] == "delivered"
     assert (
         sum(message.role == "user" for message in app.state.messages.get(sid, []))
-        == staged_users_before
+        == staged_users_before + 1
     )
-    [queued] = app.state.loop_inboxes[sid].snapshot()
-    assert queued.metadata["a2ui_action_context"] == {
+    [notice] = [
+        item
+        for item in app.state.task_history.pending_mail(sid)
+        if item.kind == "human" and item.id not in pending_before
+    ]
+    queued = app.state.task_history.read_content(notice.content)
+    assert queued["message"]["metadata"]["a2ui_action_context"] == {
         "text": "continue the analysis",
         "selected_station_ids": ["SGPS"],
     }
-    assert '"selected_station_ids":["SGPS"]' in queued.text
+    assert '"selected_station_ids":["SGPS"]' in queued["text"]
+    assert notice.id not in app.state.task_history.acknowledged_notifications(sid)
+    assert app.state.turn_runner.busy(sid)
     surface = app.state.a2ui_store.get(sid, "surface_1")
     assert surface is not None
     [record] = surface.actions
@@ -1842,10 +1847,7 @@ def test_agent_submit_starts_with_resolved_structured_surface_context(
         json={"messages": [_create_message()]},
     )
 
-    def _spawn(coro: Any, **_kwargs: Any) -> None:
-        coro.close()
-
-    monkeypatch.setattr(app.state.turn_runner, "spawn", _spawn)
+    capture_inputs(app, monkeypatch)
     response = client.post(
         f"/v1/sessions/{sid}/a2ui/actions",
         headers=HEADERS,
@@ -1854,7 +1856,7 @@ def test_agent_submit_starts_with_resolved_structured_surface_context(
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["delivery"] == "start"
+    assert body["delivery"] == "steer"
     assert body["state"] == "delivered"
     message = next(
         message for message in reversed(app.state.messages[sid]) if message.role == "user"
@@ -1870,34 +1872,29 @@ def test_agent_submit_starts_with_resolved_structured_surface_context(
     assert record["correlation"]["message_id"] == message.id
 
 
-def test_agent_submit_clears_a_stale_cancel_flag_before_staging(
+def test_agent_submit_after_stop_records_fresh_input(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
+    """A stopped segment does not poison later accepted UI input."""
     client, sid, _ = _session_client(tmp_path)
     app = client.app
     client.post(
-        f"/v1/sessions/{sid}/a2ui/messages",
-        headers=HEADERS,
-        json={"messages": [_create_message()]},
+        f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
-    app.state.cancel_flags.add(sid)
-    app.state.cancel_events[sid] = object()
-
-    def _spawn(coro: Any, **_kwargs: Any) -> None:
-        coro.close()
-
-    monkeypatch.setattr(app.state.turn_runner, "spawn", _spawn)
-
+    assert client.post(f"/v1/sessions/{sid}/cancel").status_code == 204
+    captured = capture_inputs(app, monkeypatch)
     response = client.post(
         f"/v1/sessions/{sid}/a2ui/actions",
         headers=HEADERS,
         json={"message": _agent_submit("surface_1")},
     )
-
     assert response.status_code == 200, response.text
     assert response.json()["status"] == "accepted"
-    assert sid not in app.state.cancel_flags
-    assert sid not in app.state.cancel_events
+    assert len(captured) == 1
+    item = captured[0]
+    assert item.recipient_session == sid
+    assert item.id in {row.id for row in app.state.task_history.pending_mail(sid)}
+    assert not app.state.turn_runner.stop_requested(sid)
 
 
 def test_partial_component_update_keeps_earlier_definitions_on_replay(tmp_path: Path) -> None:

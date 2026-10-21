@@ -11,36 +11,36 @@ rollback survival of the ``a2ui_action`` part type.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from pytest import MonkeyPatch
+from pytest import MonkeyPatch, mark
 
+from clio_agent.arc.task_types import ContextBoundary
 from clio_agent.gact.a2ui_actions.record import mark_a2ui_action_consumed
 from clio_agent.gact.app import build_app
 from clio_agent.gact.events import Event
 from clio_agent.gact.interaction_types import UserQuestion
+from clio_agent.gact.question_surface import question_row
 from clio_agent.gact.routes.interactions import project_pending_interactions
 from clio_agent.gact.routes.session_a2ui_preservation import preserve_a2ui
 from clio_agent.gact.types import Message, Part
+from tests.test_gact.input_capture import capture_inputs
+from tests.test_gact.task_records import record_question_fixture
 
+from .task_records import hold_model_segment, record_assignment_fixture
 from .test_a2ui_v3 import HEADERS, WORKSPACE_CATALOG_ID, _create_message, _session_client
-from .test_loop_inbox_1036 import _active_turn
+
+pytestmark = mark.usefixtures("a2ui_session_lifespan")
 
 
-def _stub_spawn(app: Any, monkeypatch: MonkeyPatch) -> list[Any]:
-    """Prevent a real turn from executing; return the list of spawned coros."""
-
-    spawned: list[Any] = []
-
-    def _spawn(coro: Any, **_kwargs: Any) -> None:
-        spawned.append(coro)
-        coro.close()
-
-    monkeypatch.setattr(app.state.turn_runner, "spawn", _spawn)
-    return spawned
+def _capture_inputs(app: Any, monkeypatch: Any = None) -> list[Any]:
+    """Hold model admission and observe actual confirmed Core inputs."""
+    return capture_inputs(app, monkeypatch)
 
 
 def _event(name: str, surface_id: str, context: dict[str, Any], timestamp: str) -> dict[str, Any]:
@@ -65,11 +65,11 @@ def test_duplicate_submission_returns_same_record_no_second_turn(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
-    app = client.app
+    app = cast(FastAPI, client.app)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
-    spawned = _stub_spawn(app, monkeypatch)
+    spawned = _capture_inputs(app, monkeypatch)
     action = _event(
         "earthscope.stations.selected",
         "surface_1",
@@ -100,11 +100,11 @@ def test_two_distinct_timestamps_create_two_records(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
-    app = client.app
+    app = cast(FastAPI, client.app)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     first_action = _event(
         "earthscope.stations.selected", "surface_1", {"x": 1}, "2026-09-17T00:00:00Z"
     )
@@ -131,20 +131,17 @@ def test_two_distinct_timestamps_create_two_records(
 # --------------------------------------------------------------------------- #
 
 
-def test_running_session_steers_and_the_drain_consumes_the_record(
-    tmp_path: Path, monkeypatch: MonkeyPatch
+@mark.parametrize("projection_failure", [False, True])
+def test_running_feedback_is_consumed_only_after_core_input_commit(
+    tmp_path: Path, monkeypatch: MonkeyPatch, projection_failure: bool
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
-    app = client.app
+    app = cast(FastAPI, client.app)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
 
-    class _LiveTurn:
-        def done(self) -> bool:
-            return False
-
-    app.state.in_flight_turns[sid] = _LiveTurn()
+    hold_model_segment(app, sid, monkeypatch)
     action = _event("earthscope.stations.selected", "surface_1", {"x": 1}, "2026-09-17T00:00:00Z")
 
     response = client.post(
@@ -158,10 +155,35 @@ def test_running_session_steers_and_the_drain_consumes_the_record(
     [record] = surface.actions
     assert record["state"] == "delivered"
 
-    with _active_turn(app, sid):
-        from clio_agent.gact.loop_inbox import drain_active_session_inbox  # noqa: PLC0415
+    history, owner = app.state.task_history, app.state.conversations
+    assignment = history.latest_assignment(sid) or record_assignment_fixture(app, sid)
+    caller = owner.caller(sid)
+    staged = owner.mail.stage(caller)
+    assert staged.items and surface.actions[0]["state"] == "delivered"
+    from clio_agent.gact.a2ui_actions import record as action_records
 
-        drain_active_session_inbox(app)
+    original = action_records.mark_a2ui_action_consumed
+    hold_projection = projection_failure
+
+    def project(*args: Any, **kwargs: Any) -> Any:
+        if hold_projection:
+            raise OSError("Owned display projection is temporarily unavailable")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(action_records, "mark_a2ui_action_consumed", project)
+    owner.mail.commit(
+        caller,
+        staged,
+        assignment_id=assignment.handle,
+        iteration_id="a2ui-feedback",
+        boundary=ContextBoundary(session_id=sid, scope="main", logical_time=0),
+    )
+    assert "a2ui:" + record["id"] in history.acknowledged_notifications(sid)
+    if projection_failure:
+        held = app.state.a2ui_store.get(sid, "surface_1")
+        assert held is not None and held.actions[0]["state"] == "delivered"
+        hold_projection = False
+        owner._restore_input_projections()
 
     surface = app.state.a2ui_store.get(sid, "surface_1")
     assert surface is not None
@@ -183,9 +205,14 @@ def _pending_question(sid: str, *, surface_id: str = "", qid: str = "q_1") -> Us
         owner_session_id=sid,
         attended_session_id=sid,
         prompt="Continue?",
+        allow_freeform=True,
         created_at=now,
         updated_at=now,
-        metadata={"resume_on_answer": True, "a2ui_surface_id": surface_id},
+        metadata={
+            "resume_on_answer": True,
+            "a2ui_surface_id": surface_id,
+            "a2ui_answer_action": "agent.submit",
+        },
     )
 
 
@@ -193,18 +220,20 @@ def test_waiting_user_surface_tagged_question_resumes_with_context(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
-    app = client.app
+    app = cast(FastAPI, client.app)
     app.state.agent = object()
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     question = _pending_question(sid, surface_id="surface_1")
-    app.state.user_questions[question.id] = question
+    question = record_question_fixture(app, question)
     app.state.sessions.update(
         sid, status="waiting_user", metadata_patch={"pending_user_question_id": question.id}
     )
-    action = _event("agent.submit", "surface_1", {"text": "go"}, "2026-09-17T00:00:00Z")
+    action = _event(
+        "agent.submit", "surface_1", {"text": "go", "answer": "go"}, "2026-09-17T00:00:00Z"
+    )
 
     response = client.post(
         f"/v1/sessions/{sid}/a2ui/actions", headers=HEADERS, json={"message": action}
@@ -214,41 +243,53 @@ def test_waiting_user_surface_tagged_question_resumes_with_context(
     body = response.json()
     assert body["delivery"] == "resolve_question"
     assert body["state"] == "delivered"
-    answered = app.state.user_questions[question.id]
+    answered = question_row(app, question.id)
     assert answered.status == "answered"
-    assert answered.answer_metadata["a2ui_action_context"] == {"text": "go"}
-    assert answered.answer_metadata["surface_id"] == "surface_1"
+    assert answered.answer == "go"
+    assert answered.answer_metadata["text"] == "go"
+    task = app.state.task_history.task_snapshot(question.id)
+    assert task is not None and task.result is not None
+    assert (
+        app.state.task_history.read_content(task.result)["source_action"]["surface_id"]
+        == "surface_1"
+    )
 
 
-def test_waiting_user_uncorrelated_action_refuses_409(
+def test_explicit_question_correlation_refuses_a_foreign_surface(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
-    app = client.app
+    app = cast(FastAPI, client.app)
     app.state.agent = object()
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     # A pending question tagged for a DIFFERENT surface never correlates.
     question = _pending_question(sid, surface_id="unrelated-surface")
-    app.state.user_questions[question.id] = question
+    question = record_question_fixture(app, question)
     app.state.sessions.update(
         sid, status="waiting_user", metadata_patch={"pending_user_question_id": question.id}
     )
     action = _event("agent.submit", "surface_1", {"text": "go"}, "2026-09-17T00:00:00Z")
 
     response = client.post(
-        f"/v1/sessions/{sid}/a2ui/actions", headers=HEADERS, json={"message": action}
+        f"/v1/sessions/{sid}/a2ui/actions",
+        headers=HEADERS,
+        json={"message": action, "correlation": {"question_id": question.id}},
     )
 
     assert response.status_code == 409
-    assert response.json()["error"]["error"] == "a2ui_waiting_user_uncorrelated"
+    assert "does not address this Question" in response.json()["error"]["message"]
     surface = app.state.a2ui_store.get(sid, "surface_1")
     assert surface is not None
     [record] = surface.actions
     assert record["state"] == "failed"
-    assert record["reason"] == "a2ui_waiting_user_uncorrelated"
+    assert record["reason"]
+    assert question_row(app, question.id).status == "pending"
+    assert not [
+        row for row in app.state.task_history.pending_mail(sid) if row.id.startswith("a2ui:")
+    ]
 
 
 # --------------------------------------------------------------------------- #
@@ -267,7 +308,7 @@ def _permission_action(surface_id: str, permission_id: str, decision: str) -> di
 
 def test_permission_destination_resolves_in_scope_permission_only(tmp_path: Path) -> None:
     client, sid, _ = _session_client(tmp_path)
-    app = client.app
+    app = cast(FastAPI, client.app)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
@@ -320,7 +361,7 @@ def test_permission_destination_unknown_permission_id_returns_typed_404(
     """
 
     client, sid, _ = _session_client(tmp_path)
-    app = client.app
+    app = cast(FastAPI, client.app)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
@@ -354,11 +395,11 @@ def test_standalone_approval_without_permission_id_delivers_to_agent(
     """
 
     client, sid, _ = _session_client(tmp_path)
-    app = client.app
+    app = cast(FastAPI, client.app)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     action = _event("approval.respond", "surface_1", {"approved": True}, "2026-09-17T00:00:00Z")
 
     response = client.post(
@@ -368,7 +409,7 @@ def test_standalone_approval_without_permission_id_delivers_to_agent(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["destination"] == "agent"
-    assert body["delivery"] == "start"
+    assert body["delivery"] == "steer"
     assert body["state"] == "delivered"
     message = next(m for m in reversed(app.state.messages[sid]) if m.role == "user")
     assert message.metadata["a2ui_action_context"] == {"approved": True}
@@ -380,11 +421,11 @@ def test_standalone_approval_cancel_without_permission_id_delivers_to_agent(
     """Symmetric to the approve case: ``{"approved": false}`` also reaches the agent."""
 
     client, sid, _ = _session_client(tmp_path)
-    app = client.app
+    app = cast(FastAPI, client.app)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     action = _event("approval.respond", "surface_1", {"approved": False}, "2026-09-17T00:00:00Z")
 
     response = client.post(
@@ -394,7 +435,7 @@ def test_standalone_approval_cancel_without_permission_id_delivers_to_agent(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["destination"] == "agent"
-    assert body["delivery"] == "start"
+    assert body["delivery"] == "steer"
     message = next(m for m in reversed(app.state.messages[sid]) if m.role == "user")
     assert message.metadata["a2ui_action_context"] == {"approved": False}
 
@@ -409,11 +450,11 @@ def test_action_card_custom_event_unaffected_by_permission_routing(
     """
 
     client, sid, _ = _session_client(tmp_path)
-    app = client.app
+    app = cast(FastAPI, client.app)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     action = _event("workspace.summarize", "surface_1", {"scope": "all"}, "2026-09-17T00:00:00Z")
 
     response = client.post(
@@ -423,7 +464,7 @@ def test_action_card_custom_event_unaffected_by_permission_routing(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["destination"] == "agent"
-    assert body["delivery"] == "start"
+    assert body["delivery"] == "steer"
     message = next(m for m in reversed(app.state.messages[sid]) if m.role == "user")
     assert message.metadata["a2ui_action_context"] == {"scope": "all"}
 
@@ -435,7 +476,7 @@ def test_action_card_custom_event_unaffected_by_permission_routing(
 
 def test_run_cancel_destination_cancels_the_session(tmp_path: Path) -> None:
     client, sid, _ = _session_client(tmp_path)
-    app = client.app
+    app = cast(FastAPI, client.app)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
@@ -449,7 +490,9 @@ def test_run_cancel_destination_cancels_the_session(tmp_path: Path) -> None:
     body = response.json()
     assert body["delivery"] == "run_cancel"
     assert body["state"] == "delivered"
-    assert app.state.sessions.get(sid).status == "cancelled"
+    assert app.state.sessions.get(sid).status == "idle"
+    assert app.state.sessions.get(sid).metadata["composer_queue_paused"] is True
+    assert not app.state.turn_runner.busy(sid)
     surface = app.state.a2ui_store.get(sid, "surface_1")
     assert surface is not None
     [record] = surface.actions
@@ -460,16 +503,16 @@ def test_run_retry_destination_queues_the_existing_owner_attempt(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
-    app = client.app
+    app = cast(FastAPI, client.app)
     app.state.agent = object()
-    spawned = _stub_spawn(app, monkeypatch)
+    spawned = _capture_inputs(app, monkeypatch)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
     posted = client.post(
         f"/v1/sessions/{sid}/messages", json={"parts": [{"type": "text", "text": "hi"}]}
     )
-    assert posted.status_code == 200, posted.text
+    assert posted.status_code == 202, posted.text
     source_message_id = posted.json()["message_id"]
     spawned.clear()
 
@@ -499,8 +542,8 @@ def test_foreign_surface_data_model_dropped_while_action_still_delivers(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
-    app = client.app
-    _stub_spawn(app, monkeypatch)
+    app = cast(FastAPI, client.app)
+    accepted_inputs = _capture_inputs(app, monkeypatch)
     create_owned = {
         "version": "v0.9.1",
         "createSurface": {
@@ -534,6 +577,12 @@ def test_foreign_surface_data_model_dropped_while_action_still_delivers(
     assert response.status_code == 200, response.text
     carried = response.json()["a2ui_client_data_model"]
     assert carried["surfaces"] == {"owned-surface": {"selection": "x"}}
+    assert len(accepted_inputs) == 1
+    content = app.state.task_history.read_content(accepted_inputs[0].content)
+    text = content["text"]
+    assert text.count("A2UI client data model:\n") == 1
+    assert json.loads(text.split("A2UI client data model:\n", 1)[1]) == carried
+    assert "foreign-surface" not in text
     reasons = app.state.a2ui_catalogs.session_reasons(sid)
     assert any(
         row["reason"] == "a2ui_data_model_foreign_surface"
@@ -555,8 +604,8 @@ def test_validation_failed_repairs_once_then_exhausts_and_fails_the_surface(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
-    app = client.app
-    spawned = _stub_spawn(app, monkeypatch)
+    app = cast(FastAPI, client.app)
+    spawned = _capture_inputs(app, monkeypatch)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
@@ -568,7 +617,7 @@ def test_validation_failed_repairs_once_then_exhausts_and_fails_the_surface(
         f"/v1/sessions/{sid}/a2ui/actions", headers=HEADERS, json={"message": envelope}
     )
     assert first.status_code == 200, first.text
-    assert first.json()["delivery"] == "start"
+    assert first.json()["delivery"] == "steer"
     assert len(spawned) == 1
     surface = app.state.a2ui_store.get(sid, "surface_1")
     assert surface is not None
@@ -592,8 +641,8 @@ def test_generic_client_error_persisted_never_delivered(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
-    app = client.app
-    spawned = _stub_spawn(app, monkeypatch)
+    app = cast(FastAPI, client.app)
+    spawned = _capture_inputs(app, monkeypatch)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
@@ -634,8 +683,8 @@ def test_interactions_row_flips_pending_to_answered_once_delivered(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
-    app = client.app
-    _stub_spawn(app, monkeypatch)
+    app = cast(FastAPI, client.app)
+    _capture_inputs(app, monkeypatch)
     components = {
         "version": "v0.9.1",
         "updateComponents": {
@@ -669,7 +718,9 @@ def test_interactions_row_flips_pending_to_answered_once_delivered(
     )
     assert response.status_code == 200, response.text
 
-    after = project_pending_interactions(app, sid, include_children=False)
+    after = project_pending_interactions(
+        app, sid, include_children=False, include_recent_resolved=True
+    )
     [row_after] = [r for r in after.rows if r.kind == "a2ui"]
     assert row_after.status == "answered"
     assert row_after.requires_human_response is False
@@ -686,7 +737,7 @@ def test_interactions_row_flips_pending_to_answered_once_delivered(
     assert last_action["receivedAt"]
     assert last_action["context"] == {"text": "go"}
     assert last_action["action_id"]
-    assert last_action["delivery"] == "start"
+    assert last_action["delivery"] == "steer"
 
 
 # --------------------------------------------------------------------------- #
@@ -698,8 +749,8 @@ def test_mark_consumed_transitions_delivered_record_and_publishes_event(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
-    app = client.app
-    _stub_spawn(app, monkeypatch)
+    app = cast(FastAPI, client.app)
+    _capture_inputs(app, monkeypatch)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
@@ -784,9 +835,9 @@ def test_undo_preserves_action_record_from_removed_message(tmp_path: Path) -> No
     part still leaves the record readable through the normal store projection."""
 
     with TestClient(build_app(sessions_path=tmp_path / "s.json")) as client:
-        app = client.app
+        app = cast(FastAPI, client.app)
         sid = client.post("/v1/sessions", json={"title": "rollback action"}).json()["id"]
-        client.app.state.messages[sid] = [
+        app.state.messages[sid] = [
             Message(
                 id="msg_1",
                 session_id=sid,
@@ -796,16 +847,13 @@ def test_undo_preserves_action_record_from_removed_message(tmp_path: Path) -> No
                 parts=[Part(id="part_1", type="text", text="hi")],
             )
         ]
-        client.app.state.sessions.update(sid, message_count=1)
+        app.state.sessions.update(sid, message_count=1)
         app.state.a2ui_store.apply_batch(sid, [_create_message()])
         action_envelope = _event(
             "agent.submit", "surface_1", {"text": "go"}, "2026-09-17T00:00:00Z"
         )
 
-        def _spawn(coro: Any, **_kwargs: Any) -> None:
-            coro.close()
-
-        client.app.state.turn_runner.spawn = _spawn  # type: ignore[method-assign]
+        capture_inputs(client.app)
         response = client.post(
             f"/v1/sessions/{sid}/a2ui/actions", headers=HEADERS, json={"message": action_envelope}
         )
@@ -819,7 +867,7 @@ def test_undo_preserves_action_record_from_removed_message(tmp_path: Path) -> No
         assert any(p.type == "a2ui_action" for p in app.state.messages[sid][-1].parts)
         # The stubbed spawn closed the coroutine before it could settle the
         # session back to idle; undo refuses on a running session.
-        client.app.state.sessions.update(sid, status="idle")
+        app.state.sessions.update(sid, status="idle")
 
         undo_response = client.post(f"/v1/sessions/{sid}/undo", json={"count": 1})
         assert undo_response.status_code == 200, undo_response.text

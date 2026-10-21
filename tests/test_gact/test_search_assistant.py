@@ -120,7 +120,7 @@ def test_rendered_phrase_beats_common_words_and_excerpt_reaches_later_passage(
 async def test_search_crosses_registered_workspaces_and_returns_navigable_sources(
     tmp_path: Path,
 ) -> None:
-    app = build_app(sessions_path=tmp_path / "sessions.json", agent=None)
+    app = await asyncio.to_thread(build_app, sessions_path=tmp_path / "sessions.json", agent=None)
     first, _ = _source(app, tmp_path / "first", "First")
     second, session = _source(app, tmp_path / "second", "Second")
     (tmp_path / "second" / "notes.txt").write_text(
@@ -155,7 +155,7 @@ async def test_search_crosses_registered_workspaces_and_returns_navigable_source
 async def test_policy_denial_and_partial_content_are_reported(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    app = build_app(sessions_path=tmp_path / "sessions.json", agent=None)
+    app = await asyncio.to_thread(build_app, sessions_path=tmp_path / "sessions.json", agent=None)
     workspace, _ = _source(app, tmp_path / "data")
     config = tmp_path / "data" / ".clio" / "config.yaml"
     config.parent.mkdir(exist_ok=True)
@@ -283,7 +283,7 @@ def test_explicit_search_blueprint_activation_inherits_model_without_copying_par
 async def test_native_tools_read_real_sources_and_global_search_omits_ephemeral_chats(
     tmp_path: Path,
 ) -> None:
-    app = build_app(sessions_path=tmp_path / "sessions.json", agent=None)
+    app = await asyncio.to_thread(build_app, sessions_path=tmp_path / "sessions.json", agent=None)
     workspace, session = _source(app, tmp_path / "data")
     (tmp_path / "data" / "notes.txt").write_text("Evidence from the file", encoding="utf-8")
     side = app.state.sessions.create(

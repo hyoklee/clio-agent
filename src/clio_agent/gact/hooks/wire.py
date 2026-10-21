@@ -126,6 +126,13 @@ _HOOK_REASON_DEFINITIONS: dict[str, dict[str, Any]] = {
             "auto-approve)"
         ),
     },
+    "hook_defer_cancelled": {
+        "severity": "info",
+        "detail": (
+            "the owning turn stopped while a PreToolUse approval was pending; "
+            "the request was resolved as a system deny and the call did not run"
+        ),
+    },
     "hook_defer_denied": {
         "severity": "warning",
         "detail": "a deferred approval was resolved as DENY out-of-band; a typed deny reached the model",
@@ -272,9 +279,18 @@ class HookCancelled(Exception):
     mid-prologue".
     """
 
-    def __init__(self, hook_id: str) -> None:
+    def __init__(
+        self,
+        hook_id: str,
+        *,
+        invocation_started: bool | None = None,
+        cleanup_confirmed: bool = False,
+    ) -> None:
         super().__init__(f"hook {hook_id!r} was cancelled by a turn cancel")
         self.hook_id = hook_id
+        # These are observations of this dispatch, never a retry instruction.
+        self.invocation_started = invocation_started
+        self.cleanup_confirmed = cleanup_confirmed
 
 
 def wire_annotations(raw: Any) -> dict[str, bool]:

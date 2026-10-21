@@ -21,7 +21,25 @@ from __future__ import annotations
 
 import contextvars
 from dataclasses import dataclass, field, replace
+from datetime import datetime, timezone
 from typing import Any
+
+
+def after_context_boundary(created_at: str, boundary: str) -> bool | None:
+    """Compare retained UTC timestamps; missing legacy row times remain explicitly unknown."""
+    cutoff = datetime.fromisoformat(boundary)
+    cutoff = cutoff.replace(tzinfo=timezone.utc) if cutoff.tzinfo is None else cutoff
+    try:
+        stamp = datetime.fromisoformat(created_at)
+    except (ValueError, TypeError):
+        return None
+    stamp = stamp.replace(tzinfo=timezone.utc) if stamp.tzinfo is None else stamp
+    return stamp > cutoff
+
+
+def scope_epoch(scope: str) -> str:
+    """Read the epoch from CLIO's existing context-scope encoding."""
+    return scope.partition("#epoch:")[2].partition("#run")[0]
 
 
 @dataclass(frozen=True)
@@ -37,6 +55,11 @@ class TurnContext:
     session_id: str = ""  # _ACTIVE_GACT_SESSION_ID
     turn_id: str = ""  # _ACTIVE_GACT_TURN_ID
     trace_id: str = ""  # _ACTIVE_GACT_TRACE_ID
+    context_epoch: str = ""  # Captured from the confirmed assignment at turn admission.
+    context_epoch_after: str | None = None
+    assignment_handle: str = ""  # Confirmed finite assignment; never inherited across sessions.
+    input_notification_id: str = ""  # Human head already rendered by this segment.
+    primary_agent_id: str = ""  # Executable root resolved for this turn, not its catalog id.
     tool_session_id: str = ""  # _ACTIVE_TOOL_SESSION_ID
     # Optional Agent Blueprint selected by this message's execution mode.  This
     # is deliberately turn-scoped: Deep Research layers its coordinator over
@@ -125,6 +148,11 @@ def active_app() -> Any | None:
 def active_session_id() -> str:
     """``_ACTIVE_GACT_SESSION_ID.get()``."""
     return _RUNTIME.get().turn.session_id
+
+
+def active_assignment_handle() -> str:
+    """Return the finite assignment explicitly installed by conversation admission."""
+    return _RUNTIME.get().turn.assignment_handle
 
 
 def active_turn_id() -> str:
@@ -216,6 +244,9 @@ def run_keyed_scope(scope: str) -> str:
     lockstep — while ``active_react_scope`` itself stays the bare agent id for every
     attribution reader (#953)."""
     run = _RUNTIME.get().react_run
+    if epoch := _RUNTIME.get().turn.context_epoch:
+        if scope:
+            scope = f"{scope}#epoch:{epoch}"
     if run >= 0 and scope:
         return f"{scope}#run{run}"
     return scope
@@ -279,13 +310,33 @@ def set_app(app: Any) -> contextvars.Token[RuntimeContext]:
 def set_session_id(sid: str) -> contextvars.Token[RuntimeContext]:
     """Set ``turn.session_id`` (executor entry + copy seed)."""
     cur = _RUNTIME.get()
-    return _RUNTIME.set(replace(cur, turn=replace(cur.turn, session_id=sid)))
+    return _RUNTIME.set(
+        replace(
+            cur,
+            turn=replace(
+                cur.turn,
+                session_id=sid,
+                context_epoch=cur.turn.context_epoch if sid == cur.turn.session_id else "",
+                context_epoch_after=cur.turn.context_epoch_after
+                if sid == cur.turn.session_id
+                else None,
+                assignment_handle=cur.turn.assignment_handle if sid == cur.turn.session_id else "",
+                primary_agent_id=cur.turn.primary_agent_id if sid == cur.turn.session_id else "",
+            ),
+        )
+    )
 
 
 def set_tool_session_id(sid: str) -> contextvars.Token[RuntimeContext]:
     """Set ``turn.tool_session_id`` (the ``_tool_session_context`` body)."""
     cur = _RUNTIME.get()
     return _RUNTIME.set(replace(cur, turn=replace(cur.turn, tool_session_id=sid)))
+
+
+def set_primary_agent_id(agent_id: str) -> None:
+    """Capture the resolved executable root before any expert forwards run."""
+    cur = _RUNTIME.get()
+    _RUNTIME.set(replace(cur, turn=replace(cur.turn, primary_agent_id=agent_id)))
 
 
 def set_turn_identity(
@@ -295,6 +346,10 @@ def set_turn_identity(
     turn_id: str,
     trace_id: str,
     execution_blueprint_id: str = "",
+    context_epoch: str = "",
+    context_epoch_after: str | None = None,
+    assignment_handle: str = "",
+    input_notification_id: str = "",
 ) -> None:
     """Establish the whole turn layer at once. BARE set, NO token.
 
@@ -315,6 +370,10 @@ def set_turn_identity(
                 trace_id=trace_id,
                 tool_session_id=cur.turn.tool_session_id,
                 execution_blueprint_id=execution_blueprint_id,
+                context_epoch=context_epoch,
+                context_epoch_after=context_epoch_after,
+                assignment_handle=assignment_handle,
+                input_notification_id=input_notification_id,
             ),
         )
     )

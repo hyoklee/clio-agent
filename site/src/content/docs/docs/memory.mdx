@@ -46,6 +46,20 @@ errors. Try the name, unit or term used in the original conversation if a
 paraphrase finds nothing. An empty result means no retained text matched the
 query; it does not establish that the work never happened.
 
+## Agent access uses Tasks
+
+In the Tasks candidate, agents discover permitted sessions with `query_tasks`
+and inspect their transcripts, recorded summaries and linked artifacts with
+`observe_tasks`. See [Session coordination](/docs/tasks/session-coordination/).
+The same task surface lets a parent inspect a failed child's work before
+messaging it to continue.
+
+The older `memory_search_sessions`, `memory_read_session_summary` and
+`memory_read_context_frame` names remain explicit compatibility tools for one
+cycle. They are session inspection tools, and new default catalogs use Tasks.
+The recent-activity overview described below remains distinct from recorded
+compaction summaries and maintained long-term knowledge.
+
 ## Where does the session summary come from?
 
 The tool called **Read session summary** builds a small overview directly from

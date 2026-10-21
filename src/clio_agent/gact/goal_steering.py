@@ -8,8 +8,11 @@ from typing import Any
 
 def pending_steer(app: Any, session_id: str) -> bool:
     """Return whether an accepted human message still needs model delivery."""
-    intents = getattr(app.state, "message_intents", None)
-    return bool(intents is not None and intents.list_pending(session_id))
+    history = getattr(app.state, "task_history", None)
+    return bool(
+        history is not None
+        and any(item.kind in {"human", "composer"} for item in history.pending_mail(session_id))
+    )
 
 
 def _part_groups(message: Any) -> list[tuple[str, list[Any]]]:

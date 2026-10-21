@@ -27,8 +27,8 @@ turn that goes silent for the whole window is wedged and aborted (see
 from __future__ import annotations
 
 import asyncio
-import threading
 import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from clio_agent.gact._params import _gact_turn_timeout_s
@@ -36,6 +36,7 @@ from clio_agent.gact.runtime.globals import _TurnTimedOut
 from clio_agent.runtime.commitment_activity import (
     commitment_wait_in_flight as _commitment_wait_in_flight,
 )
+from clio_agent.runtime.commitment_activity import observe_completions
 from clio_agent.runtime.lm_activity import lm_call_in_flight as _lm_call_in_flight
 
 if TYPE_CHECKING:
@@ -53,7 +54,7 @@ def make_turn_cancel_event(state: "TurnState") -> None:
     onto ``state``.
     """
 
-    state.turn_cancel_event = threading.Event()
+    state.turn_cancel_event = state.app.state.turn_runner.cancellation(state.sid)
     state.app.state.cancel_events[state.sid] = state.turn_cancel_event
     if state.sid in state.app.state.cancel_flags:
         state.turn_cancel_event.set()
@@ -88,6 +89,14 @@ async def await_turn_work(state: "TurnState", awaitable: Any) -> Any:
 
     if state.turn_progress_timeout_s <= 0:
         return await awaitable
+    with observe_completions(state.sid) as completed_wait:
+        return await _await_observed_work(state, awaitable, completed_wait)
+
+
+async def _await_observed_work(
+    state: "TurnState", awaitable: Any, completed_wait: Callable[[], float]
+) -> Any:
+    """Apply the existing watchdog with active and just-completed owner waits."""
     # Drive the work as a task and poll for completion. asyncio.wait (unlike
     # wait_for) does NOT cancel the task when the poll interval elapses, so a
     # still-running turn is never disturbed by the watchdog tick. We seed the
@@ -105,7 +114,7 @@ async def await_turn_work(state: "TurnState", awaitable: Any) -> Any:
             done, _pending = await asyncio.wait({task}, timeout=state._watchdog_poll_s)
             if done:
                 return task.result()
-            heartbeat = state.bus.last_publish_monotonic(state.sid)
+            heartbeat = max(state.bus.last_publish_monotonic(state.sid), completed_wait())
             if heartbeat > last_progress:
                 last_progress = heartbeat
             # An LM call that is actively generating IS progress, even when it
@@ -135,6 +144,9 @@ async def await_turn_work(state: "TurnState", awaitable: Any) -> Any:
             if time.monotonic() - last_progress >= state.turn_progress_timeout_s:
                 state.turn_cancel_event.set()
                 task.cancel()
+                owner = getattr(state.app.state, "conversations", None)
+                if owner is not None:
+                    await owner.stopping(state.sid)
                 try:
                     await task
                 except BaseException:  # noqa: BLE001,S110 - swallow during abort
@@ -150,4 +162,15 @@ async def await_turn_work(state: "TurnState", awaitable: Any) -> Any:
             if exc is None:
                 return task.result()
         task.cancel()
+        # Stop cancels this wrapper as well as its inner waiter. Retire the
+        # actual work before turn finalization can publish a settled envelope.
+        # The inner session owner retains any synchronous worker until exit.
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                if task.done():
+                    break
+        if not task.cancelled():
+            task.result()
         raise

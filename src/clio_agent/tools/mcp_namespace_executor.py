@@ -22,6 +22,30 @@ class AsyncNamespacePreparationMixin:
     _namespace_heal_attempted: set[str]
     _namespace_locks: dict[str, Any]
     _namespace_servers: Mapping[str, Any]
+    _connected_namespaces: set[str]
+
+    def _namespace_succeeded(self, namespace: str | None) -> None:
+        """Learn a launcher only after its first actual routed call succeeds."""
+        if namespace is not None and namespace not in self._connected_namespaces:
+            from clio_agent.tools import spawn_diet
+
+            self._connected_namespaces.add(namespace)
+            spawn_diet.namespace_connected(namespace)
+
+    def _namespace_call_failed(self, namespace: str | None, error: Exception) -> None:
+        """A lazy proxy handshake does not prove its subprocess ever connected."""
+        from mcp.shared.exceptions import MCPError
+        from mcp_types import CONNECTION_CLOSED
+
+        if (
+            namespace is not None
+            and namespace not in self._connected_namespaces
+            and isinstance(error, MCPError)
+            and error.code == CONNECTION_CLOSED
+        ):
+            from clio_agent.tools import spawn_diet
+
+            spawn_diet.spawn_failed(namespace)
 
     async def _connect_namespace(self, namespace: str, proxy: Any) -> Any:
         """Connect + cache namespace's client; overridden by AsyncMCPToolExecutor.

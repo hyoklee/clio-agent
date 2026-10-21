@@ -335,9 +335,11 @@ class _HangingLM:
     model = "hanging"
 
     def __init__(self) -> None:
+        self.entered = threading.Event()
         self.closed = threading.Event()
 
     async def acall(self, request: Request) -> Any:
+        self.entered.set()
         try:
             await asyncio.sleep(30)
         except asyncio.CancelledError:
@@ -407,7 +409,9 @@ def test_a_session_cancel_kills_the_in_flight_http_stream_and_counts_it() -> Non
 
     def cancel_when_in_flight() -> None:
         deadline = time.monotonic() + 10
-        while "sess-kill" not in active_stream_sessions() and time.monotonic() < deadline:
+        while (
+            "sess-kill" not in active_stream_sessions() or not lm.entered.is_set()
+        ) and time.monotonic() < deadline:
             time.sleep(0.01)
         killed.append(abort_session_streams("sess-kill"))
 
@@ -677,7 +681,9 @@ def test_every_step_runs_on_one_persistent_loop_in_the_callers_context() -> None
         cache=False,
         num_retries=0,
     )
-    token = gact_context.set_session_id("sess-loop")
+    session_id = gact_context.active_session_id()
+    assert session_id, "The Core fixture must supply a confirmed conversation"
+    token = gact_context.set_session_id(session_id)
     try:
         with dspy.context(lm=lm):
             ClioReAct("question -> answer", tools=[search])(question="q")
@@ -685,4 +691,4 @@ def test_every_step_runs_on_one_persistent_loop_in_the_callers_context() -> None
         gact_context.reset(token)
     loops = {loop for loop, _ in seen}
     assert len(seen) == 2 and len(loops) == 1
-    assert {session for _, session in seen} == {"sess-loop"}
+    assert {session for _, session in seen} == {session_id}

@@ -1,0 +1,145 @@
+{
+  "kind": "source construction checks, not behavioral or live acceptance",
+  "checks": [
+    {
+      "command": [
+        "ruff",
+        "check",
+        "src/",
+        "tests/test_arc/test_conversation_owner_contracts.py",
+        "tests/test_gact/test_replacement_turn_resources.py"
+      ],
+      "exit": 0,
+      "output": "All checks passed!\n"
+    },
+    {
+      "command": [
+        "ruff",
+        "format",
+        "--check",
+        "src/",
+        "tests/test_arc/test_conversation_owner_contracts.py",
+        "tests/test_gact/test_replacement_turn_resources.py"
+      ],
+      "exit": 0,
+      "output": "1149 files already formatted\n"
+    },
+    {
+      "command": [
+        "mypy",
+        "--platform",
+        "linux",
+        "src/"
+      ],
+      "exit": 0,
+      "output": "src\\clio_agent\\registry\\registry.py:80: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nsrc\\clio_agent\\registry\\registry.py:81: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nSuccess: no issues found in 1147 source files\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_file_size.py"
+      ],
+      "exit": 0,
+      "output": "OK: no file under src/clio_agent exceeds its ratchet baseline (cap 800 for new files).\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_no_class_in_function.py"
+      ],
+      "exit": 0,
+      "output": "OK: no class-in-function under src/clio_agent exceeds its ratchet baseline.\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_no_summaries.py"
+      ],
+      "exit": 0,
+      "output": "OK: no delegation-summary vocabulary under src/clio_agent (baseline 0, #880).\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_no_settle_vocabulary.py"
+      ],
+      "exit": 0,
+      "output": "OK: no settle/synthesis routing vocabulary under src/clio_agent (baseline 0, #948 S4).\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_no_elicitation_id_vocabulary.py"
+      ],
+      "exit": 0,
+      "output": "OK: no elicitationId residue under src/clio_agent, tests (baseline 0, SEP-2577 / #1284).\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_tool_instrumentation.py"
+      ],
+      "exit": 0,
+      "output": "OK: no bare dspy.Tool construction under src/clio_agent outside the sanctioned modules (baseline 0).\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_silent_fallbacks.py"
+      ],
+      "exit": 0,
+      "output": "silent-fallback ratchet (#772) over C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent:\n  BLE001: 0\n  S110: 0\n  E722: 0\n  total: 0 (baseline: 0)\nOK: silent-fallback count is at the recorded baseline.\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_task_replacement_removal.py"
+      ],
+      "exit": 0,
+      "output": "Task replacement removal guard: 0 violations\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_noqa_swallows.py"
+      ],
+      "exit": 0,
+      "output": "noqa-hidden swallows over C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent: 493 in 201 files\n"
+    }
+  ],
+  "final_source_recheck": [
+    {
+      "command": [
+        "ruff",
+        "check",
+        "src/",
+        "tests/test_arc/test_conversation_owner_contracts.py",
+        "tests/test_gact/test_replacement_turn_resources.py"
+      ],
+      "exit": 0,
+      "output": "All checks passed!\n"
+    },
+    {
+      "command": [
+        "ruff",
+        "format",
+        "--check",
+        "src/",
+        "tests/test_arc/test_conversation_owner_contracts.py",
+        "tests/test_gact/test_replacement_turn_resources.py"
+      ],
+      "exit": 0,
+      "output": "1149 files already formatted\n"
+    },
+    {
+      "command": [
+        "mypy",
+        "--platform",
+        "linux",
+        "src/"
+      ],
+      "exit": 0,
+      "output": "src\\clio_agent\\registry\\registry.py:80: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nsrc\\clio_agent\\registry\\registry.py:81: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nSuccess: no issues found in 1147 source files\n"
+    }
+  ]
+}

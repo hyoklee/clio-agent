@@ -214,8 +214,9 @@ def register_mcp_app_routes(app: FastAPI, deps: GactDeps) -> None:
             app,
             deps,
             sid,
-            submission,
+            submission.model_copy(update={"metadata": {}}),
             internal_model_text=model_text,
+            server_metadata=submission.metadata,
         )
         return JSONResponse(
             {

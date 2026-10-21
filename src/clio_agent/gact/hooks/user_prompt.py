@@ -1,26 +1,11 @@
-"""The ``UserPromptSubmit`` turn-boundary hook protocol (P2.2 port + P2.6 defer).
-
-Owns the whole finalize-boundary protocol for the turn's prompt hook (mirrors
-``stop_loop.dispatch_stop_at_finalize`` for ``Stop``), so ``turn.py`` carries only a
-one-line call site (no-accretion; the block used to be ~95 inline lines):
-
-* **deny** VETOES the turn — the session settles to ``error`` (the ported
-  ``pre_message`` behaviour, byte-for-byte).
-* **defer** (P2.6) SUSPENDS the turn for out-of-band approval — a turn-ending yield,
-  so it rides the #1031 deferred-resume: :func:`~clio_agent.gact.hooks.defer.suspend_turn_defer`
-  persists a resolvable pending approval + flips the session to ``waiting_user``; an
-  out-of-band ``allow`` re-drives the original prompt as a NEW turn (carrying the
-  resume once-gate so the hook does not re-defer the just-approved prompt), a ``deny``
-  rejects it.
-* otherwise the turn PROCEEDS.
-"""
+"""UserPromptSubmit vetoes hold their exact input; deferrals use Core Questions."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Callable
 
 from clio_agent.gact.events import Event
-from clio_agent.gact.hooks.defer import HOOK_DEFER_RESUME_META, suspend_turn_defer
+from clio_agent.gact.hooks.defer import suspend_turn_defer
 from clio_agent.gact.runtime.globals import _emit_semantic_event
 from clio_agent.gact.turn_settle_status import publish_turn_settled_status
 
@@ -41,12 +26,12 @@ def run_user_prompt_submit(
     turn on anything but ``"proceed"``.
     """
 
+    # Only a confirmed human decision bound to this exact Core input skips dispatch.
+    from clio_agent.gact import context
     from clio_agent.gact.hooks import dispatch_user_prompt_submit  # noqa: PLC0415
+    from clio_agent.gact.hooks.turn_approval import approved_input
 
-    # Resume once-gate (P2.6): a turn resumed from an approved UserPromptSubmit defer
-    # carries HOOK_DEFER_RESUME_META so the SAME hook does not re-defer the prompt it
-    # just approved (analogous to plan_exit's constraint-lift). Skip the dispatch.
-    if bool((getattr(state.user_msg, "metadata", None) or {}).get(HOOK_DEFER_RESUME_META)):
+    if approved_input(state.app, state.sid, context.current_turn().input_notification_id):
         return "proceed"
 
     _emit_semantic_event(

@@ -19,12 +19,64 @@ import concurrent.futures
 import logging
 import threading
 import time
-from collections.abc import Callable
-from typing import TypeVar
+from collections.abc import Callable, Coroutine
+from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+
+async def await_on_loop(
+    loop: asyncio.AbstractEventLoop, operation: Coroutine[Any, Any, T], *, op: str
+) -> T:
+    """Submit onto the application loop without imposing an execution deadline.
+
+    Cancellation reaches the operation, whose owner decides foreground versus
+    accepted-background semantics. Nothing is submitted twice.
+    """
+    if loop.is_closed() or not loop.is_running():
+        operation.close()
+        raise _fail(op, REASON_LOOP_NOT_RUNNING, "the app event loop is not running")
+    if asyncio.get_running_loop() is loop:
+        return await operation
+    settled: concurrent.futures.Future[None] = concurrent.futures.Future()
+    gate = threading.Lock()
+    started = False
+    abandoned = False
+
+    async def tracked() -> T:
+        nonlocal started
+        with gate:
+            if abandoned:
+                raise asyncio.CancelledError
+            started = True
+        try:
+            return await operation
+        finally:
+            if not settled.done():
+                settled.set_result(None)
+
+    future = asyncio.run_coroutine_threadsafe(tracked(), loop)
+    try:
+        return await asyncio.wrap_future(future)
+    except asyncio.CancelledError:
+        # A concurrent Future becomes cancelled before its coroutine finishes
+        # handling cancellation. Wait for the owner's actual cleanup boundary.
+        with gate:
+            if not started:
+                abandoned = True
+                operation.close()
+                settled.set_result(None)
+        future.cancel()
+        completion = asyncio.wrap_future(settled)
+        while not completion.done():
+            try:
+                await asyncio.shield(completion)
+            except asyncio.CancelledError:
+                continue
+        raise
+
 
 #: How often the caller checks on the loop while waiting.
 HANDOFF_SLICE_S = 5.0

@@ -49,7 +49,6 @@ from clio_agent.gact.artifacts.wire import fetch_url_for, mime_for
 from clio_agent.gact.artifacts.wire import version_uri as _version_uri
 from clio_agent.gact.runtime.retention import enforce_list_bound
 from clio_agent.gact.types import ErrorEnvelope, ErrorInfo
-from clio_agent.platform_paths import win_extended_path
 
 if TYPE_CHECKING:
     from clio_agent.gact.routes.deps import GactDeps
@@ -634,7 +633,9 @@ def _available_refs(record: ArtifactRecord) -> list[str]:
     return sorted(refs)
 
 
-def _serve_bytes(app: FastAPI, record: ArtifactRecord, version: ArtifactVersion) -> Response:
+def _serve_bytes(
+    app: FastAPI, record: ArtifactRecord, version: ArtifactVersion, *, consume: Any = None
+) -> Any:
     """Serve a version's bytes through ONE typed resolution ladder (S6 #972).
 
     The single ladder — no second byte-serving path (review guard): (1) the
@@ -655,11 +656,12 @@ def _serve_bytes(app: FastAPI, record: ArtifactRecord, version: ArtifactVersion)
     )
 
     root = _workspace_root(app, record.workspace_id)
+    reader = consume or _open_verify_stream
     owned = resolve_owned_artifact_or_raise(
         app, version, workspace_root=root, error=_artifact_error
     )
     if owned is not None:
-        return _open_verify_stream(owned, version.sha256, version, record.name)
+        return reader(owned, version.sha256, version, record.name)
 
     # Defence in depth: referenced bytes need a resolved owning workspace.
     # An UNRESOLVABLE root REFUSES the serve (typed ``containment_unresolved``) —
@@ -684,14 +686,14 @@ def _serve_bytes(app: FastAPI, record: ArtifactRecord, version: ArtifactVersion)
         if blob.is_file():
             # The CAS blob is app-private; its address IS its hash, but re-validate on
             # read anyway (detection is universal — self-heal/corruption is caught).
-            return _open_verify_stream(blob, recorded_sha, version, record.name)
+            return reader(blob, recorded_sha, version, record.name)
         # Blob absent (evicted / never ingested) — fall through to the referenced rung.
 
     # Managed source inputs and harness definitions are hash-pinned in this
     # workspace's canonical state store rather than its project directory.
     managed = resolve_workspace_state_artifact_path(version, workspace_root=root)
     if managed is not None:
-        return _open_verify_stream(managed, recorded_sha, version, record.name)
+        return reader(managed, recorded_sha, version, record.name)
 
     # ---- Rung 2: referenced workspace path -----------------------------------
     source = Path(version.path) if version.path else None
@@ -714,7 +716,7 @@ def _serve_bytes(app: FastAPI, record: ArtifactRecord, version: ArtifactVersion)
     if version.custody == Custody.CAS:
         # A CAS version whose blob was evicted: the workspace copy is still the
         # content — serve it, hash-verified, through the same streaming primitive.
-        return _open_verify_stream(source, recorded_sha, version, record.name)
+        return reader(source, recorded_sha, version, record.name)
 
     # Non-served custody (workspace-referenced/external). Detection is still the
     # universal guarantee: re-hash the referenced file and 409 on a mismatch, then
@@ -771,40 +773,23 @@ def _open_verify_stream(
     hashed). Residual TOCTOU: a same-fd truncation between hash and stream is a
     documented app-private-store limit. Extended Windows paths preserve deep CAS downloads.
     """
-    try:
-        handle = open(win_extended_path(source), "rb")
-    except OSError as exc:
-        raise _artifact_error(
-            status_code=404,
-            error="not_found",
-            message="artifact bytes are not readable",
-            details={"artifact_id": version.artifact_id},
-        ) from exc
-    if recorded_sha:
-        try:
-            actual = _sha256_handle(handle)
-        except OSError as exc:
-            handle.close()
-            raise _artifact_error(
-                status_code=404,
-                error="not_found",
-                message="artifact bytes are not readable",
-                details={"artifact_id": version.artifact_id},
-            ) from exc
-        if actual != recorded_sha:
-            handle.close()
-            raise _artifact_error(
-                status_code=409,
-                error="integrity_violation",
-                message="artifact content no longer matches its recorded hash",
-                details={
-                    "artifact_id": version.artifact_id,
-                    "recorded_sha256": recorded_sha,
-                    "actual_sha256": actual,
-                },
-            )
-        handle.seek(0)
+    handle = _open_verified_handle(source, recorded_sha, version)
     return StreamingResponse(_stream_handle(handle), media_type=mime_for(version, record_name))
+
+
+def _open_verified_handle(
+    source: Path, recorded_sha: Optional[str], version: ArtifactVersion
+) -> Any:
+    """Delegate verified ownership of the open object to the artifact store helper."""
+    from clio_agent.gact.artifacts.storage import open_verified_artifact_handle
+
+    return open_verified_artifact_handle(
+        source,
+        recorded_sha,
+        artifact_id=version.artifact_id,
+        hash_handle=_sha256_handle,
+        error=_artifact_error,
+    )
 
 
 def _pin_mint(

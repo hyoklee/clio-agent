@@ -29,9 +29,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from clio_agent.gact.app import build_app
+
+pytestmark = pytest.mark.usefixtures("tool_declaration_scope")
 
 
 def _client(tmp_path: Path) -> TestClient:

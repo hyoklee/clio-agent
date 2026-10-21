@@ -1,0 +1,82 @@
+{
+  "family": "review-adapter-dialect-and-transport-corrections",
+  "test_runtime_parent": "C:/ct-r2",
+  "tests": [
+    {
+      "node": "tests/test_tools/test_native_task_client_contract.py::test_captured_schema_rejects_coercible_backend_output",
+      "status": "passed",
+      "pid": 8368,
+      "birth": 1791928688.8449025,
+      "exit_code": 0,
+      "elapsed_s": 20.03,
+      "runtime_residue": [],
+      "body_executed": true,
+      "output": "1 passed, 1 warning in 11.92s"
+    },
+    {
+      "node": "tests/test_tools/test_native_task_client_contract.py::test_terminal_validation_honors_declared_draft_and_format_annotations",
+      "status": "passed",
+      "pid": 41244,
+      "birth": 1791928708.8772013,
+      "exit_code": 0,
+      "elapsed_s": 19.04,
+      "runtime_residue": [],
+      "body_executed": true,
+      "output": "1 passed, 1 warning in 11.43s"
+    },
+    {
+      "node": "tests/test_tools/test_native_task_client_contract.py::test_terminal_validation_refuses_unknown_schema_dialects",
+      "status": "passed",
+      "pid": 61520,
+      "birth": 1791928727.915027,
+      "exit_code": 0,
+      "elapsed_s": 19.03,
+      "runtime_residue": [],
+      "body_executed": true,
+      "output": "1 passed, 1 warning in 11.42s"
+    },
+    {
+      "node": "tests/test_tools/test_native_task_client_contract.py::test_task_wrapper_rejects_multi_server_proxy_before_connection",
+      "status": "passed",
+      "pid": 62264,
+      "birth": 1791928746.9444213,
+      "exit_code": 0,
+      "elapsed_s": 19.16,
+      "runtime_residue": [],
+      "body_executed": true,
+      "output": "1 passed, 1 warning in 11.37s"
+    },
+    {
+      "node": "tests/test_tools/test_native_task_client_contract.py::test_task_wrapper_delegates_transport_identity_auth_and_close",
+      "status": "passed",
+      "pid": 17700,
+      "birth": 1791928766.1020703,
+      "exit_code": 0,
+      "elapsed_s": 18.87,
+      "runtime_residue": [],
+      "body_executed": true,
+      "output": "1 passed, 1 warning in 11.47s"
+    },
+    {
+      "node": "tests/test_tools/test_native_task_client_contract.py::test_sdk_acceptance_returns_before_work_and_drives_one_result",
+      "status": "passed",
+      "pid": 18288,
+      "birth": 1791928784.9758854,
+      "exit_code": 0,
+      "elapsed_s": 18.98,
+      "runtime_residue": [],
+      "body_executed": true,
+      "output": "1 passed, 1 warning in 11.65s"
+    }
+  ],
+  "product_model_acceptance": false,
+  "registered_sequential_cases": [
+    "tests/test_tools/test_native_task_client_contract.py::test_captured_schema_rejects_coercible_backend_output",
+    "tests/test_tools/test_native_task_client_contract.py::test_terminal_validation_honors_declared_draft_and_format_annotations",
+    "tests/test_tools/test_native_task_client_contract.py::test_terminal_validation_refuses_unknown_schema_dialects",
+    "tests/test_tools/test_native_task_client_contract.py::test_task_wrapper_rejects_multi_server_proxy_before_connection",
+    "tests/test_tools/test_native_task_client_contract.py::test_task_wrapper_delegates_transport_identity_auth_and_close",
+    "tests/test_tools/test_native_task_client_contract.py::test_sdk_acceptance_returns_before_work_and_drives_one_result"
+  ],
+  "binding_diagnostics": []
+}

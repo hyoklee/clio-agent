@@ -171,11 +171,13 @@ def test_additional_folder_browses_previews_and_revokes_without_deleting(
 
 
 def test_normalized_permission_response_rechecks_policy_and_only_user_can_grant(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
 ) -> None:
     from clio_agent.gact.permission_gate import resolve_permission
 
     app, client, root, external, wid, sid = setup_workspace(tmp_path, monkeypatch)
+    client.__enter__()
+    request.addfinalizer(lambda: client.__exit__(None, None, None))
     source = external / "notes.txt"
     source.write_text("private", encoding="utf-8")
 

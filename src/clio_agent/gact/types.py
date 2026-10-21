@@ -455,6 +455,7 @@ class Session(BaseModel):
     status: Literal[
         "idle",
         "running",
+        "stopping",
         "waiting_permission",
         "waiting_user",
         "error",

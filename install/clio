@@ -479,8 +479,8 @@ main() {
       if health; then say "stopping the running server first"; stop_server; fi
       if [[ -n "$uv_bin" ]]; then
         "$uv_bin" pip install --python "$CLIO_VENV/bin/python" ${wheel_arg:+"$wheel_arg"} -U clio-agent \
-          "dspy==3.4.0" "fastmcp==4.0.0b5" "fastmcp-slim==4.0.0b5" \
-          "fastmcp-tasks==4.0.0b5" \
+          "dspy==3.4.0" "fastmcp==4.1.0" "fastmcp-slim==4.1.0" \
+          "fastmcp-tasks==4.1.0" \
           || { err "update failed"; return 1; }
       else
         "$CLIO_VENV/bin/python" -m pip install ${wheel_arg:+"$wheel_arg"} -U clio-agent || { err "update failed (no uv; pip fallback also failed)"; return 1; }

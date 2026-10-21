@@ -1,50 +1,21 @@
-"""Bounded model-lane digest for a completed child task's output (#1306).
+"""Retained pure formatting for bounded child-output envelopes.
 
-``wait_agent_tasks`` honors the #880 verbatim contract: its
-completion payload's ``output`` is the child's FULL answer, byte-for-byte,
-ALWAYS. For a short (earthscope-class) answer that is the right call; for a
-content-producing child (a multi-page research report) it means a
-coordinator collecting N such children accumulates the SUM of every child's
-full output inline in its OWN context -- proven live in #1306: a single
-``wait_agent_tasks`` observation carrying two completed research answers
-measured 30,546 chars, and a researcher child turn two waves later recorded
-399,913 input tokens. The coordinator lost workflow state at that size.
-
-This mirrors the ``_clio`` truncation-envelope shape
-``tools/mcp_result_projection.py`` already uses for one oversize MCP tool
-result, applied to the SAME failure class one layer up (bytes accumulate
-ACROSS children collected into one context, not just within one call). It is
-a DIFFERENT knob from that module's ``model_tool_result_chars`` (own key, own
-consumer, own failure mode -- the house rule that module's own docstring
-states), because it bounds a different thing: one MCP call's result vs. one
-spawned child's full answer.
-
-The digest never discards data: a durable reference (the child session id +
-the id of the message holding the full text) rides the envelope, and
-``get_agent_task_output`` (built here, registered alongside the spawn tools
-in ``spawn_runtime.build_spawn_runtime_tools``) fetches it verbatim on
-demand -- recoverability is mandatory, per #1306. Nothing here decides
-anything FOR the model: the envelope only states what happened and how to
-get the rest; the model chooses whether to fetch it.
-
-The OTHER recoverability direction -- handing a child the full material of
-tasks the PARENT already collected, so a critic never has to round-trip
-through the parent at all -- lives in the sibling owner module
-``agent_task_input_refs.py`` (#1306 review round, finding 1).
+These helpers hold no execution or delivery authority. New retrieval instructions
+use get_task_result(handle); that control returns currently bounded output and
+Core references. Older saved instructions can use the explicit one-cycle
+get_agent_task_output(task_id) compatibility delegate.
 """
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 #: Typed reason on the digest envelope's ``_clio.reason`` (mirrors
 #: the ``<lane>_oversize`` reason naming).
 AGENT_TASK_OUTPUT_OVERSIZE_REASON = "agent_task_output_oversize"
 
-#: The fetch tool a digest envelope's ``fetch_full_output.tool`` points at
-#: (built by :func:`build_agent_task_output_tool`).
-FETCH_FULL_OUTPUT_TOOL = "get_agent_task_output"
+#: Canonical bounded result retrieval; retained envelopes may name its legacy alias.
+FETCH_FULL_OUTPUT_TOOL = "get_task_result"
 
 
 def agent_task_output_digest_chars() -> int:
@@ -155,7 +126,7 @@ def digest_agent_task_output(
         "message_ref": message_ref,
         "fetch_full_output": {
             "tool": FETCH_FULL_OUTPUT_TOOL,
-            "args": {"task_id": task_id},
+            "args": {"handle": task_id},
         },
     }
 
@@ -183,121 +154,3 @@ def digested_model_row(payload: dict[str, Any], task_result: Any) -> dict[str, A
             answer_excerpt=str((task_result.result or {}).get("answer_excerpt", "")),
         ),
     }
-
-
-def get_agent_task_output_impl(app: Any, task_id: str) -> str:
-    """Resolve ``task_id``'s full stored output, or a typed error row.
-
-    Works for ANY terminal task, success or failure alike (mirrors
-    the terminal task-result contract):
-    a FAILED task's stored material (whatever answer text it produced before
-    failing, plus its typed ``error_reason``) is returned the SAME way a
-    completed one's is -- never a refusal. Only an unknown id or one that has
-    not yet reached ANY terminal status is refused (#1306 review round,
-    finding 9).
-
-    Separated from :func:`build_agent_task_output_tool`'s closure so it is
-    directly unit-testable without building the whole tool/context
-    machinery. Reads the SAME registry + message re-read path
-    ``wait_agent_tasks`` itself uses (``spawn_runtime._resolve_verbatim_output``)
-    -- one recoverability path, not a second parallel one.
-    """
-
-    registry = getattr(app.state, "agent_task_registry", None)
-    if registry is None:
-        # A missing registry is an INFRASTRUCTURE gap, not "no such task" -- the
-        # id may well exist; the process just cannot look it up right now.
-        # Collapsing this into unknown_task would tell the model to give up on
-        # a reference that is actually fine (#1306 review round, finding 6).
-        return json.dumps(
-            {"error": "registry_unavailable", "task_id": task_id},
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-    task = registry.get(task_id)
-    if task is None:
-        return json.dumps(
-            {"error": "unknown_task", "task_id": task_id}, ensure_ascii=False, sort_keys=True
-        )
-    if not task.is_terminal:
-        return json.dumps(
-            {"error": "task_not_terminal", "task_id": task_id, "status": task.status},
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-
-    from clio_agent.gact.agents.spawn_runtime import _resolve_verbatim_output  # noqa: PLC0415
-
-    output, markers = _resolve_verbatim_output(app, task)
-    result: dict[str, Any] = {
-        "task_id": task_id,
-        "status": task.status,
-        "output": output,
-        "error_reason": task.error_reason,
-    }
-    result.update(markers)
-    return json.dumps(result, ensure_ascii=False, sort_keys=True)
-
-
-def build_agent_task_output_tool() -> Any:
-    """Build the ``get_agent_task_output`` dspy.Tool (#1306 recoverability).
-
-    Agent story: a parent collects a "digested" (oversize) child result from
-    ``wait_agent_tasks`` and wants the full text the envelope's
-    ``fetch_full_output`` points at -- e.g. to quote it verbatim in its own
-    deliverable, or hand it to the NEXT child as an input reference. This is
-    the ONE lean tool that resolves a completed task's full stored output;
-    it decides nothing FOR the model (no auto-injection, no summarization)
-    -- the model asks for it only when it actually needs the full text.
-
-    Bound into the spawn-runtime toolset (registered alongside the other
-    collector tools in ``spawn_runtime.build_spawn_runtime_tools``, same
-    gating as ``wait_agent_tasks``/``observe_agent_tasks``).
-    """
-
-    from clio_agent.gact import context as _ctx  # noqa: PLC0415
-    from clio_agent.gact.agents.tool_instrumentation import native_tool  # noqa: PLC0415
-
-    def get_agent_task_output(task_id: str) -> str:
-        """Fetch a completed task's FULL stored output, byte-for-byte.
-
-        Use this after wait_agent_tasks returns a "digested" envelope
-        (output too large to inline) -- the envelope's fetch_full_output
-        names this tool. Works for a FAILED task too (returns whatever
-        material it produced plus its error_reason, never a refusal).
-        Returns a typed error only for an unknown task id or one that has
-        not reached ANY terminal status yet."""
-
-        app = _ctx.active_app()
-        if app is None:
-            raise RuntimeError("get_agent_task_output requires an active CLIO app context")
-        from clio_agent.gact.task_controls import get_task_result
-        from clio_agent.gact.task_projection import resolve_task
-
-        sid = _ctx.active_session_id()
-        try:
-            row = resolve_task(app, sid, task_id)
-        except ValueError:
-            return json.dumps({"task_id": task_id, "error": "unknown_task"})
-        if row["task_kind"] != "Subagent":
-            return json.dumps({"task_id": task_id, "error": "not_subagent"})
-        get_task_result(row["handle"])
-        return get_agent_task_output_impl(app, row["id"])
-
-    return native_tool(
-        get_agent_task_output,
-        name=FETCH_FULL_OUTPUT_TOOL,
-        presentation="task_output",
-        # The fourth task-collection tool alongside spawn/wait/observe (#1350):
-        # same registry, same gating, same "agents" family — not a distinct
-        # digest domain of its own.
-        domain="agents",
-        desc=get_agent_task_output.__doc__,
-        title="Collect",
-        args={
-            "task_id": {
-                "type": "string",
-                "description": "A completed task's id (from spawn/wait/observe).",
-            },
-        },
-    )

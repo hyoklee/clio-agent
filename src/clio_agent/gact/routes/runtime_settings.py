@@ -59,18 +59,9 @@ def register_runtime_settings_routes(app: FastAPI) -> None:
     async def patch_settings(request: UpdateRuntimeSettings) -> RuntimeSettings:
         async with update_lock:
             result = await run_off_loop(lambda: _respond(lambda: update_runtime_settings(request)))
-            if "agent_tasks.max_concurrent" in request.changes and hasattr(
-                app.state, "max_concurrent_agent_tasks"
-            ):
-                app.state.max_concurrent_agent_tasks = int(
-                    next(
-                        row.value
-                        for row in result.settings
-                        if row.key == "agent_tasks.max_concurrent"
-                    )
+            if "agent_tasks.max_concurrent" in request.changes:
+                value = next(
+                    row.value for row in result.settings if row.key == "agent_tasks.max_concurrent"
                 )
-                if hasattr(app.state, "agent_task_registry"):
-                    from clio_agent.gact.turn_spawn import _admit_next_queued  # noqa: PLC0415
-
-                    _admit_next_queued(app)
+                app.state.conversations.set_inference_capacity(int(value))
             return result

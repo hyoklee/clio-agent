@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import math
 from typing import Any
@@ -69,7 +70,16 @@ def call_lm(lm: Any, request: Request) -> Response:
                 group.start_soon(watch_cancel)
                 try:
                     with dspy.context(send_stream=send):
-                        response = await lm.acall(request)
+                        owner = getattr(
+                            getattr(_ctx.active_app(), "state", None), "conversations", None
+                        )
+                        slot = (
+                            owner.inference_slot(session_id)
+                            if owner is not None
+                            else contextlib.nullcontext()
+                        )
+                        async with slot:
+                            response = await lm.acall(request)
                 except Exception as exc:
                     failure = exc
                     logger.warning(

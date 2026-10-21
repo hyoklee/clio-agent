@@ -24,6 +24,11 @@ def connected_data_status() -> dict[str, Any]:
     """
     app = context.active_app()
     sid = context.active_session_id()
+    return session_data_status(app, sid)
+
+
+def session_data_status(app: Any, sid: str) -> dict[str, Any]:
+    """Read the same safe inventory for an explicitly verified native-task owner."""
     if app is None or not sid:
         raise ValueError("Connected-data setup requires an active CLIO workspace session")
     session = app.state.sessions.get(sid)
@@ -158,11 +163,10 @@ def connected_data_status() -> dict[str, Any]:
 def setup_presentation(args: Mapping[str, Any], result: Any, structured: Any) -> dict[str, Any]:
     """Distinguish an accepted connection task from the source/account inventory."""
     row = structured if isinstance(structured, Mapping) else result
-    if isinstance(row, Mapping):
-        from clio_agent.gact.task_tools import task_submission_presentation
+    if isinstance(row, Mapping) and row.get("accepted") is True:
+        from clio_agent.gact.agents.native_presenters import native_presentation
 
-        if (submission := task_submission_presentation(row)) is not None:
-            return submission
+        return native_presentation("tasks", args, result, structured)
     if not isinstance(row, Mapping) or row.get("status") != "available":
         return {"summary": "Connected data is unavailable", "blocks": []}
     lines = ["### Workspace folders"]

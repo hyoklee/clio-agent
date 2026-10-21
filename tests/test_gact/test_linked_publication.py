@@ -116,7 +116,7 @@ def test_download_permission_is_independent_of_link(tmp_path: Path, editable: bo
     record.download_access = "editable" if editable else "read_only"
     service.store.put("source", record.source.id, record)
     operation = service.store.begin_operation(record.source.id, "materialize")
-    asyncio.run(service._transfer(record, workspace, operation))
+    asyncio.run(service.execute_transfer(record, workspace, operation))
     downloaded = service.get("w", record.source.id)
     assert downloaded.linked_access == "read_only"
     copy = Path(downloaded.source.local_path) / "data.txt"

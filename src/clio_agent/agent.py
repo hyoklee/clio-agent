@@ -22,7 +22,6 @@ Usage:
 import json
 import threading
 import time
-from collections.abc import Mapping
 from contextlib import contextmanager
 from typing import Any, Callable, Dict, List
 
@@ -48,7 +47,7 @@ from clio_agent.errors import (
     RoutingError,
 )
 from clio_agent.gact.mcp_gateway_refresh import (
-    correlated_execution_client_factory as _correlated_execution_client_factory,
+    execution_client_factory as _execution_client_factory,
 )
 from clio_agent.gact.mcp_gateway_refresh import (
     refresh_declared_mcp_servers as _refresh_declared_mcp_servers,
@@ -73,15 +72,11 @@ from clio_agent.tools.gateway import (
     build_gateway,
     build_tool_catalog,
     list_builtin_tool_definitions,
-    list_jarvis_tool_definitions,
-    list_relay_tool_definitions,
     namespace_proxies,
     namespace_specs,
 )
-from clio_agent.tools.jarvis_jobs import JarvisJobs
 from clio_agent.tools.mcp_discovery import NamespaceDiscoveryHealer, discover_declared_tools_bounded
 from clio_agent.tools.reaper import WorkspaceExecutorReaper
-from clio_agent.tools.remote_mcp import RemoteMcpFederation
 from clio_agent.tools.workspace_root import canonical_workspace_root
 
 
@@ -132,10 +127,6 @@ class ClioAgent(dspy.Module):
         data_dir: str | None = None,
         arc: ARCMemory | None = None,
         provider_config: LMProviderConfig | None = None,
-        remote_mcp_federation: RemoteMcpFederation | None = None,
-        jarvis_jobs: JarvisJobs | None = None,
-        relay_install: Any | None = None,
-        relay_status: Mapping[str, Any] | None = None,
     ):
         """Initialize the ClioAgent host: chat, tool execution, ARC, and runtime storage.
 
@@ -158,21 +149,13 @@ class ClioAgent(dspy.Module):
                 environment independently (the dropped boot env-handoff). ``None``
                 reads :func:`load_config_from_env` directly — the standalone CLI / test
                 baseline, byte-identical to before.
-            remote_mcp_federation: Optional relay catalog projection added to every
                 default and per-workspace execution gateway.
-            jarvis_jobs: Optional durable JARVIS application surface added to every
                 default and per-workspace execution gateway.
-            relay_install: Optional curated cluster-lifecycle tool surface
                 (clio-relay#209 A2) added to every default and per-workspace
                 execution gateway.
-            relay_status: Typed production wiring status retained by every gateway.
         """
         super().__init__()
         self.verbose = verbose
-        self._remote_mcp_federation = remote_mcp_federation
-        self._jarvis_jobs = jarvis_jobs
-        self._relay_install = relay_install
-        self._relay_status = dict(relay_status or {})
 
         # ARC Memory: reuse the injected one (the gact server owns the single per-process
         # ARC and re-injects it on every bind) or mint one; None in History mode.
@@ -258,7 +241,7 @@ class ClioAgent(dspy.Module):
             preloaded_tools=self._tool_definitions,
             namespace_servers=namespace_proxies(self._tool_gateway),
             server_id="gateway:default",
-            client_factory=_correlated_execution_client_factory(),
+            client_factory=_execution_client_factory(),
         )
         # Cache of workspace root -> sync tool executor (lazy, one per workspace).
         # Guarded by _workspace_executor_lock (shared with the #933 reaper);
@@ -327,27 +310,8 @@ class ClioAgent(dspy.Module):
         # and rejected every declared child before inference.
         pack_servers = self._discover_pack_servers(blueprint_id, cwd=cwd)
         specs = load_agent_mcp_servers(pack_servers=pack_servers)
-        # #1113: wire the receive-loop elicitation handler onto every declared-server
-        # backend so a mid-tool-call elicitation reaches the HITL surface. The hook is
-        # app-agnostic (it resolves its invocation from the correlation record the tool
-        # observer opens), so binding it once on the shared gateway is safe. Capabilities
-        # are declared at the served granularity (form always; url only with a configured
-        # trust list) so the advertised envelope never offers a mode that always fails.
-        from clio_agent.gact.elicitation_correlation import (  # noqa: PLC0415
-            correlated_capabilities,
-            make_correlated_handlers,
-        )
-
-        tool_gateway = build_gateway(
-            specs,
-            cwd=cwd,
-            handlers=make_correlated_handlers(),
-            capabilities=correlated_capabilities(),
-            remote_mcp_federation=getattr(self, "_remote_mcp_federation", None),
-            jarvis_jobs=getattr(self, "_jarvis_jobs", None),
-            relay_install=getattr(self, "_relay_install", None),
-            relay_status=getattr(self, "_relay_status", None),
-        )
+        # Product execution uses application-owned SDK clients and input binding.
+        tool_gateway = build_gateway(specs, cwd=cwd)
         if not set_catalog:
             return tool_gateway
         experts = self._discover_pack_experts()
@@ -361,13 +325,7 @@ class ClioAgent(dspy.Module):
             # discovered catalog already holds their Tool objects, so they seed
             # synchronously with the builtins — only spawned MCP namespaces are
             # deferred to the background pass.
-            self._tool_definitions.update(
-                list_relay_tool_definitions(getattr(self, "_remote_mcp_federation", None))
-            )
             # v1.7.0 cold-boot gap: see list_jarvis_tool_definitions.
-            self._tool_definitions.update(
-                list_jarvis_tool_definitions(getattr(self, "_jarvis_jobs", None))
-            )
             catalog = build_tool_catalog(
                 tool_gateway, experts=experts, tools=list(self._tool_definitions.values())
             )
@@ -507,23 +465,23 @@ class ClioAgent(dspy.Module):
             # DEFAULT executor while the workspace's resident one kept serving
             # a toolless (or partial) snapshot, so the ACL bricked with
             # federation=present.
-            current_epoch = getattr(self, "_relay_federation_epoch", 0)
+            current_epoch = getattr(self, "_mcp_configuration_revision", 0)
             executor_epoch = (
-                getattr(executor, "_clio_federation_epoch", current_epoch)
+                getattr(executor, "_clio_mcp_configuration_revision", current_epoch)
                 if executor is not None
                 else current_epoch
             )
-            federation_switched = (
+            configuration_switched = (
                 executor is not None and not stale and executor_epoch != current_epoch
             )
             reaper = getattr(self, "_workspace_reaper", None)
             if (
-                federation_switched
+                configuration_switched
                 and reaper is not None
                 and reaper.defer_restart_if_active(root, executor, leases)
             ):
                 # #1244: never close under a live turn; reaper drains at idle.
-                federation_switched = False
+                configuration_switched = False
             # Additive blueprint semantics (#1244): an unmounted blueprint
             # merges in below; ``blueprint_id == ""`` reuses the fleet as-is.
             from clio_agent.tools.fleet_blueprint_merge import (  # noqa: PLC0415
@@ -535,12 +493,12 @@ class ClioAgent(dspy.Module):
             blueprint_missing = (
                 executor is not None
                 and not stale
-                and not federation_switched
+                and not configuration_switched
                 and bool(blueprint_id)
                 and blueprint_id not in _mounted_blueprint_ids(executor)
             )
-            if executor is None or stale or federation_switched:
-                if federation_switched:
+            if executor is None or stale or configuration_switched:
+                if configuration_switched:
                     assert executor is not None
                     from clio_agent.runtime import trace  # noqa: PLC0415
 
@@ -555,7 +513,7 @@ class ClioAgent(dspy.Module):
                         )
                     trace.event(
                         "TOOLS",
-                        "workspace_fleet_federation_epoch_evict root=%s from_epoch=%s to_epoch=%s",
+                        "workspace_fleet_mcp_configuration_revision_evict root=%s from_epoch=%s to_epoch=%s",
                         root,
                         executor_epoch,
                         current_epoch,
@@ -603,7 +561,7 @@ class ClioAgent(dspy.Module):
                     preloaded_tools=preloaded,
                     namespace_servers=namespace_proxies(gateway),
                     server_id=f"gateway:{root}",
-                    client_factory=_correlated_execution_client_factory(),
+                    client_factory=_execution_client_factory(),
                 )
                 # Stamps (ids/epoch/specs) live with the merge owner module.
                 # #1281 F5: direct-client factories are NOT re-stamped here --
@@ -612,7 +570,7 @@ class ClioAgent(dspy.Module):
                 stamp_fresh_fleet(
                     executor,
                     blueprint_id=blueprint_id,
-                    federation_epoch=current_epoch,
+                    mcp_configuration_revision=current_epoch,
                     declared_specs=declared_specs,
                 )
                 executors[root] = executor

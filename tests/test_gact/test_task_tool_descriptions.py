@@ -9,9 +9,9 @@ from mcp.types import Tool, ToolExecution
 
 from clio_agent.gact.agents.builders import _enabled_external_mcp_dspy_tools
 from clio_agent.gact.agents.skill_runtime import SkillRuntime, build_spawn_skill_task_tool
-from clio_agent.gact.agents.spawn_runtime import build_spawn_runtime_tools
 from clio_agent.gact.storage.connect_tool import build_connected_data_connect_tool
 from clio_agent.gact.storage.download_tool import build_connected_data_download_tool
+from clio_agent.gact.task_declarations import build_spawn_runtime_tools
 from clio_agent.gact.types import AgentDef
 from clio_agent.tools.execution import _make_dspy_tool
 from clio_agent.tools.gateway import _list_tools_sync
@@ -161,8 +161,14 @@ def test_spawn_declaration_explains_task_handle_and_wake(
     monkeypatch.setattr(resolution, "_runtime_declared_child_ids", lambda *a, **kw: {"worker"})
     tools = build_spawn_runtime_tools(SimpleNamespace(), AgentDef(id="main", title="Main"))
     tool = next(tool for tool in tools if tool.name == name)
-    assert "Subagent task" in tool.desc and "handle" in tool.desc
-    assert "wait_tasks" in tool.desc and "wake" in tool.desc and "Stop" in tool.desc
+    assert "Subagent" in tool.desc and "handle" in tool.desc
+    if name == "spawn_agent_task":
+        assert "observe_tasks" in tool.desc and "wait_tasks" in tool.desc and "wake" in tool.desc
+        assert "Pause holds only the child model" in tool.desc
+        assert "cancel_tasks includes its descendant work" in tool.desc
+    else:
+        assert "independent errors" in tool.desc and "model calls" in tool.desc
+        assert "shared observation or waiting" in tool.desc
 
 
 def test_malformed_mcp_capability_does_not_promise_a_task() -> None:

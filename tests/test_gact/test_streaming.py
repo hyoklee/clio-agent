@@ -8,8 +8,8 @@ the prediction lands as one batch part stamped ``sync_execution_path``.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
-import threading
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -19,8 +19,10 @@ from typing import Any
 
 import dspy
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from clio_agent.arc.memory import ARCMemory
 from clio_agent.gact.app import (
     _build_prompt_user_agent_module,
     _dynamic_agent_lm_config,
@@ -30,12 +32,13 @@ from clio_agent.gact.app import (
     _stream_fallback_reason_capabilities,
     build_app,
 )
-from clio_agent.gact.turn_forward import _run_module
+from clio_agent.gact.task_access import TaskCaller
 from clio_agent.gact.types import AgentDef
 from clio_agent.providers.claude_code_errors import CLAUDE_CODE_INSTALL_FAILED_MESSAGE
 from clio_agent.providers.codex.errors import CODEX_AUTHENTICATION_ERROR_MESSAGE
 from tests._config_layer import set_config
 from tests._harness import emit_live_text, install_scripted_module
+from tests.test_arc.child_worker_helpers import commit_model_input, execute_model_under_owner
 
 # #948 S4b: turns that POST through the engine now run the default blueprint react
 # ``main``; route that root to each test's ``build_app(agent=...)`` host fake.
@@ -149,8 +152,10 @@ def enter_client() -> Iterator[Callable[[Any], TestClient]]:
         yield _enter
 
 
-def _wait_for_turn_settlement(app: Any, sid: str, timeout: float = 30.0) -> None:
-    """Wait on the owned turn task without polling or changing turn semantics.
+def _wait_for_turn_settlement(
+    app: Any, sid: str, timeout: float = 30.0, *, handle: str | None = None
+) -> None:
+    """Wait on confirmed assignment settlement and physical reservation release.
 
     30s for the same reason ``conftest.complete_turn`` uses it: every turn builds
     and runs a blueprint module, and slow 2-core CI runners under coverage need
@@ -158,26 +163,51 @@ def _wait_for_turn_settlement(app: Any, sid: str, timeout: float = 30.0) -> None
     ever fires on a genuine hang.
     """
 
-    task = app.state.in_flight_turns.get(sid)
-    if task is None:
-        return
+    if handle is None:
+        assignment = app.state.task_history.latest_assignment(sid)
+        assert assignment is not None, "No confirmed assignment exists for the accepted input"
+        handle = assignment.handle
 
-    settled = threading.Event()
+    observed: dict[str, Any] = {}
 
-    def _observe() -> None:
-        task.add_done_callback(lambda _finished: settled.set())
+    async def settled() -> None:
+        result = await app.state.task_operations.wait(
+            TaskCaller(sid, app.state.human_principal, human_action=True), handle
+        )
+        assert not result["pending"], result
+        assert len(result["outcomes"]) == 1 and "error" not in result["outcomes"][0], result
+        observed.update(result)
+        released = asyncio.Event()
 
-    app.state.turn_runner.call_soon_threadsafe(_observe)
-    assert settled.wait(timeout), "background turn did not settle before event assertions"
-    assert not app.state.turn_runner.busy(sid)
+        def retired() -> None:
+            observed["busy_at_release"] = app.state.turn_runner.busy(sid)
+            released.set()
+
+        app.state.turn_runner.run_when_released(sid, retired)
+        await released.wait()
+
+    waiting = asyncio.run_coroutine_threadsafe(settled(), app.state.conversations._loop)
+    try:
+        waiting.result(timeout=timeout)
+    except TimeoutError as error:
+        waiting.cancel()  # End only the diagnostic waiter; lifespan cleanup owns the work.
+        raise AssertionError("background turn did not settle before event assertions") from error
+    assert not observed["busy_at_release"], {
+        "requested_assignment": handle,
+        "settlement": observed,
+        "reservation": app.state.turn_runner.handle(sid),
+    }
 
 
 def _run_turn(client: TestClient, app: Any, text: str = "stream me") -> str:
     """Create a session, post one message and wait for its turn to settle."""
 
     sid = client.post("/v1/sessions", json={"title": "t"}).json()["id"]
-    client.post(f"/v1/sessions/{sid}/messages", json={"parts": [{"type": "text", "text": text}]})
-    _wait_for_turn_settlement(app, sid)
+    accepted = client.post(
+        f"/v1/sessions/{sid}/messages", json={"parts": [{"type": "text", "text": text}]}
+    )
+    assert accepted.status_code == 202, accepted.text
+    _wait_for_turn_settlement(app, sid, handle=accepted.json()["task_handle"])
     return sid
 
 
@@ -286,6 +316,7 @@ class _DevelopEraAgent(dspy.Module):
         session_edit_mode: str = "diff",
         cancel_requested: Any | None = None,
     ) -> dspy.Prediction:
+        commit_model_input(session_id)
         self.calls.append(
             {
                 "question": question,
@@ -316,6 +347,7 @@ class _NativeInputAgent(dspy.Module):
         cancel_requested: Any | None = None,
     ) -> dspy.Prediction:
         del session_mode, session_edit_mode, cancel_requested
+        commit_model_input(session_id)
         self.calls.append(
             {
                 "question": question,
@@ -327,28 +359,13 @@ class _NativeInputAgent(dspy.Module):
         return dspy.Prediction(answer="saw them")
 
 
-def _turn_state(
-    app: Any, text: str, *, images: list[Any] | None = None, files: list[Any] | None = None
-) -> SimpleNamespace:
-    """The slice of ``TurnState`` that ``_run_module`` reads."""
-
-    return SimpleNamespace(
-        app=app,
-        sid="sid",
-        user_msg=SimpleNamespace(id="msg_user", metadata={}),
-        enriched_text=text,
-        sess=SimpleNamespace(mode="edit", edit_mode="diff"),
-        native_images=list(images or []),
-        native_files=list(files or []),
-        injections=[],
-    )
-
-
 def _never_cancelled() -> bool:
     return False
 
 
-async def test_imageless_turn_runs_an_agent_without_an_images_parameter(tmp_path: Path) -> None:
+async def test_imageless_turn_runs_an_agent_without_an_images_parameter(
+    tmp_path: Path, arc: ARCMemory
+) -> None:
     """No ``images=[]`` is injected into a forward that never declared it.
 
     Injecting it unconditionally raised ``TypeError``, so an ordinary text turn
@@ -356,16 +373,16 @@ async def test_imageless_turn_runs_an_agent_without_an_images_parameter(tmp_path
     """
 
     agent = _DevelopEraAgent("develop era answer")
-    app = build_app(sessions_path=tmp_path / "s.json", agent=agent)
-
-    result = await _run_module(_turn_state(app, "no attachments here"), agent, _never_cancelled)
+    app, sid, result = await execute_model_under_owner(
+        arc, tmp_path, agent, "no attachments here", cancel=_never_cancelled
+    )
 
     # The module ran ONCE with its own contract intact -- no TypeError, no
     # fabricated kwarg, and the mode flags it DOES declare arrived.
     assert agent.calls == [
         {
             "question": "no attachments here",
-            "session_id": "sid",
+            "session_id": sid,
             "session_mode": "edit",
             "session_edit_mode": "diff",
             "cancel_requested": _never_cancelled,
@@ -373,32 +390,38 @@ async def test_imageless_turn_runs_an_agent_without_an_images_parameter(tmp_path
     ]
     assert result.answer == "develop era answer"
     # An imageless turn dropped nothing, so nothing is recorded as degraded.
-    assert _pop_stream_fallback_notes(app, "sid") == []
+    assert _pop_stream_fallback_notes(app, sid) == []
 
 
 async def test_images_on_an_agent_without_an_images_parameter_are_typed_not_silent(
     tmp_path: Path,
+    arc: ARCMemory,
 ) -> None:
     """A real attachment that cannot be delivered is a typed reason, not a drop."""
 
     agent = _DevelopEraAgent("answered without seeing the image")
-    app = build_app(sessions_path=tmp_path / "s.json", agent=agent)
-    state = _turn_state(app, "describe the attachment", images=[object()], files=[object()])
-
-    result = await _run_module(state, agent, _never_cancelled)
+    app, sid, result = await execute_model_under_owner(
+        arc,
+        tmp_path,
+        agent,
+        "describe the attachment",
+        images=[object()],
+        files=[object()],
+        cancel=_never_cancelled,
+    )
 
     assert result.answer == "answered without seeing the image"
     assert len(agent.calls) == 1
     # A NOTE, not the single delivery slot: a later delivery-path reason must not
     # be able to overwrite the record that an attachment never reached the model.
-    notes = _pop_stream_fallback_notes(app, "sid")
+    notes = _pop_stream_fallback_notes(app, sid)
     assert [note["reason"] for note in notes] == ["native_model_inputs_dropped"]
     assert notes[0]["live_streaming"] is True
     assert notes[0]["synthetic_posthoc"] is False
     assert "images=1" in notes[0]["message"]
     assert "files=1" in notes[0]["message"]
     assert "_DevelopEraAgent.forward" in notes[0]["message"]
-    assert _pop_stream_fallback(app, "sid").get("reason") != "native_model_inputs_dropped"
+    assert _pop_stream_fallback(app, sid).get("reason") != "native_model_inputs_dropped"
 
 
 def test_degradation_note_ledger_is_bounded_by_configuration() -> None:
@@ -410,7 +433,7 @@ def test_degradation_note_ledger_is_bounded_by_configuration() -> None:
         stream_fallback_notes,
     )
 
-    app = SimpleNamespace(state=SimpleNamespace())
+    app = FastAPI()
 
     set_config("gact.ledger_retention.stream_fallback_notes.max", 3)
     assert _max_notes_per_session() == 3
@@ -428,45 +451,51 @@ def test_degradation_note_ledger_is_bounded_by_configuration() -> None:
     assert [note["message"] for note in stream_fallback_notes(app)["sid"]] == ["drop last"]
 
 
-async def test_native_inputs_reach_an_agent_that_declares_them(tmp_path: Path) -> None:
+async def test_native_inputs_reach_an_agent_that_declares_them(
+    tmp_path: Path, arc: ARCMemory
+) -> None:
     """The gate must not become a blanket refusal: a capable forward still gets them."""
 
     agent = _NativeInputAgent()
-    app = build_app(sessions_path=tmp_path / "s.json", agent=agent)
     first, second, only_file = object(), object(), object()
 
-    await _run_module(
-        _turn_state(app, "look", images=[first, second], files=[only_file]),
+    app, sid, _ = await execute_model_under_owner(
+        arc,
+        tmp_path,
         agent,
-        _never_cancelled,
+        "look",
+        images=[first, second],
+        files=[only_file],
+        cancel=_never_cancelled,
     )
 
     assert agent.calls == [
         {
             "question": "look",
-            "session_id": "sid",
+            "session_id": sid,
             "images": [first, second],
             "files": [only_file],
         }
     ]
-    assert _pop_stream_fallback_notes(app, "sid") == []
+    assert _pop_stream_fallback_notes(app, sid) == []
 
 
-async def test_a_module_that_raises_is_run_once_and_the_error_propagates(tmp_path: Path) -> None:
+async def test_a_module_that_raises_is_run_once_and_the_error_propagates(
+    tmp_path: Path, arc: ARCMemory
+) -> None:
     """The one-path engine never re-runs a module: its failure is the turn's failure."""
 
     calls = {"n": 0}
 
     class _Raising:
         def __call__(self, **kwargs: Any) -> Any:
+            commit_model_input(kwargs["session_id"])
             del kwargs
             calls["n"] += 1
             raise TypeError("internal boom")
 
-    app = build_app(sessions_path=tmp_path / "s.json", agent=_Agent("unused"))
-
     with pytest.raises(TypeError, match="internal boom"):
-        await _run_module(_turn_state(app, "hi"), _Raising(), _never_cancelled)
+        await execute_model_under_owner(arc, tmp_path, _Raising(), "hi", cancel=_never_cancelled)
     assert calls["n"] == 1
 
 
@@ -721,11 +750,14 @@ def test_non_text_parts_skip_deltas(tmp_path: Path) -> None:
     class _ToolObservingAgent:
         def forward(self, question: str, session_id: str) -> _Pred:
             from clio_agent.tools.execution import current_tool_runtime
+            from clio_agent.tools.tool_observation import notify_tool_observer
 
             observer = current_tool_runtime().tool_observer
             assert observer is not None
-            observer("fs_read_file", {"path": "README.md"}, "started", None)
-            observer("fs_read_file", {"path": "README.md"}, "completed", None, {"ok": True})
+            notify_tool_observer(observer, "fs_read_file", {"path": "README.md"}, "started")
+            notify_tool_observer(
+                observer, "fs_read_file", {"path": "README.md"}, "completed", result={"ok": True}
+            )
             return _Pred(answer="tool turn done")
 
     from .conftest import complete_turn
@@ -899,11 +931,12 @@ def test_message_events_carry_turn_id_and_stream_source_batch(app_client) -> Non
 
     app, client, _ = app_client
     sid = client.post("/v1/sessions", json={"title": "t"}).json()["id"]
-    client.post(
+    accepted = client.post(
         f"/v1/sessions/{sid}/messages",
         json={"parts": [{"type": "text", "text": "correlate me"}]},
     )
-    _wait_for_turn_settlement(app, sid)
+    assert accepted.status_code == 202, accepted.text
+    _wait_for_turn_settlement(app, sid, handle=accepted.json()["task_handle"])
 
     history = app.state.bus._history.get(sid, [])
     turn_id = _turn_id_of(history)

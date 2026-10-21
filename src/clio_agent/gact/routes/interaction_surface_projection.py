@@ -14,8 +14,15 @@ def _question_correlation(app: "FastAPI", question: "UserQuestion") -> dict[str,
     metadata = question.metadata if isinstance(question.metadata, Mapping) else {}
     elicitation = metadata.get("elicitation")
     elicitation = elicitation if isinstance(elicitation, Mapping) else {}
-    child = app.state.user_questions.get(str(metadata.get("forwarded_from_question") or ""))
-    child_meta = child.metadata if isinstance(getattr(child, "metadata", None), Mapping) else {}
+    from clio_agent.gact.question_surface import question_view
+
+    child_id = str(metadata.get("forwarded_from_question") or "")
+    child = app.state.task_history.task_snapshot(child_id) if child_id else None
+    child_meta = (
+        question_view(app, child).get("metadata", {})
+        if child is not None and child.kind == "Question"
+        else {}
+    )
     child_elicitation = child_meta.get("elicitation")
     child_elicitation = child_elicitation if isinstance(child_elicitation, Mapping) else {}
     return {
@@ -45,13 +52,9 @@ def _question_correlation(app: "FastAPI", question: "UserQuestion") -> dict[str,
 
 
 def _task_id_for_owner(app: "FastAPI", owner: str) -> str:
-    """Return the newest registered agent task belonging to this session."""
-    registry = getattr(app.state, "agent_task_registry", None)
-    if registry is None:
-        return ""
-    tasks = [task for task in registry.snapshot() if task.child_session_id == owner]
-    tasks.sort(key=lambda task: task.created_at, reverse=True)
-    return tasks[0].task_id if tasks else ""
+    """Resolve the session's finite assignment through the passive Core index."""
+    assignment = app.state.task_history.latest_assignment(owner)
+    return assignment.handle if assignment is not None else ""
 
 
 def _surface_actions(surface: Mapping[str, Any]) -> list[str]:

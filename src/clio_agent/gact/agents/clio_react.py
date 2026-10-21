@@ -30,8 +30,8 @@ Per step:
    drafts to the user; ``max_iters`` (``<= 0`` unlimited) or ``context_window_exceeded``:
    stop. Nothing calls the model after the loop (``react-loop-completion-2026-09.md``).
 
-A forward first takes up a human-judged variant run the user has answered
-(:func:`~clio_agent.gact.agents.variant_drafts.resume_pending`).
+Human-judged module variants collect their own common Core Question results.
+Ordinary agent Questions remain inputs to the current conversation.
 """
 
 from __future__ import annotations
@@ -46,13 +46,12 @@ import logging
 import threading
 import traceback
 import uuid
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
 import dspy
-import pydantic
 from dspy.lm15 import (
     CacheConfig,
     Config,
@@ -65,6 +64,7 @@ from dspy.lm15 import (
     TextPart,
     ThinkingPart,
     ToolCallPart,
+    ToolResultPart,
 )
 from dspy.utils.exceptions import AdapterParseError, ContextWindowExceededError
 
@@ -75,6 +75,7 @@ from clio_agent.gact.agents import clio_react_stream as stream
 from clio_agent.gact.agents.clio_react_recovery import recover_stream
 from clio_agent.gact.agents.clio_react_stream_call import call_lm as _call_lm
 from clio_agent.gact.agents.clio_react_submit import active_react_scope_safe, record_submit_audit
+from clio_agent.gact.agents.clio_react_submit import submit_tool as _submit_tool
 from clio_agent.gact.agents.github_shell_guidance import github_shell_guidance
 from clio_agent.gact.agents.task_guidance import task_guidance
 from clio_agent.gact.injection_parts import emit_injection
@@ -158,13 +159,20 @@ class ClioReAct(dspy.Module):
 
     def __init__(self, signature: Any, tools: Iterable[Any], max_iters: int = 20) -> None:
         super().__init__()
-        self.signature = dspy.ensure_signature(signature)
+        self.signature: Any = dspy.ensure_signature(signature)
+        if self.signature is None:
+            raise ValueError("ClioReAct requires an output signature")
         self.max_iters = max_iters
         # The module's own LM, as on a DSPy predictor: ``dspy.BestOfN`` / ``dspy.Refine``
         # read it and set a per-rollout copy; unset, the context's LM is used.
         self.lm: Any = None
+        self._clio_expert_id: str = ""
         user_tools = [t if isinstance(t, dspy.Tool) else dspy.Tool(t) for t in tools]
-        self.tools: dict[str, dspy.Tool] = {t.name: t for t in user_tools}
+        self.tools: dict[str, dspy.Tool] = {}
+        for tool in user_tools:
+            if not isinstance(tool.name, str) or not tool.name.strip():
+                raise ValueError("Agent tools require an explicit nonempty name")
+            self.tools[tool.name] = tool
         if "submit" in self.tools:
             raise ValueError("`submit` is reserved as the final-output tool.")
         self.tools["submit"] = _submit_tool(self.signature)
@@ -179,12 +187,8 @@ class ClioReAct(dspy.Module):
 
     def forward(self, **input_args: Any) -> dspy.Prediction:
         """Run the loop for one expert turn (see the module docstring)."""
-        from clio_agent.gact.agents.variant_drafts import resume_pending  # noqa: PLC0415
         from clio_agent.providers.stateful_common import stateful_scope  # noqa: PLC0415
 
-        resumed = resume_pending(self, input_args)
-        if resumed is not None:
-            return resumed
         # A fresh stateful scope per forward: the stateful engines key their kept
         # conversations on it (Codex direct its WebSocket, Claude Code its session), and
         # the scope routes ARC-op resets to the conversations this forward drove.
@@ -195,37 +199,6 @@ class ClioReAct(dspy.Module):
 # --------------------------------------------------------------------------- #
 # The request pieces                                                          #
 # --------------------------------------------------------------------------- #
-def _submit_tool(signature: Any) -> dspy.Tool:
-    """The reserved ``submit`` tool: its args are the signature's outputs.
-
-    An output field declared with a Pydantic default may be omitted (the default is
-    filled -- the author declared it droppable); every other field is required.
-    """
-    output_fields = signature.output_fields
-    names = list(output_fields)
-    defaults = {
-        name: default
-        for name, field in output_fields.items()
-        for has_default, default in [_declared_default(field)]
-        if has_default
-    }
-
-    def submit(**kwargs: Any) -> dict[str, Any]:
-        missing = [n for n in names if n not in kwargs and n not in defaults]
-        if missing:
-            raise ValueError(f"Missing required final output field(s): {', '.join(missing)}")
-        return {n: kwargs[n] if n in kwargs else defaults[n] for n in names}
-
-    return dspy.Tool(
-        submit,
-        name="submit",
-        desc=(
-            "Submit the final outputs for the task. Use it only when these structured "
-            "outputs are required; otherwise reply without calling a tool."
-        ),
-        args={name: _json_schema(field.annotation) for name, field in output_fields.items()},
-        arg_types={name: field.annotation for name, field in output_fields.items()},
-    )
 
 
 def _function_tool(tool: dspy.Tool) -> FunctionTool:
@@ -317,6 +290,9 @@ def _place_tool_media(messages: list[Message], placement: str) -> list[Message]:
         if message.role == "tool":
             parts = []
             for part in message.parts:
+                if not isinstance(part, ToolResultPart):
+                    parts.append(part)
+                    continue
                 kept = [p for p in part.content if not isinstance(p, ImagePart | DocumentPart)]
                 moved = [p for p in part.content if isinstance(p, ImagePart | DocumentPart)]
                 if moved:
@@ -382,8 +358,16 @@ class _Loop:
         self.recorder.started(expert_span, self.inputs)
         state = getattr(_ctx.active_app(), "state", None)
         ledger = getattr(state, "messages", None)
-        if ledger is not None:
-            self.recorder.carry_over(ledger.get(self.session, []) or [])
+        if ledger is not None and _ctx.active_react_run() < 0:
+            sessions = getattr(state, "sessions", None)
+            session = sessions.get(self.session) if sessions is not None else None
+            primary = _ctx.current_turn().primary_agent_id or (
+                getattr(session, "agent", {}).get("id", "main") if session is not None else ""
+            )
+            self.recorder.carry_over(
+                ledger.get(self.session, []) or [],
+                allow_transcript=self.scope == _ctx.run_keyed_scope(primary),
+            )
         self.recorder.injections([*self._tool_use_note(), *_ctx.turn_injections()])
         # The continuing flag is this forward's alone: anything it starts opens its own task.
         continue_token = _CONTINUING.set(False) if _CONTINUING.get() else None
@@ -417,6 +401,18 @@ class _Loop:
         """Tell an agent with tools, once, that one step may call several at once."""
         return [("tool_use", TOOL_USE_NOTE)] if set(self.agent.tools) - {"submit"} else []
 
+    def _arrivals(self, *, human_only: bool = False) -> bool:
+        """Inspect Core-pending arrivals; only the next input commit delivers them."""
+        from clio_agent.gact import context
+
+        owner = getattr(getattr(context.active_app(), "state", None), "conversations", None)
+        if owner is None or context.current().react_run >= 0:
+            return False
+        return any(
+            not human_only or item.kind in {"human", "composer"}
+            for item in owner.mail.stage(owner.caller(self.session)).items
+        )
+
     def _one_step(self) -> dspy.Prediction | None:
         from clio_agent.gact import context as _ctx  # noqa: PLC0415
         from clio_agent.gact.compaction import maybe_autocompact  # noqa: PLC0415
@@ -424,13 +420,12 @@ class _Loop:
         _raise_if_cancelled()
         self._arrivals()
         maybe_autocompact(self.autocompact)
-        first_request = True
+        attempt = 0
 
         def request() -> Request:
-            nonlocal first_request
-            if not first_request:
-                self._arrivals()
-            first_request = False
+            nonlocal attempt
+            self.recorder.commit_input(self.step, attempt=attempt)
+            attempt += 1
             return Request(
                 model=self.lm.model,
                 system=self.system,
@@ -457,14 +452,12 @@ class _Loop:
                 # before closing the turn, even if that call chose no tools.
                 return None
             return self._end({"answer": text}, "direct_response", self.step + 1)
-        arrived = self._take_arrivals()
-        if any(source == "steer" for source, _ in arrived):
+        if self._arrivals(human_only=True):
             # Already streamed prose precedes the newly delivered human message.
             # These calls were proposals, not executions: replan before opening
             # tool spans or recording calls that never ran.
             if text or thinking:
                 self._record(text, thinking, [], {}, origin)
-            self.recorder.arrivals(arrived, max(self.step, 0))
             _log.info("Tool proposal superseded by steer at step=%s", self.step)
             return None
         thought_token = _ctx.set_step_thought(text, "".join(t.text for t in thinking))
@@ -476,8 +469,6 @@ class _Loop:
             _ctx.reset(thought_token)
         results = {c.id: (o.value, o.is_error) for c, o in zip(calls, outcomes, strict=True)}
         self._record(text, thinking, calls, results, origin)
-        if arrived:
-            self.recorder.arrivals(arrived, max(self.step, 0))
         for outcome in outcomes:
             if outcome.escalate is not None:
                 raise outcome.escalate
@@ -493,8 +484,6 @@ class _Loop:
                 return self._prediction({}, "draft_alternatives_yield")
             self.recorder.completed({"answer": answer}, self.step + 1)
             return self._prediction({"answer": answer}, "variant_selected")
-        if yield_name := record.pending_turn_yield(calls):
-            return self._prediction({}, f"{yield_name}_yield")
         if final is not None:
             if (self.max_iters <= 0 or self.step + 1 < self.max_iters) and self._arrivals():
                 return None
@@ -502,23 +491,6 @@ class _Loop:
             return self._prediction(final, "submit")
         _raise_if_cancelled()
         return None
-
-    def _arrivals(self) -> bool:
-        """Take in what arrived since the last step (user steers, finished children)."""
-        arrived = self._take_arrivals()
-        if arrived:
-            self.recorder.arrivals(arrived, max(self.step, 0))
-        return bool(arrived)
-
-    def _take_arrivals(self) -> list[tuple[str, str]]:
-        """Drain once; the caller records delivery in causal model-context order."""
-        from clio_agent.gact import context as _ctx  # noqa: PLC0415
-
-        state = getattr(_ctx.active_app(), "state", None)
-        drain = getattr(state, "pending_loop_inbox_drain", None)
-        if drain is None:
-            return []
-        return drain()
 
     def _context(self) -> list[Message]:
         return self.recorder.read_steps()
@@ -653,7 +625,21 @@ class _Loop:
 
     def _prediction(self, outputs: dict[str, Any], reason: str) -> dspy.Prediction:
         # The agent's messages are what clio-core holds for its scope: one source.
-        return dspy.Prediction(**outputs, messages=self._context(), termination_reason=reason)
+        prediction = dspy.Prediction(
+            **outputs,
+            messages=self._context(),
+            termination_reason=reason,
+            assignment_disposition=getattr(outputs, "assignment_disposition", None),
+        )
+        from clio_agent.arc.task_types import ContextBoundary
+
+        view = self.recorder.arc.context_view(self.recorder.session, self.recorder.scope)
+        prediction.clio_context_boundary = ContextBoundary(
+            session_id=self.recorder.session,
+            scope=self.recorder.scope,
+            logical_time=max((row.logical_time for row in view.segments), default=0),
+        )
+        return prediction
 
 
 # --------------------------------------------------------------------------- #
@@ -678,26 +664,6 @@ def _turn_cancelled() -> BaseException:
     return _TurnCancelled(
         _cancelled_error_info(_ctx.active_session_id(), execution_cancellation="cooperative")
     )
-
-
-def _declared_default(field: Any) -> tuple[bool, Any]:
-    """``(True, default)`` for an output field declared with a Pydantic default."""
-    from pydantic_core import PydanticUndefined  # noqa: PLC0415
-
-    default = getattr(field, "default", PydanticUndefined)
-    if default is not PydanticUndefined:
-        return True, default
-    factory: Callable[[], Any] | None = getattr(field, "default_factory", None)
-    if factory is not None:
-        return True, factory()
-    return False, None
-
-
-def _json_schema(annotation: Any) -> dict[str, Any]:
-    try:
-        return pydantic.TypeAdapter(annotation).json_schema()
-    except (pydantic.PydanticSchemaGenerationError, TypeError, ValueError):
-        return {"type": "string"}
 
 
 def _fmt_exc(err: BaseException, *, limit: int = 5) -> str:

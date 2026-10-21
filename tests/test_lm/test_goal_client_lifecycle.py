@@ -16,11 +16,13 @@ import dspy
 import pytest
 from dspy.lm15 import Message, Request
 
+from clio_agent.arc.memory import ARCMemory
 from clio_agent.config import LMProviderConfig
 from clio_agent.gact import goal
 from clio_agent.lm.engines.lm_loop import run_on_lm_loop
 from clio_agent.lm.factory import create_lm
 from clio_agent.lm.resources import model_resources
+from tests.test_arc.conftest import core_arc as core_arc
 from tests.test_gact.test_goal import _app, _session
 
 
@@ -48,6 +50,7 @@ def test_repeated_goal_checks_close_owned_clients_without_waiting_for_gc(
     endpoint: tuple[str, dict[str, Any]],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    arc: ARCMemory,
 ) -> None:
     base, state = endpoint
     retained: list[dspy.LM] = []
@@ -58,7 +61,7 @@ def test_repeated_goal_checks_close_owned_clients_without_waiting_for_gc(
         return lm, dspy.ChatAdapter()
 
     monkeypatch.setattr("clio_agent.gact.fleet_settings.model_route", route)
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     for _ in range(6):
         _session(app)  # six idle sessions issue no requests
@@ -90,10 +93,11 @@ def test_repeated_goal_checks_close_owned_clients_without_waiting_for_gc(
 def test_inherited_client_is_borrowed_and_idle_socket_is_not_an_active_request(
     endpoint: tuple[str, dict[str, Any]],
     tmp_path: Path,
+    arc: ARCMemory,
 ) -> None:
     base, state = endpoint
     lm = _client(base)
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     app.state.agent = SimpleNamespace(_main_lm=lm, _dspy_adapter=dspy.ChatAdapter())
     sid = _session(app)
 
@@ -119,6 +123,7 @@ def test_pending_goal_timeout_or_cancel_closes_owned_resources(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     cancel: bool,
+    arc: ARCMemory,
 ) -> None:
     base, state = endpoint
     state["hold"] = True
@@ -131,7 +136,7 @@ def test_pending_goal_timeout_or_cancel_closes_owned_resources(
 
     monkeypatch.setattr("clio_agent.gact.fleet_settings.model_route", route)
     monkeypatch.setattr(goal, "DEFAULT_JUDGE_TIMEOUT_S", 5 if cancel else 0.1)
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
 
     async def run() -> None:
@@ -164,6 +169,7 @@ def test_work_check_next_work_uses_one_active_request_and_releases_each_phase(
     endpoint: tuple[str, dict[str, Any]],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    arc: ARCMemory,
 ) -> None:
     base, state = endpoint
     retained: list[dspy.LM] = []
@@ -182,7 +188,7 @@ def test_work_check_next_work_uses_one_active_request_and_releases_each_phase(
             run_on_lm_loop(lambda: lm.acall(request))  # reuse within an iteration
 
     monkeypatch.setattr("clio_agent.gact.fleet_settings.model_route", route)
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
 
     async def run() -> None:

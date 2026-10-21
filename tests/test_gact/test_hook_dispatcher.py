@@ -777,7 +777,8 @@ def test_user_prompt_submit_hook_vetoes_turn(tmp_path: Path) -> None:
                 f"/v1/sessions/{sid}/messages",
                 json={"parts": [{"type": "text", "text": "tell me a secret"}]},
             )
-            assert ack.status_code == 200
+            assert ack.status_code == 202
+            assert ack.json()["task_handle"]
             for _ in range(60):
                 sess = c.get(f"/v1/sessions/{sid}").json()
                 if sess["status"] == "error":
@@ -1058,11 +1059,13 @@ def test_session_start_and_end_fire_exactly_once(tmp_path: Path) -> None:
         install_global_dispatcher(None)
 
 
-def test_subagent_start_and_stop_fire_exactly_once(tmp_path: Path, monkeypatch) -> None:
-    """SubagentStart fires once when a child turn goes queued→running; SubagentStop
-    once at its terminal transition."""
+def test_subagent_start_and_stop_fire_exactly_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The conversation owner publishes each child's hooks once after worker retirement."""
+    import asyncio
 
-    from clio_agent.gact.turn_spawn import TaskSpec, spawn_child_turn_threadsafe
+    from tests.test_gact.task_records import record_assignment_fixture
 
     monkeypatch.setattr(
         "clio_agent.gact.agents.resolution._runtime_declared_child_ids",
@@ -1074,25 +1077,25 @@ def test_subagent_start_and_stop_fire_exactly_once(tmp_path: Path, monkeypatch) 
         app = build_app(sessions_path=tmp_path / "s.json", agent=_Agent())
         with TestClient(app) as client:
             parent = client.post("/v1/sessions", json={"title": "p"}).json()["id"]
-            # The dispatcher is process-global: a child turn an EARLIER test spawned
-            # can start or settle inside this window and land here too (a DELTA over
-            # all events still counted it under load). Count THIS child's events only.
-            task = spawn_child_turn_threadsafe(
-                app,
-                TaskSpec(
-                    child_expert_id="main",
-                    task_text="analyze",
-                    parent_session_id=parent,
-                    requesting_expert_id="main",
-                ),
-            )
-            assert disp.count_for_task(SUBAGENT_START, task.task_id) == 1
-            # Terminal projection precedes terminal side effects. Synchronize
-            # with THIS child's hook rather than racing that publication edge.
-            assert disp.wait_for_task(SUBAGENT_STOP, task.task_id)
-            rec = app.state.agent_task_registry.get(task.task_id)
-            assert rec is not None and rec.is_terminal
-            assert disp.count_for_task(SUBAGENT_STOP, task.task_id) == 1
+            record_assignment_fixture(app, parent)
+            owner = app.state.conversations
+            receipt = asyncio.run_coroutine_threadsafe(
+                owner.spawn(owner.caller(parent), "analyze", "main", "hook-child"),
+                owner._loop,
+            ).result(timeout=10)
+            handle = receipt["handle"]
+            released = threading.Event()
+            child = app.state.task_history.task_snapshot(handle)
+            assert child is not None
+            app.state.turn_runner.run_when_released(child.owner.session_id, released.set)
+            assert disp.wait_for_task(SUBAGENT_STOP, handle)
+            assert released.wait(5), "the child worker did not release its reservation"
+            assert disp.count_for_task(SUBAGENT_START, handle) == 1
+            assert disp.count_for_task(SUBAGENT_STOP, handle) == 1
+            child = app.state.task_history.task_snapshot(handle)
+            assert child is not None and child.terminal_at is not None
+            assert child.settlement == "confirmed"
+            assert not app.state.turn_runner.busy(child.owner.session_id)
     finally:
         install_global_dispatcher(None)
 

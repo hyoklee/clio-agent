@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import dspy
@@ -217,7 +218,9 @@ def test_cancel_during_backoff_prevents_another_request(monkeypatch: pytest.Monk
         if cancelled:
             raise RuntimeError("cancelled")
 
-    monkeypatch.setattr(recovery.time, "sleep", sleep)
+    monkeypatch.setattr(
+        recovery, "time", SimpleNamespace(sleep=sleep, monotonic=recovery.time.monotonic)
+    )
     with pytest.raises(RuntimeError, match="cancelled"):
         recover_stream(None, lambda: None, call, check)
     assert len(requests) == 1
@@ -241,33 +244,46 @@ def test_recovery_requires_explicit_safe_generation_boundary(reason: str) -> Non
 
 
 def test_steer_arriving_during_backoff_is_in_the_new_request(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    clio_core_plane: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from clio_agent.arc.task_types import MailItem
+    from clio_agent.gact import context as ctx
     from clio_agent.gact.agents import clio_react_recovery as recovery
+    from clio_agent.gact.native_work import now
 
-    pending: list[tuple[str, str]] = []
+    app = clio_core_plane
+    sid = ctx.active_session_id()
+    monkeypatch.setattr(app.state.conversations, "execution_gate", lambda _sid: "test_direct_loop")
+    identity = "recovery-feedback"
     slept = False
     original_sleep = recovery.time.sleep
 
     def sleep(seconds: float) -> None:
         nonlocal slept
         if not slept:
-            pending.append(("steer", "Use the saved result; do not repeat the tools."))
+            app.state.task_history.record_mail(
+                MailItem(
+                    id=identity,
+                    recipient_session=sid,
+                    sender_human=app.state.human_principal,
+                    kind="human",
+                    created_at=now(),
+                    content=app.state.task_history.write_content(
+                        sid, {"text": "Use the saved result; do not repeat the tools."}
+                    ),
+                )
+            )
             slept = True
         original_sleep(seconds)
 
-    def drain() -> list[tuple[str, str]]:
-        result = pending[:]
-        pending.clear()
-        return result
-
-    monkeypatch.setattr(recovery.time, "sleep", sleep)
-    arc = ARCMemory(data_dir=str(tmp_path / "arc"))
+    monkeypatch.setattr(
+        recovery, "time", SimpleNamespace(sleep=sleep, monotonic=recovery.time.monotonic)
+    )
     script = [
         Attempt([{"reasoning_content": "Working"}], drop=True),
         Attempt([{"content": "Updated."}]),
     ]
-    with endpoint(script) as (base, requests), _plane(arc, pending_loop_inbox_drain=drain):
+    with endpoint(script) as (base, requests):
         lm = lm_for(base)
         try:
             with dspy.context(lm=lm):
@@ -276,10 +292,14 @@ def test_steer_arriving_during_backoff_is_in_the_new_request(
             run_on_lm_loop(lm.aclose)
         assert result.answer == "Updated."
         assert len(requests) == 2
-        assert requests[1]["messages"][-1] == {
-            "role": "user",
-            "content": "Use the saved result; do not repeat the tools.",
-        }
+        assert requests[1]["messages"][-1]["role"] == "user"
+        assert requests[1]["messages"][-1]["content"].endswith(
+            "Use the saved result; do not repeat the tools."
+        )
+        record = app.state.task_history.committed_notification_input(sid, identity)
+        assert record is not None and record.iteration_id.endswith(":recovery:1")
+        assert identity in app.state.task_history.acknowledged_notifications(sid)
+        assert identity not in {item.id for item in app.state.task_history.pending_mail(sid)}
 
 
 def test_live_retry_boundary_preserves_reasoning_in_order_after_reload(

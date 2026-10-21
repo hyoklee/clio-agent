@@ -8,6 +8,7 @@ import json
 import re
 from html import unescape
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -29,6 +30,8 @@ from clio_agent.gact.dashboard_reports import (
     read_dashboard_report,
 )
 from clio_agent.gact.types import AgentDef
+
+pytestmark = pytest.mark.usefixtures("native_builtin_lifespan")
 
 
 @pytest.fixture
@@ -110,8 +113,11 @@ def test_dashboard_names_are_readable_distinct_and_stable_on_rename(
     first = publish_dashboard_report(app, sid, definition_path=str(path))
     independent = publish_dashboard_report(app, sid, definition_path=str(path))
     registry = get_registry(app)
-    first_record, _ = registry.get_by_artifact_id(first["artifact_id"])
-    other_record, _ = registry.get_by_artifact_id(independent["artifact_id"])
+    first_entry = registry.get_by_artifact_id(first["artifact_id"])
+    other_entry = registry.get_by_artifact_id(independent["artifact_id"])
+    assert first_entry is not None and other_entry is not None
+    first_record, _ = first_entry
+    other_record, _ = other_entry
     assert first_record.name.startswith("Design-evolution-")
     assert first_record.name.endswith(".dashboard.json")
     assert other_record.name != first_record.name
@@ -119,7 +125,9 @@ def test_dashboard_names_are_readable_distinct_and_stable_on_rename(
     source["title"] = "Revised finding"
     path.write_text(json.dumps(source))
     revised = publish_dashboard_report(app, sid, definition_path=str(path), report_id=first["id"])
-    revised_record, version = registry.get_by_artifact_id(revised["artifact_id"])
+    revised_entry = registry.get_by_artifact_id(revised["artifact_id"])
+    assert revised_entry is not None
+    revised_record, version = revised_entry
     assert revised_record.name == first_record.name
     assert version.version == 2
     assert version.producer["title"] == "Revised finding"
@@ -158,15 +166,20 @@ def test_foreign_artifact_cannot_revise_report_family(dashboard: tuple[Any, str,
 
 @pytest.mark.parametrize("ready", [False, True])
 def test_inspection_capture_target_preserves_identity_and_loading_semantics(
-    dashboard: tuple[Any, str, Path], ready: bool
+    dashboard: tuple[Any, str, Path],
+    ready: bool,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Loading viewers must not recommend a pinned epoch that becomes stale."""
+    from clio_agent.gact import a2ui_visual
     from clio_agent.gact.a2ui_producer import build_inspect_a2ui_surface_tool
     from clio_agent.gact.a2ui_visual import ViewerReport
 
     app, sid, path = dashboard
     saved = publish_dashboard_report(app, sid, definition_path=str(path))
     surface = read_dashboard_report(app, sid, saved["artifact_id"])["surface"]
+    clock = [0.0]
+    monkeypatch.setattr(a2ui_visual, "time", SimpleNamespace(monotonic=lambda: clock[0]))
     app.state.a2ui_visual.report(
         sid,
         ViewerReport(
@@ -189,6 +202,8 @@ def test_inspection_capture_target_preserves_identity_and_loading_semantics(
         assert target["expected_view_revision"] == 4
     else:
         assert "expected_view_revision" not in target
+    clock[0] = a2ui_visual.VIEWER_TTL + 0.001
+    assert app.state.a2ui_visual.viewers(sid, surface["id"]) == []
 
 
 def test_saved_view_control_uses_declared_binding_and_leaves_artifact_intact(
@@ -201,58 +216,63 @@ def test_saved_view_control_uses_declared_binding_and_leaves_artifact_intact(
     from tests.test_gact.test_a2ui_visual import claim, reply
 
     app, sid, path = dashboard
-    saved = publish_dashboard_report(app, sid, definition_path=str(path))
-    original = read_dashboard_report(app, sid, saved["artifact_id"])
-    surface = original["surface"]
-    before = ViewerReport(
-        viewer_id="saved-view",
-        surface_id=surface["id"],
-        revision=surface["revision"],
-        view_revision=0,
-        artifact_id=saved["artifact_id"],
-        visible=True,
-        ready=True,
-        state={"detail": "Shared dashboard model"},
-    )
-    app.state.a2ui_visual.report(sid, before)
-    args = {
-        "surface_id": surface["id"],
-        "expected_revision": surface["revision"],
-        "artifact_id": saved["artifact_id"],
-        "viewer_id": before.viewer_id,
-        "expected_view_revision": 0,
-        "path": "/detail",
-        "value": "Temporary local view",
-    }
-    update = build_update_a2ui_data_model_tool()
-    unbound = update(**{**args, "path": "/undeclared"})
-    assert unbound["reason"] == "a2ui_view_control_unbound"
-    assert "/detail" in unbound["hint"]
-    parent = update(**{**args, "path": "/", "value": {"detail": "Temporary local view"}})
-    assert parent["reason"] == "a2ui_view_control_unbound"
-    assert "Parent-object replacement is not supported" in parent["hint"]
-    assert read_dashboard_report(app, sid, saved["artifact_id"]) == original
-    assert update(**{**args, "delete": True})["reason"] == "a2ui_view_control_invalid"
-    missing_epoch = {key: value for key, value in args.items() if key != "expected_view_revision"}
-    assert update(**missing_epoch)["reason"] == "a2ui_view_control_invalid"
-    with ThreadPoolExecutor(1) as pool, TestClient(app) as client:
-        endpoint = f"/v1/sessions/{sid}/a2ui/visual-feedback"
-        # Establish the HTTP viewer after application startup, before starting
-        # the bounded control lease; native session initialization can be slow.
-        assert client.post(endpoint, json=before.model_dump()).status_code == 200
-        future = pool.submit(update, **args)
-        job = claim(app.state.a2ui_visual, before, sid)
-        after = before.model_copy(update={"view_revision": 1, "state": {"detail": args["value"]}})
-        assert client.post(endpoint, json=after.model_dump()).status_code == 200
-        acknowledged = client.post(
-            endpoint,
-            json=reply(job, after, png_base64="", previous_view_revision=0).model_dump(),
+    with TestClient(app) as client:
+        saved = publish_dashboard_report(app, sid, definition_path=str(path))
+        original = read_dashboard_report(app, sid, saved["artifact_id"])
+        surface = original["surface"]
+        before = ViewerReport(
+            viewer_id="saved-view",
+            surface_id=surface["id"],
+            revision=surface["revision"],
+            view_revision=0,
+            artifact_id=saved["artifact_id"],
+            visible=True,
+            ready=True,
+            state={"detail": "Shared dashboard model"},
         )
-        assert acknowledged.status_code == 200, acknowledged.text
-        result = future.result(timeout=2)
-    assert result["controlled"] is True
-    assert read_dashboard_report(app, sid, saved["artifact_id"]) == original
-    assert app.state.a2ui_store.list_wire(sid) == []
+        app.state.a2ui_visual.report(sid, before)
+        args = {
+            "surface_id": surface["id"],
+            "expected_revision": surface["revision"],
+            "artifact_id": saved["artifact_id"],
+            "viewer_id": before.viewer_id,
+            "expected_view_revision": 0,
+            "path": "/detail",
+            "value": "Temporary local view",
+        }
+        update = build_update_a2ui_data_model_tool()
+        unbound = update(**{**args, "path": "/undeclared"})
+        assert unbound["reason"] == "a2ui_view_control_unbound"
+        assert "/detail" in unbound["hint"]
+        parent = update(**{**args, "path": "/", "value": {"detail": "Temporary local view"}})
+        assert parent["reason"] == "a2ui_view_control_unbound"
+        assert "Parent-object replacement is not supported" in parent["hint"]
+        assert read_dashboard_report(app, sid, saved["artifact_id"]) == original
+        assert update(**{**args, "delete": True})["reason"] == "a2ui_view_control_invalid"
+        missing_epoch = {
+            key: value for key, value in args.items() if key != "expected_view_revision"
+        }
+        assert update(**missing_epoch)["reason"] == "a2ui_view_control_invalid"
+        with ThreadPoolExecutor(1) as pool:
+            endpoint = f"/v1/sessions/{sid}/a2ui/visual-feedback"
+            # Establish the HTTP viewer after application startup, before starting
+            # the bounded control lease; native session initialization can be slow.
+            assert client.post(endpoint, json=before.model_dump()).status_code == 200
+            future = pool.submit(update, **args)
+            job = claim(app.state.a2ui_visual, before, sid)
+            after = before.model_copy(
+                update={"view_revision": 1, "state": {"detail": args["value"]}}
+            )
+            assert client.post(endpoint, json=after.model_dump()).status_code == 200
+            acknowledged = client.post(
+                endpoint,
+                json=reply(job, after, png_base64="", previous_view_revision=0).model_dump(),
+            )
+            assert acknowledged.status_code == 200, acknowledged.text
+            result = future.result(timeout=2)
+        assert result["controlled"] is True
+        assert read_dashboard_report(app, sid, saved["artifact_id"]) == original
+        assert app.state.a2ui_store.list_wire(sid) == []
 
 
 def test_linked_mesh_groups_publish_and_remain_isolated(dashboard: tuple[Any, str, Path]) -> None:
@@ -396,7 +416,7 @@ def test_export_refuses_missing_dependency_or_another_surface(
 ) -> None:
     app, sid, path = dashboard
     saved = publish_dashboard_report(app, sid, definition_path=str(path))
-    renderer = {
+    renderer: dict[str, Any] = {
         "javascript": "test",
         "stylesheet": "",
         "snapshot": {"sessions": {}, "failures": []},

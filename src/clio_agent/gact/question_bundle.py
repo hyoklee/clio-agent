@@ -11,37 +11,56 @@ from fastapi import HTTPException
 
 def normalize_question_bundle(questions: list[dict[str, Any]]) -> dict[str, Any]:
     """Validate a bundle before publishing any question or pausing work."""
-    from clio_agent.gact.ask_user_tool import (
-        AskUserError,
-        _normalize_options,
-        _validated_question,
-    )
+    from clio_agent.arc.task_types import QuestionDefinition, QuestionOption
+    from clio_agent.gact.questions import QuestionCommands
+
+    def _normalize_options(raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not isinstance(raw, list):
+            raise ValueError("Bundle options must be an array")
+        options = []
+        for value in raw:
+            if not isinstance(value, Mapping):
+                raise ValueError("Bundle options must be objects")
+            option = QuestionOption.model_validate(
+                {**value, "value": value.get("value") or value.get("label", "")}
+            )
+            options.append(option.model_dump(exclude={"schema_version"}))
+        if len({item["value"] for item in options}) != len(options):
+            raise ValueError("Bundle option values must be unique")
+        return options
+
+    def _validated_question(value: Any) -> str:
+        if not isinstance(value, str):
+            raise ValueError("Question must be text")
+        definition = QuestionDefinition(prompt=value.strip())
+        QuestionCommands.validate_definition(definition)
+        return definition.prompt
 
     normalized: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in questions:
         if not isinstance(item, Mapping):
-            raise AskUserError("Bundle questions must be objects.")
+            raise ValueError("Bundle questions must be objects.")
         key = item.get("id")
         if not isinstance(key, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", key):
-            raise AskUserError("Each bundle question needs a stable id (letters, digits, _ or -).")
+            raise ValueError("Each bundle question needs a stable id (letters, digits, _ or -).")
         if key in seen:
-            raise AskUserError(f"Duplicate bundle question id: {key}.")
+            raise ValueError(f"Duplicate bundle question id: {key}.")
         seen.add(key)
         kind = item.get("kind", "freeform")
         if not isinstance(kind, str) or kind not in {"freeform", "choice", "confirmation"}:
-            raise AskUserError("Bundle question kind must be freeform, choice, or confirmation.")
+            raise ValueError("Bundle question kind must be freeform, choice, or confirmation.")
         options = _normalize_options(item.get("options") or [])
         if kind == "confirmation" and not options:
             options = _normalize_options(
                 [{"label": "Yes", "value": "yes"}, {"label": "No", "value": "no"}]
             )
         if kind == "choice" and not options:
-            raise AskUserError("Bundle choice questions require options.")
+            raise ValueError("Bundle choice questions require options.")
         if kind == "freeform" and options:
-            raise AskUserError("Use kind=choice for bundle questions with options.")
+            raise ValueError("Use kind=choice for bundle questions with options.")
         if not isinstance(item.get("allowFreeform", False), bool):
-            raise AskUserError("allowFreeform must be a boolean.")
+            raise ValueError("allowFreeform must be a boolean.")
         normalized.append(
             {
                 "id": key,
@@ -52,7 +71,7 @@ def normalize_question_bundle(questions: list[dict[str, Any]]) -> dict[str, Any]
             }
         )
     if not normalized:
-        raise AskUserError("A question bundle must contain at least one question.")
+        raise ValueError("A question bundle must contain at least one question.")
     # Fields keep older clients capable of answering ordinary choice/text bundles.
     fields = [
         {

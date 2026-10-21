@@ -19,16 +19,16 @@ from clio_agent.gact.artifacts.records import (
     IdentityEvidence,
     Mechanism,
 )
-from clio_agent.gact.artifacts.registry import ArtifactRegistry
 from clio_agent.gact.artifacts.storage import ingest_artifact_identity
 from clio_agent.gact.artifacts.transforms import record_transform
-from clio_agent.gact.semantic_trace_file import FileSemanticTraceBackend
 from clio_agent.gact.session_export import build_transcript
 from clio_agent.gact.session_export_archive import build_archive
 from clio_agent.gact.session_export_recorded_read import recorded_read_bytes
-from clio_agent.gact.sessions import SessionStore
-from clio_agent.gact.workspaces import WorkspaceStore
 from clio_agent.tools.servers.shell_spill_store import spill_directory
+from tests.test_gact.test_session_export_semantics import export_app as _export_app
+
+# Use the same complete Core-backed export projection as the other archive tests.
+export_app = _export_app
 
 
 def _receipt(path: Path, body: str, sid: str = "s") -> tuple[ArtifactVersion, dict[str, Any]]:
@@ -121,20 +121,15 @@ def test_incomplete_or_unbound_receipt_cannot_replace_recorded_bytes(
 
 @pytest.mark.parametrize("deleted", [False, True])
 def test_archive_preserves_legacy_input_read_after_edit_or_delete(
-    tmp_path: Path, deleted: bool
+    export_app: tuple[FastAPI, str, str], deleted: bool
 ) -> None:
     """Export retained original bytes and provenance without mutating the ledger."""
-    app = FastAPI()
-    app.state.sessions = SessionStore(path=tmp_path / "sessions.json")
-    app.state.workspaces = WorkspaceStore(path=tmp_path / "workspaces.json")
-    root = tmp_path / "source"
-    root.mkdir()
-    workspace = app.state.workspaces.create(name="test", root_path=str(root))
-    session = app.state.sessions.create(workspace_id=workspace.id, title="test")
+    app, session_id, workspace_id = export_app
+    session = app.state.sessions.get(session_id)
+    workspace = app.state.workspaces.get(workspace_id)
+    assert session is not None and workspace is not None
+    root = Path(workspace.root_path)
     spill_directory(root, session_id=session.id).mkdir(parents=True)
-    app.state.messages, app.state.context_files = {}, {}
-    app.state.semantic_trace_backend = FileSemanticTraceBackend(tmp_path / "traces")
-    app.state.artifact_registry = ArtifactRegistry()
     source = root / "script.py"
     body = "print('original')\n"
     source.write_bytes(body.encode("utf-8"))
@@ -173,20 +168,15 @@ def test_archive_preserves_legacy_input_read_after_edit_or_delete(
 
 @pytest.mark.parametrize("matching_path", [False, True])
 def test_anonymous_consumed_versions_use_their_exact_retained_objects(
-    tmp_path: Path, matching_path: bool
+    export_app: tuple[FastAPI, str, str], matching_path: bool
 ) -> None:
     """A path consumed before designation can identify multiple historical hashes."""
-    app = FastAPI()
-    app.state.sessions = SessionStore(path=tmp_path / "sessions.json")
-    app.state.workspaces = WorkspaceStore(path=tmp_path / "workspaces.json")
-    root = tmp_path / "source"
-    root.mkdir()
-    workspace = app.state.workspaces.create(name="test", root_path=str(root))
-    session = app.state.sessions.create(workspace_id=workspace.id, title="test")
+    app, session_id, workspace_id = export_app
+    session = app.state.sessions.get(session_id)
+    workspace = app.state.workspaces.get(workspace_id)
+    assert session is not None and workspace is not None
+    root = Path(workspace.root_path)
     spill_directory(root, session_id=session.id).mkdir(parents=True)
-    app.state.messages, app.state.context_files = {}, {}
-    app.state.semantic_trace_backend = FileSemanticTraceBackend(tmp_path / "traces")
-    app.state.artifact_registry = ArtifactRegistry()
     source = root / "observation.bin"
     bodies = (b"first observation", b"second observation")
     # Both reads precede registration, so neither used edge has an artifact ID.

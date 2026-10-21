@@ -63,16 +63,11 @@ def _now_iso() -> str:
 
 
 def _observer_call_started_at() -> float | None:
-    """The current tool call's start epoch from the observer thread-local, if set.
-
-    Seam (a) runs synchronously in the observer worker thread, where the observer
-    stamped ``_OBSERVER_CALL_T0`` at the ``started`` phase — so the pre-existing
-    untouched skip (finding [8]) reads it without threading it through the call.
-    """
+    """Read the invocation's start epoch in a tool or its recording worker."""
     try:
         from clio_agent.gact.tool_observer import _OBSERVER_CALL_T0  # noqa: PLC0415
 
-        value = getattr(_OBSERVER_CALL_T0, "value", None)
+        value = _OBSERVER_CALL_T0.get()
         return float(value) if value is not None else None
     except Exception:  # noqa: BLE001 — the skip is an optimization, never load-bearing
         return None

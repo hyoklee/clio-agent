@@ -40,16 +40,14 @@ settle with the actual cause.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable
 
 from clio_agent.gact.enrichment import (
     _context_file_turn_provenance,
     _record_context_frame,
     enrich_turn_context,
-    pending_task_notifications,
 )
 from clio_agent.gact.events import _publish_transcript_event
-from clio_agent.gact.off_loop import schedule_off_loop
 from clio_agent.gact.part_atom_minter import open_turn_minter
 from clio_agent.gact.plan_mode import plan_mode_reminder
 from clio_agent.gact.replanning import replan_suggestion
@@ -64,11 +62,9 @@ from clio_agent.gact.turn_state import (
     PROLOGUE_COMPLETED,
     PROLOGUE_FAILED,
     PROLOGUE_RUNNING,
-    DeferredTranscriptJob,
     TurnCancelledDuringPrologue,
 )
 from clio_agent.gact.turn_watchdog import cancel_requested
-from clio_agent.runtime.stream_audit import stream_audit
 
 if TYPE_CHECKING:
     from clio_agent.gact.turn_state import TurnState
@@ -77,57 +73,6 @@ logger = logging.getLogger(__name__)
 
 #: Typed reason for a deferred user-message persist the turn never got to run.
 DEFERRED_JOB_ORPHANED = "deferred_user_message_persist_orphaned"
-
-
-def spawn_user_turn(
-    app: Any,
-    session_id: str,
-    *,
-    turn_id: str,
-    transcript_job: Optional[Callable[[], None]],
-    run_turn: Callable[..., Any],
-    args: tuple[Any, ...],
-) -> Any:
-    """Spawn the turn task through the ``TurnRunner``, guarding its deferred persist.
-
-    The task's done-callback flushes a :class:`DeferredTranscriptJob` the turn never
-    claimed (it never reached its prologue), off the loop and with a typed audit. Ordering
-    is safe by construction: an unclaimed job means the prologue never ran, so the turn
-    appended no atoms of its own for this message to land behind.
-    """
-
-    holder = DeferredTranscriptJob(transcript_job)
-    task = app.state.turn_runner.spawn(
-        run_turn(*args, transcript_job=holder), sid=session_id, turn_id=turn_id
-    )
-
-    def _flush_orphaned_job(_task: Any) -> None:
-        leftover = holder.take()
-        if leftover is None:
-            return  # the prologue claimed and ran it, as it does on every normal turn
-        stream_audit(
-            "transcript.deferred_job_orphaned",
-            session_id=session_id,
-            turn_id=turn_id,
-            reason=DEFERRED_JOB_ORPHANED,
-        )
-        logger.warning(
-            "turn %s never reached its prologue; flushing the user message's deferred "
-            "transcript persist off the loop (%s)",
-            turn_id,
-            DEFERRED_JOB_ORPHANED,
-        )
-        schedule_off_loop(leftover, label=f"transcript.orphaned_user_message:{turn_id}")
-
-    add_done_callback = getattr(task, "add_done_callback", None)
-    if add_done_callback is None:
-        # The runner handed back no task handle (a test double that discards the
-        # coroutine): there is no turn to run the prologue, so flush now. ``take()``
-        # makes a double persist impossible even if a turn does materialise.
-        _flush_orphaned_job(task)
-    else:
-        add_done_callback(_flush_orphaned_job)
-    return task
 
 
 def _check_not_cancelled(state: "TurnState") -> None:
@@ -201,12 +146,6 @@ def _prepare_turn_off_loop_steps(
         state.enriched_text, memory_hits, state.memory_search_metadata = enrich_turn_context(
             state.app, state.sid, state.user_text, state.user_msg
         )
-        # #948 S6 [1]/[4]: surface prior-turn background task results (observe-later).
-        # STAGE the ids only; consumption + terminal emission defer to the commit-to-
-        # run seam, so a turn aborted after enrichment leaves them pending.
-        task_results, state.pending_notification_task_ids = pending_task_notifications(
-            state.app, state.sid
-        )
         # P1.2 #1064: surface plan mode to the model each turn (survives compaction; no-op otherwise).
         reminder = plan_mode_reminder(state.app, state.sid, state.sess)
         todos = todo_recitation(state.app, state.sid, state.sess)
@@ -218,7 +157,6 @@ def _prepare_turn_off_loop_steps(
             (source, block)
             for source, block in (
                 ("memory_search", memory_hits),
-                ("task_results", task_results),
                 ("plan_mode", reminder),
                 ("todos", todos),
                 ("replan", replan),
@@ -298,4 +236,4 @@ def prepare_turn_off_loop(state: "TurnState", *, update_retry_attempt: Callable[
         return outcome
 
 
-__all__ = ["DEFERRED_JOB_ORPHANED", "prepare_turn_off_loop", "spawn_user_turn"]
+__all__ = ["prepare_turn_off_loop"]

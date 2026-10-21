@@ -7,6 +7,13 @@ HDF5 and Parquet test data for MCP server testing.
 
 import os
 import re
+from pathlib import Path
+
+from tests._test_runtime_isolation import TestRuntime, bootstrap_test_runtime
+
+# Establish containment before importing any application code or dependencies.
+# scripts/run_tests.py also does this before pytest loads third-party plugins.
+_TEST_RUNTIME: TestRuntime | None = bootstrap_test_runtime(Path(__file__).resolve().parents[1])
 
 # LiteLLM does a network GET for its model-cost map on the first `import
 # litellm` unless this is set (litellm's own offline-mode flag) -- every
@@ -77,7 +84,8 @@ except Exception:  # noqa: BLE001 - a warm-up failure must not block the suite
 
 import contextlib  # noqa: E402
 import tempfile  # noqa: E402
-from pathlib import Path  # noqa: E402
+from collections.abc import Iterator  # noqa: E402
+from typing import Any  # noqa: E402
 
 import pytest  # noqa: E402
 import yaml  # noqa: E402
@@ -110,13 +118,8 @@ from tests._process_hygiene import (
     release_this_process_client,
 )
 from tests._test_runtime_isolation import (
-    TestRuntime,
     cleanup_test_runtime,
-    create_test_runtime,
-    resolve_test_runtime_parent,
 )
-
-_TEST_RUNTIME: TestRuntime | None = None
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -135,12 +138,9 @@ def pytest_configure(config: pytest.Config) -> None:
     """Redirect pytest, Python, children, and CTE away from the system temp directory."""
     global _TEST_RUNTIME
 
-    if _TEST_RUNTIME is not None:
-        return
     checkout = Path(__file__).resolve().parents[1]
-    parent = resolve_test_runtime_parent(checkout, os.environ)
-    reap_stale_suite_runtimes(parent)
-    runtime = create_test_runtime(checkout, os.environ)
+    runtime = _TEST_RUNTIME or bootstrap_test_runtime(checkout)
+    reap_stale_suite_runtimes(runtime.parent)
     tempfile.tempdir = str(runtime.temp_dir)
     config.option.basetemp = str(runtime.pytest_dir)
     _TEST_RUNTIME = runtime
@@ -352,7 +352,13 @@ def _clio_private_cte_daemon():
         # start (not mid-suite under load) and hold a client so it stays up all
         # session. A daemon that does not come up FAILS the run with its own reason:
         # the cte legs must never quietly run on local files.
-        if not eagerly_attach_private_daemon():
+        try:
+            attached = eagerly_attach_private_daemon()
+        except Exception as exc:
+            pytest.fail(
+                f"{private_daemon_failure_report(isolation)}\nattach error: {exc}", pytrace=False
+            )
+        if not attached:
             pytest.fail(private_daemon_failure_report(isolation), pytrace=False)
         yield isolation
     finally:
@@ -830,31 +836,38 @@ def clio_core_namespace(request, allow_pytest_tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def clio_core_plane():
-    """What a real turn gives the agent loop: an app holding a real ARC (this test's
-    clio-core namespace), a react scope and a session. The loop has no other context
-    store; a test running ``ClioReAct`` bare opts in with
-    ``pytestmark = pytest.mark.usefixtures("clio_core_plane")``.
-    """
-    import types  # noqa: PLC0415
+def clio_core_plane(tmp_path: Path) -> Iterator[Any]:
+    """Give bare model tests the production Core writer, MCP roots and a real session."""
+    from fastapi.testclient import TestClient  # noqa: PLC0415
 
     from clio_agent.arc.memory import ARCMemory  # noqa: PLC0415
     from clio_agent.arc.storage import make_arc_store  # noqa: PLC0415
     from clio_agent.gact import context as gact_context  # noqa: PLC0415
-    from clio_agent.gact.events import EventBus  # noqa: PLC0415
+    from clio_agent.gact.app import build_app  # noqa: PLC0415
+    from tests.test_gact.task_records import (  # noqa: PLC0415
+        active_turn_fixture,
+        record_assignment_fixture,
+    )
+    from tests.test_gact.test_post_messages import FakeClioAgent  # noqa: PLC0415
 
     arc = ARCMemory(store=make_arc_store(backend="cte"))
-    app = types.SimpleNamespace(state=types.SimpleNamespace(arc=arc, bus=EventBus()))
-    tokens = [
-        gact_context.set_app(app),
-        gact_context.set_react_scope("agent"),
-        gact_context.set_react_session("sess-plane"),
-    ]
-    try:
-        yield app
-    finally:
-        for token in reversed(tokens):
-            gact_context.reset(token)
+    app = build_app(sessions_path=tmp_path / "plane-sessions.json", arc=arc, agent=FakeClioAgent())
+    with TestClient(app):
+        app.state.workspaces.update("ws_default", root_path=str(tmp_path))
+        session = app.state.sessions.create(workspace_id="ws_default", title="Model test context")
+        record_assignment_fixture(app, session.id)
+        tokens = [
+            gact_context.set_app(app),
+            gact_context.set_session_id(session.id),
+            gact_context.set_react_scope("agent"),
+            gact_context.set_react_session(session.id),
+        ]
+        try:
+            with active_turn_fixture(app, session.id):
+                yield app
+        finally:
+            for token in reversed(tokens):
+                gact_context.reset(token)
 
 
 def _path_under(path: Path, base: Path) -> bool:

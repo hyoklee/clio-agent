@@ -46,6 +46,7 @@ from clio_agent.gact.a2ui_actions.record import (
     persist_transition,
     prior_error_count_for_revision,
 )
+from clio_agent.gact.off_loop import run_off_loop
 from clio_agent.gact.types import ErrorEnvelope, ErrorInfo
 
 if TYPE_CHECKING:
@@ -139,7 +140,9 @@ async def ingest_client_error(
 
     store = getattr(app.state, "a2ui_store", None)
     registry = getattr(app.state, "a2ui_catalogs", None)
-    surface = store.get(session_id, error.surfaceId) if store is not None else None
+    surface = (
+        await run_off_loop(store.get, session_id, error.surfaceId) if store is not None else None
+    )
     revision = surface.revision if surface is not None else 0
     existing_actions = surface.actions if surface is not None else []
     correlation_fields: dict[str, Any] = {**dict(correlation or {}), "revision": revision}
@@ -163,7 +166,7 @@ async def ingest_client_error(
     # Mirrors the main dispatcher's order: persist the ``received`` snapshot
     # first, unconditionally, so an error record's full lifecycle (including
     # a terminal one) is auditable on the transcript exactly like an action's.
-    persist_new_record(app, record)
+    await run_off_loop(persist_new_record, app, record)
     app.state.bus.publish(_event(session_id, record))
 
     # Adversarial review finding #3 (BLOCKING): a surface this session does
@@ -179,7 +182,7 @@ async def ingest_client_error(
         failed = record.transition(
             state="failed", delivery="rejected", reason="a2ui_error_surface_unknown"
         )
-        persist_transition(app, failed)
+        await run_off_loop(persist_transition, app, failed)
         app.state.bus.publish(_event(session_id, failed))
         return _wire(failed)
 
@@ -187,7 +190,7 @@ async def ingest_client_error(
         failed = record.transition(
             state="failed", delivery="rejected", reason="a2ui_client_error_unhandled"
         )
-        persist_transition(app, failed)
+        await run_off_loop(persist_transition, app, failed)
         app.state.bus.publish(_event(session_id, failed))
         return _wire(failed)
 
@@ -197,7 +200,7 @@ async def ingest_client_error(
         failed = record.transition(
             state="failed", delivery="rejected", reason="a2ui_repair_exhausted"
         )
-        persist_transition(app, failed)
+        await run_off_loop(persist_transition, app, failed)
         app.state.bus.publish(_event(session_id, failed))
         return _wire(failed)
 

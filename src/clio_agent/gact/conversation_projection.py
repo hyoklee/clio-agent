@@ -17,9 +17,11 @@ covered is excluded too.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any, Mapping
 
-from clio_agent.gact.summarization_record import row_summarization
+from clio_agent.arc.schema import Segment
+from clio_agent.gact.summarization_record import as_summarization, row_summarization
 
 __all__ = ["model_context_messages"]
 
@@ -81,3 +83,125 @@ def model_context_messages(messages: Any) -> list[Any]:
         frontier = next_frontier
 
     return [row for i, row in enumerate(rows) if i == latest_idx or _row_id(row) not in excluded]
+
+
+def transcript_segments(session: str, scope: str, rows: Sequence[Any]) -> list[Segment]:
+    """Decode one session's retained transcript; never use it as a delivery receipt.
+
+    This is only for scopes without recorded context operations. Tool inputs/results
+    remain exact where retained. Missing arguments and continuation are explicit;
+    the context restorer closes unanswered calls with explicit uncertainty before publication.
+    """
+    import json
+
+    segments: list[Segment] = []
+    turn = ""
+
+    def append(kind: Any, content: dict[str, Any]) -> dict[str, Any]:
+        number = len(segments) + 1
+        segments.append(
+            Segment(
+                session_id=session,
+                scope=scope,
+                kind=kind,
+                content=content,
+                step=0,
+                order=float(number),
+                logical_time=number,
+                turn_id=turn,
+            )
+        )
+        return content
+
+    for row in model_context_messages(rows):
+        if _get(row, "role") == "user":
+            turn = str(_get(row, "turn_id") or _row_id(row))
+        summary = row_summarization(row)
+        parts = list(_get(row, "parts") or [])
+        if summary is not None and summary.text:
+            append("summary", {"text": summary.text})
+            checkpoint = max(
+                index for index, part in enumerate(parts) if as_summarization(part) is not None
+            )
+            parts = parts[checkpoint + 1 :]
+        telemetry = iter((_get(row, "metadata") or {}).get("tools_called") or [])
+        calls: set[str] = set()
+        thought: dict[str, Any] | None = None
+        for part in parts:
+            kind, text = _get(part, "type"), _get(part, "text")
+            if kind == "text" and text and _get(row, "role") == "user":
+                append("user", {"text": text})
+            elif kind == "text" and text and _get(row, "role") == "system":
+                append(
+                    "user",
+                    {"text": text, "actor": "algorithm", "source": "retained_system_context"},
+                )
+            elif kind in {"text", "thinking"} and text:
+                if (
+                    thought is None
+                    or not calls
+                    and segments
+                    and segments[-1].kind in {"observation", "user", "summary"}
+                ):
+                    thought = append("thought", {"text": ""})
+                if thought is None:
+                    raise ValueError("Recorded assistant step has no opening")
+                if kind == "text":
+                    thought["text"] += text
+                else:
+                    thought.setdefault("thinking", []).append({"text": text, "continuation": []})
+            elif kind == "injection" and text:
+                append("user", {"text": text, "actor": "algorithm", "source": _get(part, "source")})
+            elif kind == "tool_call":
+                detail: Mapping[str, Any] = next(telemetry, {})
+                arguments = _get(part, "input")
+                if arguments is None:
+                    arguments = detail.get("args")
+                identity = str(_get(part, "call_id") or _get(part, "id") or "")
+                name = _get(part, "tool_name") or detail.get("name")
+                if not isinstance(arguments, Mapping) or not isinstance(name, str) or not identity:
+                    append(
+                        "user",
+                        {
+                            "actor": "algorithm",
+                            "source": "recovery_gap",
+                            "text": "A retained tool call lacks its original identity or arguments; it was not replayed.",
+                        },
+                    )
+                    continue
+                if not calls:
+                    thought = (
+                        segments[-1].content
+                        if segments and segments[-1].kind == "thought"
+                        else append("thought", {"text": ""})
+                    )
+                append("tool_call", {"id": identity, "name": name, "args": dict(arguments)})
+                calls.add(identity)
+            elif kind == "tool_result" and _get(part, "call_id") in calls:
+                identity = _get(part, "call_id")
+                content = _get(part, "content")
+                if isinstance(content, (list, tuple)):
+                    texts = [_get(item, "text") for item in content]
+                    value = (
+                        "".join(texts)
+                        if all(isinstance(item, str) for item in texts)
+                        else json.dumps(
+                            content,
+                            ensure_ascii=False,
+                            default=lambda item: item.model_dump(mode="json"),
+                        )
+                    )
+                else:
+                    value = content if content is not None else _get(part, "text")
+                append(
+                    "observation",
+                    {
+                        "call_id": identity,
+                        "text": value if value is not None else "[Retained result unavailable]",
+                        "is_error": bool(_get(part, "is_error")) or value is None,
+                    },
+                )
+                calls.remove(identity)
+        # The context owner marks any orphaned call uncertain before atomic
+        # publication. Decoding alone never asserts that its effects succeeded.
+    return segments

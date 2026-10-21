@@ -43,7 +43,7 @@ def test_folder_reference_survives_message_grounding_and_opens_only_approved_fil
         record = link_folder(service, record)
     else:
         operation = service.store.begin_operation(record.source.id, "materialize")
-        asyncio.run(service._transfer(record, workspace, operation))
+        asyncio.run(service.execute_transfer(record, workspace, operation))
         record = service.get("w", record.source.id)
     resource = source_folder_resource(
         service.store, resources, record, linked=linked, folder=folder

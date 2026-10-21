@@ -24,6 +24,8 @@ from clio_agent.gact.a2ui_catalogs.builtin import workspace_catalog_id
 from clio_agent.gact.a2ui_producer import build_create_a2ui_surface_tool
 from clio_agent.gact.app import build_app
 
+pytestmark = pytest.mark.usefixtures("native_builtin_lifespan")
+
 WORKSPACE_ID = workspace_catalog_id()
 
 

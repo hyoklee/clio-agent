@@ -57,6 +57,11 @@ fix is recorded in the S8 report.
 
 from __future__ import annotations
 
+import json
+import sys
+import threading
+import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -69,6 +74,8 @@ from clio_agent.gact.a2ui_catalogs.builtin import workspace_catalog_id
 from clio_agent.gact.a2ui_catalogs.reasons import A2UI_CATALOG_REASON_RING_MAXLEN
 from clio_agent.gact.app import build_app
 from clio_agent.gact.messages import MessageStore
+from tests import _hang_guard
+from tests.test_gact.input_capture import capture_inputs
 
 WORKSPACE_CATALOG_ID = workspace_catalog_id()
 HEADERS = {"X-GACT-Version": "0.3", "X-A2UI-Version": "0.9.1"}
@@ -108,11 +115,9 @@ def _create_batch(surface_id: str) -> list[dict[str, Any]]:
     ]
 
 
-def _stub_spawn(app: Any) -> None:
-    def _spawn(coro: Any, **_kwargs: Any) -> None:
-        coro.close()
-
-    app.state.turn_runner.spawn = _spawn
+def _capture_inputs(app: Any, monkeypatch: Any = None) -> list[Any]:
+    """Hold model admission and observe actual confirmed Core inputs."""
+    return capture_inputs(app, monkeypatch)
 
 
 def test_sustained_data_model_updates_keep_message_retention_at_its_configured_bound(
@@ -284,14 +289,49 @@ def test_sustained_distinct_component_ids_hit_the_merged_cap_and_refuse(
     assert all(c["id"] != "node_overflow" for c in after_refusal_components)
 
 
-def test_sustained_actions_keep_the_per_session_reason_ring_at_256(tmp_path: Path) -> None:
+def test_sustained_actions_keep_the_per_session_reason_ring_at_256(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     app = _isolated_app(tmp_path)
-    _stub_spawn(app)
     with TestClient(app) as client:
+        _capture_inputs(app)
         session = app.state.sessions.create(workspace_id="ws_default", title="reason ring")
         sid = session.id
         app.state.a2ui_store.apply_batch(sid, _create_batch("ring_surface"))
 
+        # Observe the real owning I/O; neither the load nor its deadline changes.
+        # Uncaptured bounded samples survive a watchdog exit on a CI worker.
+        store = app.state.task_history.arc._store
+        io: dict[str, dict[str, float]] = {}
+        lock = threading.Lock()
+
+        def measure(name: str, operation: Callable[..., Any]) -> Callable[..., Any]:
+            def observed(*args: Any, **kwargs: Any) -> Any:
+                started = time.monotonic()
+                with lock:
+                    io.setdefault(name, {"calls": 0, "seconds": 0, "max_seconds": 0})["calls"] += 1
+                try:
+                    return operation(*args, **kwargs)
+                finally:
+                    elapsed = time.monotonic() - started
+                    with lock:
+                        io[name]["seconds"] += elapsed
+                        io[name]["max_seconds"] = max(io[name]["max_seconds"], elapsed)
+
+            return observed
+
+        for name in ("get", "put"):
+            monkeypatch.setattr(store, name, measure(name, getattr(store, name)))
+        from clio_agent.gact import part_atoms
+
+        monkeypatch.setattr(
+            part_atoms,
+            "_append_segment_raw",
+            measure("atom_append", part_atoms._append_segment_raw),
+        )
+        segments = app.state.task_history.arc._segments
+        monkeypatch.setattr(segments, "_persist", measure("persist", segments._persist))
+        started = time.monotonic()
         attempts = A2UI_CATALOG_REASON_RING_MAXLEN + 4
         for i in range(attempts):
             response = client.post(
@@ -311,6 +351,16 @@ def test_sustained_actions_keep_the_per_session_reason_ring_at_256(tmp_path: Pat
                 },
             )
             assert response.status_code == 200, response.text
+            if i == 0 or (i + 1) % 32 == 0 or i + 1 == attempts:
+                with lock:
+                    print(
+                        "A2UI_LOAD_IO "
+                        + json.dumps(
+                            {"actions": i + 1, "seconds": time.monotonic() - started, "io": io}
+                        ),
+                        file=_hang_guard._dump_stream or sys.__stderr__,
+                        flush=True,
+                    )
 
         reasons = app.state.a2ui_catalogs.session_reasons(sid)
         undeclared = [r for r in reasons if r["reason"] == "a2ui_event_destination_undeclared"]

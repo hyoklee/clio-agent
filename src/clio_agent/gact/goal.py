@@ -513,42 +513,37 @@ def stop_session_goal(app: Any, sid: str, *, reason: str = "goal_abandoned") -> 
 
 
 # Finalize-boundary dispatch — the goal RIDES the Stop-loop re-drive seam.
-def _enqueue_goal_redrive(
-    app: Any, sid: str, decision: GoalDecision, goal: Mapping[str, Any]
-) -> None:
-    """Enqueue ONE goal re-drive onto the session's loop-inbox (the #1031 seam).
 
-    The SAME bounded seam the Stop-loop rides (``stop_loop._enqueue_redrive``): the idle hook
-    drains it into exactly one new turn. The text is the judge guidance + the goal condition."""
 
-    from clio_agent.gact.loop_inbox import InboxEvent, inbox_for  # noqa: PLC0415
+def _enqueue_goal_redrive(app: Any, session_id: str, decision: Any, goal: dict[str, Any]) -> None:
+    """Confirm one goal continuation; only TurnRunner decides when it can execute."""
+    from clio_agent.gact.session_input import accept_session_input
 
-    condition = str(goal.get("condition") or "")
-    guidance = (decision.guidance or "").strip()
-    if guidance:
-        text = f"The goal is not yet satisfied: {guidance}\n\nContinue working toward: {condition}"
-    else:
-        text = f"The goal is not yet satisfied. Continue working toward: {condition}"
-    text += (
-        "\n\nThe goal controller continues work automatically after this turn. Do not start "
-        "a loop or schedule to continue this goal. Loops are independent monitoring work. "
-        "If progress depends on accepted background tasks, use wait_for(task_handle) "
-        "and finish this turn. Task completion resumes the goal. Do not poll or resubmit accepted work."
+    goal_id = str(goal.get("goal_id", ""))
+    iteration = int(decision.new_state.get("iters_elapsed", 0))
+    accept_session_input(
+        app,
+        session_id,
+        f"Continue the active goal: {goal.get('condition', '')}\n{decision.guidance}",
+        metadata={"goal_id": goal_id, "goal_continuation": True, "goal_iters": iteration},
+        steer_message_id=f"goal:{goal_id}:{iteration}",
+        source="goal",
     )
-    inbox_for(app, sid).put_coalesced_user_message(
-        InboxEvent(
-            kind="user_message",
-            task_id="",
-            text=text,
-            metadata={
-                "goal_redrive": True,
-                "goal_id": str(goal.get("goal_id") or ""),
-                "goal_iters": int(decision.new_state.get("iters_elapsed", 0) or 0),
-                "goal_reason": decision.reason,
-                "coalesce_key": f"goal:{goal.get('goal_id', '')}",
-            },
-        )
-    )
+
+
+def waiting_on_tasks(app: Any, sid: str, goal: dict[str, Any]) -> bool:
+    """Read the conversation owner's declared dependency condition from Core."""
+    from clio_agent.arc.task_types import AssignmentDetails
+
+    current = app.state.task_history.latest_assignment(sid)
+    if current is None or current.details is None:
+        return False
+    details = AssignmentDetails.model_validate(app.state.task_history.read_content(current.details))
+    if not details.dependencies:
+        return False
+    settled = [app.state.task_history.task_snapshot(handle) for handle in details.dependencies]
+    states = [task is not None and task.terminal_at is not None for task in settled]
+    return not (any(states) if details.return_when == "any" else all(states))
 
 
 def _settle_goal_decision(
@@ -617,7 +612,6 @@ async def dispatch_goal_at_finalize(
             return None
         if caller_model:
             goal = {**goal, "_caller_model": dict(caller_model)}
-        from clio_agent.gact.goal_wait import waiting_on_tasks
 
         if await run_off_loop(waiting_on_tasks, app, session_id, goal, executor=executor):
             return None
@@ -627,7 +621,7 @@ async def dispatch_goal_at_finalize(
         )
         from clio_agent.gact.goal_activity import begin_goal_check, cancel_goal_check
 
-        steer_pending = pending_steer(app, session_id)
+        steer_pending = await run_off_loop(pending_steer, app, session_id, executor=executor)
         if steer_pending and preflight.reason not in {"goal_budget", "goal_max_iters"}:
             return None
         limit_without_judge = preflight.reason == "goal_budget" or (

@@ -41,12 +41,27 @@ from clio_agent.runtime import trace
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
+    from clio_agent.arc.task_types import MailItem
+    from clio_agent.gact.task_history import TaskHistory
     from clio_agent.gact.types import Message
 
 logger = logging.getLogger(__name__)
 # ------------------------------------------------------------------------- #
 # Session message ledger (in-memory + durable) #
 # ------------------------------------------------------------------------- #
+
+
+def project_committed_feedback(
+    history: "TaskHistory", session_id: str, messages: list["Message"]
+) -> None:
+    """Derive delivery display from Core input commits, without rewriting accepted bodies."""
+    pending = [message for message in messages if message.metadata.get("pending_steer") is True]
+    if not pending:
+        return
+    acknowledged = history.acknowledged_notifications(session_id)
+    for message in pending:
+        if message.id in acknowledged:
+            message.metadata = {**message.metadata, "pending_steer": False}
 
 
 def _metrics_counters(app: "FastAPI") -> Any:
@@ -59,6 +74,87 @@ def _metrics_counters(app: "FastAPI") -> Any:
     return getattr(app.state, "metrics_counters", None)
 
 
+def restore_pending_mail_messages(app: "FastAPI", history: "TaskHistory") -> None:
+    """Repair accepted pending feedback at startup without acknowledging or executing it.
+
+    Admission remains closed while this runs. Unpromoted drafts have no accepted
+    message body; withdrawals are absent from the Core pending-recipient index.
+    Reuse the transcript writer so repair survives resident-ledger eviction.
+    """
+    for sid in history.pending_sessions():
+        project_accepted_mail_messages(app, history, sid, history.pending_mail(sid))
+
+
+def project_accepted_mail_messages(
+    app: "FastAPI", history: "TaskHistory", sid: str, items: tuple["MailItem", ...]
+) -> None:
+    """Repair selected accepted input through the transcript owner, without acknowledgement."""
+    from clio_agent.gact.storage.drafts import retain_message_sources
+    from clio_agent.gact.transcript_projection import ensure_accepted_message
+    from clio_agent.gact.types import Message
+
+    # Online repair and human acceptance must not replace each other's transcript rows.
+    with history.serialized():
+        if app.state.sessions.get(sid) is None:
+            return
+        accepted: dict[str, Message] = {}
+        for item in items:
+            if item.kind not in {"human", "composer"}:
+                continue
+            if item.recipient_session != sid:
+                raise ValueError("Accepted feedback belongs to another recipient")
+            if history.mail_withdrawn(sid, item.id):
+                continue
+            content = history.read_content(item.content)
+            if not isinstance(content, dict):
+                continue
+            legacy = content.get("legacy")
+            if (
+                item.kind == "human"
+                and isinstance(legacy, dict)
+                and content.get("message") is None
+                and isinstance(content.get("text"), str)
+            ):
+                # Older mail retained text rather than a typed transcript envelope.
+                # Project that confirmed body; this does not acknowledge its input.
+                message = Message.model_validate(
+                    {
+                        "id": content.get("message_id") or item.id,
+                        "session_id": sid,
+                        "role": "user",
+                        "created_at": item.created_at,
+                        "updated_at": item.created_at,
+                        "metadata": legacy.get("metadata") or {},
+                        "parts": [
+                            {"id": item.id + ":text", "type": "text", "text": content["text"]}
+                        ],
+                    }
+                )
+            elif "message" in content:
+                message = Message.model_validate(content["message"])
+            else:
+                continue
+            if (
+                not message.id
+                or message.session_id != sid
+                or message.role != "user"
+                or content.get("message_id") != message.id
+                or not item.sender_human
+            ):
+                raise ValueError("Pending feedback transcript identity differs from its Core owner")
+            previous = accepted.get(message.id)
+            if previous is not None and previous != message:
+                raise ValueError(
+                    "Pending feedback reused a transcript identity with changed content"
+                )
+            accepted[message.id] = message
+        if not accepted:
+            return
+        for message in sorted(accepted.values(), key=lambda row: row.created_at):
+            ensure_accepted_message(app, sid, message)
+            retain_message_sources(app, message)
+
+
 def _append_session_message(
     app: "FastAPI", session_id: str, message: "Message", *, atoms_minted: bool = False
 ) -> None:
@@ -69,26 +165,16 @@ def _append_session_message(
     and the local message store are written here. Explicit, never inferred.
     """
 
-    app.state.messages.setdefault(session_id, []).append(message)
-    counters = _metrics_counters(app)
-    if counters is not None:
-        counters.add_message(session_id, message)
-    store = getattr(app.state, "message_store", None)
-    if store is not None:
-        store.append(session_id, message)
-    # #737 S5: the single append-one persist seam mints the message's ``message_part``
-    # atoms onto the canonical ARC log -- the transcript's source of truth (must-succeed,
-    # §3.4). With ``transcript.file`` off they are the only durable copy, so a failed
-    # mint takes the message back out of the in-memory ledger before the error propagates.
-    from clio_agent.gact.transcript_file import (  # noqa: PLC0415 - lazy: keep leaf
-        forget_unminted_on_failure,
-    )
-    from clio_agent.gact.transcript_projection import (  # noqa: PLC0415 - lazy: keep leaf
-        on_message_appended,
-    )
+    from clio_agent.gact.transcript_projection import canonical_log_arc
+    from clio_agent.gact.transcript_recording import project_message, record_message
 
-    with forget_unminted_on_failure(app, session_id, message):
-        on_message_appended(app, session_id, message, atoms_minted=atoms_minted)
+    arc = canonical_log_arc(app)
+    if arc is None:
+        raise RuntimeError("Transcript recording requires the canonical Core store")
+    recording = "recorded" if atoms_minted else record_message(arc, session_id, message)
+    if recording == "withdrawn":
+        return
+    project_message(app, session_id, message, newly_recorded=recording == "recorded")
     from clio_agent.gact.storage.drafts import retain_message_sources
 
     retain_message_sources(app, message)
@@ -247,21 +333,8 @@ def _extend_session_messages(
 ) -> None:
     """Append several chronological messages to memory and disk."""
 
-    if not messages:
-        return
-    app.state.messages.setdefault(session_id, []).extend(messages)
-    counters = _metrics_counters(app)
-    if counters is not None:
-        counters.add_messages(session_id, messages)
-    store = getattr(app.state, "message_store", None)
-    if store is not None:
-        store.extend(session_id, messages)
-    # #737 S5: mirror the extend onto the canonical atom lane (no-op under legacy).
-    from clio_agent.gact.transcript_projection import (  # noqa: PLC0415 - lazy: keep leaf
-        on_messages_extended,
-    )
-
-    on_messages_extended(app, session_id, messages)
+    for message in messages:
+        _append_session_message(app, session_id, message)
 
 
 def _replace_session_messages(
@@ -277,22 +350,27 @@ def _replace_session_messages(
     the loop thread; see :func:`_append_session_message`.
     """
 
-    app.state.messages[session_id] = list(messages)
-    counters = _metrics_counters(app)
-    if counters is not None:
-        counters.set_session(session_id, messages)
-    store = getattr(app.state, "message_store", None)
-    if store is not None:
-        store.replace_session(session_id, list(messages))
-    # #737 S5: re-materialize the atom lane to the replaced ledger (undo/rewind/fork/
-    # compact/import). Transcript-projection-scoped only; ARC memory untouched. No-op
-    # under legacy.
-    from clio_agent.gact.transcript_projection import (  # noqa: PLC0415 - lazy: keep leaf
-        on_ledger_replaced,
-    )
+    from clio_agent.gact.part_atoms import MESSAGE_PART_SCOPE
+    from clio_agent.gact.transcript_projection import canonical_log_arc, on_ledger_replaced
 
-    if not atoms_minted:
-        on_ledger_replaced(app, session_id, list(messages))
+    arc = canonical_log_arc(app)
+    if arc is None:
+        raise RuntimeError("Transcript mutation requires the canonical Core store")
+    with arc._segments._lock_for(session_id, MESSAGE_PART_SCOPE):
+        if not atoms_minted:
+            on_ledger_replaced(app, session_id, list(messages))
+        app.state.messages[session_id] = list(messages)
+        counters = _metrics_counters(app)
+        if counters is not None:
+            counters.set_session(session_id, messages)
+        store = getattr(app.state, "message_store", None)
+        if store is not None:
+            try:
+                store.replace_session(session_id, list(messages))
+            except (OSError, RuntimeError, ValueError):
+                logger.exception(
+                    "Transcript cache lag after Core replacement session=%s", session_id
+                )
 
 
 def _delete_session_messages(app: "FastAPI", session_id: str) -> None:
@@ -331,7 +409,10 @@ def _delete_session_messages(app: "FastAPI", session_id: str) -> None:
         counters.remove_session(session_id)
     store = getattr(app.state, "message_store", None)
     if store is not None:
-        store.delete_session(session_id)
+        try:
+            store.delete_session(session_id)
+        except (OSError, RuntimeError):
+            logger.exception("Transcript cache lag after Core erase session=%s", session_id)
 
 
 def _release_session_arc(app: "FastAPI", session_id: str) -> None:

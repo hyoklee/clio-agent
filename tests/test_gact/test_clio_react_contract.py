@@ -125,8 +125,14 @@ def test_workflow_state_rides_submit_tool_arg_types() -> None:
 
     _, engine = _run([Reply(text="n/a")], signature=_Sig)
     [schema] = [t.parameters for t in engine.requests[0].tools if t.name == "submit"]
-    assert set(schema["properties"]) == {"answer", "workflow_state"}
+    assert set(schema["properties"]) == {"answer", "workflow_state", "assignment_disposition"}
     assert schema["properties"]["workflow_state"]["type"] == "object"
+    assert schema["properties"]["assignment_disposition"]["default"] is None
+    assert schema["properties"]["assignment_disposition"]["anyOf"] == [
+        {"type": "string", "enum": ["yield", "complete"]},
+        {"type": "null"},
+    ]
+    assert "assignment_disposition" not in _Sig.output_fields
 
 
 def test_submit_returns_typed_workflow_state_value() -> None:

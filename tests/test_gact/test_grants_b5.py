@@ -580,6 +580,7 @@ def test_deny_mode_prompt_store_failure_fails_closed(tmp_path, captured_events) 
 
     app.state.permissions = _Wedged()
     assert grants._egress_gate_decision(app, _egress_record("x.test", str(root))) == "deny"
+    assert app.state.permission_events == {}
     reasons = {
         e["payload"].get("reason")
         for e in captured_events
@@ -656,6 +657,7 @@ def test_session_scoped_host_grant_never_leaks(tmp_path) -> None:
 def test_workspace_root_resolution_is_path_boundary_aware(tmp_path) -> None:
     """Review finding 3: ``/ws`` must not match the adjacent ``/ws2`` (path-boundary matching)."""
     app = build_app(sessions_path=tmp_path / "s.json")
+    app.state.workspaces.update("ws_default", root_path=str(tmp_path / "different-default"))
     ws1_root = tmp_path / "ws"
     ws2_root = tmp_path / "ws2"
     ws1_root.mkdir()

@@ -294,6 +294,33 @@ def test_xml_parameter_fragment_is_a_protocol_error_not_a_completed_answer(pool:
         ('[{"name":"search","arguments":{"q":"actual data"}}]\n```', "missing opening"),
         ('<invoke name="search"><parameter name="q">actual data</parameter></invoke>', "XML"),
         ('<parameter name="q">actual data</parameter>\n</invoke>\n</invoke>', "XML"),
+        pytest.param("<br>\n" * 2000, "only HTML line breaks", id="formatting-only"),
+        pytest.param(
+            '{"tool_calls":[{"name":"search","arguments":{"q":"actual data"}}]}',
+            "fenced",
+            id="bare-envelope",
+        ),
+        pytest.param(
+            '{"name":"search","arguments":{"q":"actual data"}}',
+            "fenced",
+            id="bare-call-object",
+        ),
+        pytest.param(
+            '{"name":"search","arguments":{"q":"actual data"}}\n```',
+            "missing opening",
+            id="orphaned-call-object",
+        ),
+        pytest.param(
+            '<tool_calls>[{"name":"search","arguments":{"q":"actual data"}}]</tool_calls>',
+            "XML",
+            id="xml-container",
+        ),
+        pytest.param(
+            '<parameter name="tool_calls">'
+            '[{"name":"search","arguments":{"q":"actual data"}}]</parameter>',
+            "XML",
+            id="xml-parameter-container",
+        ),
     ],
 )
 def test_loop_recovers_malformed_call_before_running_the_corrected_call(

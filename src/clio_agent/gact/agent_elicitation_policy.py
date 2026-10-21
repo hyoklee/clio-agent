@@ -13,8 +13,6 @@ from __future__ import annotations
 from clio_agent import conf
 
 _DEFAULT_MAX_DEPTH = 1
-_DEFAULT_TIMEOUT_S = 90.0
-_OUTER_TIMEOUT_MARGIN_S = 15.0
 
 
 # --------------------------------------------------------------------------- #
@@ -55,37 +53,6 @@ def _max_depth() -> int:
         env="CLIO_MCP_ELICITATION_AGENT_AUDIENCE_MAX_DEPTH",
         default=_DEFAULT_MAX_DEPTH,
         cast=conf.as_int,
-    )
-
-
-def _timeout_s() -> float:
-    """Bounded wall-clock budget for one agent-answer child turn."""
-
-    return conf.resolve(
-        "tools.mcp.elicitation.agent_audience.timeout_s",
-        env="CLIO_MCP_ELICITATION_AGENT_AUDIENCE_TIMEOUT_S",
-        default=_DEFAULT_TIMEOUT_S,
-        cast=conf.as_float,
-    )
-
-
-def _answer_mode() -> str:
-    """Which answerer fulfills a routed agent-audience elicitation.
-
-    ``"inline"`` (default): a bounded tool-less completion off the event loop.
-    ``"turn"``: the child-turn spawn, which deadlocks while the parent tool
-    call holds the session's turn slot (see the module docstring).
-    """
-
-    return (
-        conf.resolve(
-            "tools.mcp.elicitation.agent_audience.answer_mode",
-            env="CLIO_MCP_ELICITATION_AGENT_AUDIENCE_ANSWER_MODE",
-            default="inline",
-            cast=conf.as_str,
-        )
-        .strip()
-        .lower()
     )
 
 

@@ -14,7 +14,6 @@ from clio_agent.gact.infrastructure.ssh_execution import execute_ssh_command
 from clio_agent.gact.infrastructure.ssh_result import SshCommandResult
 from clio_agent.gact.permission_gate import _invoke_permission_gate
 from clio_agent.tools.execution import current_tool_runtime
-from clio_agent.tools.task_call_context import require_admission
 from clio_agent.tools.tool_presentation import present_mcp_result
 
 
@@ -70,7 +69,12 @@ def ssh_execute(
     workspace = app.state.workspaces.get(session.workspace_id)
     if workspace is None or not workspace.root_path:
         raise ValueError("SSH execution requires an active workspace conversation")
-    require_admission(app, sid)
+    history = app.state.task_history
+    with history.serialized():
+        assignment = history.latest_assignment(sid)
+        if assignment is None:
+            raise ValueError("SSH execution requires a confirmed assignment")
+        app.state.conversations.require_admission(assignment)
     args = {
         "command": command,
         "ssh_route": route.model_dump(),
@@ -90,6 +94,8 @@ def ssh_execute(
     ):
         raise PermissionError("SSH command was not approved")
     cancelled = current_tool_runtime().cancellation_checker
+    with history.serialized():
+        app.state.conversations.require_admission(assignment)
     if cancelled is not None and cancelled():
         raise InterruptedError("SSH command cancelled before connection")
     result = execute_ssh_command(

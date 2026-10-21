@@ -387,7 +387,8 @@ def test_user_prompt_submit_defer_suspends_then_resumes_on_approve(tmp_path: Pat
                 f"/v1/sessions/{sid}/messages",
                 json={"parts": [{"type": "text", "text": "please defer this request"}]},
             )
-            assert ack.status_code == 200
+            assert ack.status_code == 202
+            assert ack.json()["task_handle"]
             assert _poll_status(c, sid, {"waiting_user"}) == "waiting_user"
             pid = _wait_for_pending(app, kind=TURN_DEFER_KIND)
             assert app.state.permissions[pid]["hook_event"] == "UserPromptSubmit"
@@ -442,7 +443,8 @@ def test_client_cannot_smuggle_hook_defer_resume_to_bypass_the_hook(tmp_path: Pa
                 f"/v1/sessions/{sid}/messages",
                 json={"parts": [{"type": "text", "text": "please defer this request"}]},
             )
-            assert ack.status_code == 200
+            assert ack.status_code == 202
+            assert ack.json()["task_handle"]
             assert _poll_status(c, sid, {"waiting_user"}) == "waiting_user"
     finally:
         install_global_dispatcher(None)

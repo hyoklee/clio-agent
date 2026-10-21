@@ -39,7 +39,8 @@ from typing import Any
 from clio_agent.gact.a2ui import project_a2ui_parts
 from clio_agent.gact.a2ui_actions.record import fold_action_records
 
-from .test_a2ui_actions import _error_envelope, _stub_spawn
+from .input_capture import capture_inputs
+from .test_a2ui_actions import _error_envelope
 from .test_a2ui_v3 import HEADERS, _create_message, _session_client
 
 
@@ -118,7 +119,7 @@ def test_repair_exhaustion_then_update_clears_the_stale_error(
 
     client, sid, _ = _session_client(tmp_path)
     app = client.app
-    spawned = _stub_spawn(app, monkeypatch)
+    spawned = capture_inputs(app, monkeypatch)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages",
         headers=HEADERS,
@@ -182,7 +183,7 @@ def test_delete_createsurface_action_repost_matches_a_fresh_fold(
 
     client, sid, _ = _session_client(tmp_path)
     app = client.app
-    spawned = _stub_spawn(app, monkeypatch)
+    spawned = capture_inputs(app, monkeypatch)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages",
         headers=HEADERS,

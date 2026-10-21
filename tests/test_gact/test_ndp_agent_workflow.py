@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
 import pytest
+from jsonschema import ValidationError
 
-from clio_agent.gact.storage import connect_tool, download_tool, ndp_tools, setup_tool
+from clio_agent.gact.storage import download_tool, ndp_tools, setup_tool
 from clio_agent.gact.storage.ndp_catalog import NDPSelection
 from clio_agent.gact.storage.service import StorageService
-from clio_agent.gact.task_controls import wait_tasks
 from tests.test_gact.test_ndp_source import catalog_http as catalog_fixture
+from tests.test_gact.test_source_connect_runtime import _body, _collect, _connect
 from tests.test_gact.test_source_connect_runtime import bound as runtime_fixture
 
 catalog_http = catalog_fixture
@@ -50,15 +52,18 @@ def test_agent_discovers_publisher_links_reads_and_downloads(
         return "allow"
 
     app.state.pending_permission_gate = allow
-    connected = connect_tool.connected_data_connect(
+    connected = _connect(
+        app,
         "ndp",
         dataset["id"],
         dataset["title"],
         configuration={"endpoint_id": "weather", "resource_ids": ["stations"]},
     )
-    assert connected["connection"]["state"] == "indexing"
-    assert wait_tasks(connected["handle"])["results"][0]["status"] == "completed"
-    source_id = connected["connection"]["source_id"]
+    outcome, reply = _collect(app, connected)
+    assert outcome["status"] == "completed"
+    indexed = _body(reply)
+    assert indexed["state"] == "completed" and indexed["entries"] == 1 and indexed["manifest_id"]
+    source_id = indexed["source_id"]
     assert decisions[0][1]["resources"] == ["stations.csv"]
     assert decisions[0][2]["summary"] == "Connect Sea observations"
     assert "/stations.csv" not in catalog_http[1]
@@ -67,13 +72,15 @@ def test_agent_discovers_publisher_links_reads_and_downloads(
     opened = setup_tool.connected_data_open(source_id, "1-stations.csv")
     assert opened["resource_id"] and opened["sha256"]
     assert catalog_http[1].count("/stations.csv") == 1
-    repeated = connect_tool.connected_data_connect(
+    repeated = _connect(
+        app,
         "ndp",
         dataset["id"],
         dataset["title"],
         configuration={"endpoint_id": "weather", "resource_ids": ["stations"]},
     )
-    assert repeated["connection"]["state"] == "linked"
+    outcome, reply = _collect(app, repeated)
+    assert outcome["status"] == "completed" and _body(reply)["connection"]["state"] == "linked"
     assert len(decisions) == 1
     # Re-observing the same approved identities after sign-in/metadata refresh
     # must not create another source or ask for another connection grant.
@@ -81,16 +88,21 @@ def test_agent_discovers_publisher_links_reads_and_downloads(
     service.ndp._results[("weather", "weather")] = cached.model_copy(
         update={"description": "Updated description", "access": "viewer"}
     )
-    same = connect_tool.connected_data_connect(
+    same = _connect(
+        app,
         "ndp",
         dataset["id"],
         dataset["title"],
         configuration={"endpoint_id": "weather", "resource_ids": ["stations"]},
     )
-    assert same["connection"]["source_id"] == source_id and len(decisions) == 1
-    downloaded = download_tool.connected_data_download(source_id, ["1-stations.csv"])
+    outcome, reply = _collect(app, same)
+    assert outcome["status"] == "completed" and _body(reply)["connection"]["source_id"] == source_id
+    assert len(decisions) == 1
+    tool = app.state.builtin_boundary.bind(download_tool.build_connected_data_download_tool())
+    downloaded = asyncio.run(tool.acall(source_id=source_id, paths=["1-stations.csv"]))
     assert decisions[-1][2]["summary"] == "Download Sea observations"
-    assert wait_tasks(downloaded["handle"])["results"][0]["status"] == "completed"
+    outcome, reply = _collect(app, downloaded, kind="Download")
+    assert outcome["status"] == "completed" and _body(reply)["state"] == "completed"
     record = service.get("ws_default", source_id)
     assert (Path(record.source.local_path or "") / "1-stations.csv").read_bytes() == b"name,x\na,1"
     assert len(service.sources("ws_default")) == 1
@@ -116,7 +128,8 @@ def test_protected_selection_requests_login_only_after_approval(
     app.state.pending_permission_gate = lambda *args: decision
     if decision == "deny":
         with pytest.raises(PermissionError, match="not approved"):
-            connect_tool.connected_data_connect(
+            _connect(
+                app,
                 "ndp",
                 "weather",
                 "Sea",
@@ -125,13 +138,18 @@ def test_protected_selection_requests_login_only_after_approval(
         assert service.sources("ws_default") == []
         assert service.store.list("ndp-selection", NDPSelection) == []
     else:
-        result = connect_tool.connected_data_connect(
+        result = _connect(
+            app,
             "ndp",
             "weather",
             "Sea",
             configuration={"endpoint_id": "weather", "resource_ids": ["stations"]},
         )
+        outcome, reply = _collect(app, result)
+        assert outcome["status"] == "failed", reply
+        result = _body(reply)
         assert result["connection"]["state"] == "sign_in_required"
+        assert result["error"]["code"] == "source_sign_in_required"
         account = next(row for row in result["accounts"] if row["provider"] == "ndp")
         assert account["login_action"]["name"] == "data_source/login/ndp"
         assert not service.sources("ws_default")[0].linked_manifest_id
@@ -150,8 +168,8 @@ def test_agent_cannot_inject_a_resource_or_credential(
     catalog_http: tuple[str, list[str]],
     configuration: dict[str, Any],
 ) -> None:
-    service, _, _ = bound
+    service, app, _ = bound
     ndp_tools.connected_data_search_ndp("sea")
-    with pytest.raises(ValueError):
-        connect_tool.connected_data_connect("ndp", "weather", "Sea", configuration=configuration)
+    with pytest.raises((ValueError, ValidationError)):
+        _connect(app, "ndp", "weather", "Sea", configuration=configuration)
     assert service.sources("ws_default") == []

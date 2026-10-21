@@ -59,15 +59,16 @@ from clio_agent.gact.artifacts.proposals import build_create_artifact_tool
 from clio_agent.gact.autonomous_loop import build_loop_wakeup_tool
 from clio_agent.gact.cron_tools import build_cron_tools
 from clio_agent.gact.goal import build_goal_status_tool
-from clio_agent.gact.goal_control import build_set_goal_tool
-from clio_agent.gact.goal_wait import build_goal_wait_tool
+from clio_agent.gact.goal_control import build_goal_wait_tool, build_set_goal_tool
 from clio_agent.gact.loop_control import build_set_loop_tool
-from clio_agent.gact.memory_tools import build_memory_tools
 from clio_agent.gact.plan_mode import build_plan_exit_tool
 from clio_agent.gact.recall_context_tool import build_recall_context_tool
 from clio_agent.gact.resource_tools import build_resource_tools
 from clio_agent.gact.ssh_tools import build_ssh_execute_tool
-from clio_agent.gact.storage.connect_tool import build_connected_data_connect_tool
+from clio_agent.gact.storage.connect_tool import (
+    build_connected_data_connect_tool,
+    build_connected_data_index_tool,
+)
 from clio_agent.gact.storage.download_tool import build_connected_data_download_tool
 from clio_agent.gact.storage.ndp_endpoint_tools import build_ndp_endpoint_tools
 from clio_agent.gact.storage.ndp_tool_activation import session_ndp_tools_enabled
@@ -77,7 +78,7 @@ from clio_agent.gact.storage.setup_tool import (
     build_connected_data_status_tool,
     build_connected_data_write_tool,
 )
-from clio_agent.gact.task_tools import build_task_tools
+from clio_agent.gact.task_declarations import build_ask_user_tool, build_task_tools
 from clio_agent.gact.todos import build_write_todos_tool
 from clio_agent.gact.weather_tools import build_weather_forecast_tool
 from clio_agent.providers.model_discovery import build_refresh_provider_models_tool
@@ -126,6 +127,7 @@ def build_auto_react_tools(
 
     tools = [
         *build_task_tools(),
+        build_ask_user_tool(agent_def),
         build_connected_data_download_tool(),
         build_create_artifact_tool(agent_def),
         build_plan_exit_tool(agent_def),
@@ -201,9 +203,9 @@ def build_auto_react_tools(
             # tool; operational schemas still follow workspace activation.
             tools.extend(build_ndp_endpoint_tools(setup_only=True))
         tools.append(build_connected_data_connect_tool())
+        tools.append(build_connected_data_index_tool())
         tools.append(build_connected_data_open_tool())
         tools.append(build_connected_data_write_tool())
-        tools.extend(build_memory_tools(agent_def))
         # Phase 9: the main agent may draft alternatives of its answer (BestOfN /
         # Refine on demand, judged by the user or an LM). Imported here: the drafting
         # module needs dspy, which the server's app import must not load.
@@ -215,4 +217,7 @@ def build_auto_react_tools(
     from clio_agent.gact.storage.knowledge_tools import build_knowledge_tools
 
     tools.extend(build_knowledge_tools())
-    return tools
+    from clio_agent.gact.task_declarations import TASK_TOOL_NAMES
+
+    declarable_auto = TASK_TOOL_NAMES | {"connected_data_download"}
+    return [tool for tool in tools if tool.name not in declarable_auto or tool.name not in declared]

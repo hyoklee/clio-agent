@@ -42,6 +42,10 @@ class ContextReader:
         self._generation: int | None = None
         self._closed_upto = 0  # segments [0, n) are folded into ``_closed``
         self._closed: list[Message] = []
+        self.snapshot: Any = None
+        self._acknowledged: frozenset[str] = frozenset()
+        self._observed: frozenset[str] = frozenset()
+        self._input_messages: dict[str, list[Any]] = {}
 
     def read(self) -> list[Message]:
         """The scope's context now, as typed messages.
@@ -59,9 +63,40 @@ class ContextReader:
             snapshot = self.arc.context_view(self.session, self.scope)
         except Exception as exc:  # noqa: BLE001 - re-raised typed, never swallowed
             raise ContextReadError(self.scope, exc) from exc
-        segments = snapshot.segments
-        if snapshot.generation != self._generation or len(segments) < self._closed_upto:
+        if snapshot.generation != self._generation:
+            live_inputs = {
+                str(segment.id)
+                for segment in snapshot.segments
+                if segment.kind in {"recipient_input", "user"}
+                and segment.content.get("rendered_content")
+            }
+            self._input_messages = {
+                key: value for key, value in self._input_messages.items() if key in live_inputs
+            }
+        from clio_agent.gact import context
+
+        history = getattr(getattr(context.active_app(), "state", None), "task_history", None)
+        acknowledged = (
+            history.acknowledged_notifications(self.session) if history is not None else frozenset()
+        )
+        observed = (
+            history.committed_observations(self.session, self.scope)
+            if history is not None
+            else frozenset()
+        )
+        segments = model_context_segments(
+            snapshot.segments, history, self.session, self.scope, cache=self._input_messages
+        )
+        self.snapshot = snapshot
+        if (
+            snapshot.generation != self._generation
+            or len(segments) < self._closed_upto
+            or acknowledged != self._acknowledged
+            or observed != self._observed
+        ):
             self._generation = snapshot.generation
+            self._acknowledged = acknowledged
+            self._observed = observed
             self._closed_upto = 0
             self._closed = []
         boundary = _last_boundary(segments, self._closed_upto)
@@ -69,6 +104,77 @@ class ContextReader:
             self._closed.extend(fold_steps(segments[self._closed_upto : boundary]))
             self._closed_upto = boundary
         return [*self._closed, *fold_steps(segments[self._closed_upto :])]
+
+
+def model_context_segments(
+    segments: Sequence[Any],
+    history: Any,
+    session: str,
+    scope: str,
+    *,
+    cache: dict[str, list[Any]] | None = None,
+) -> list[Any]:
+    """Resolve confirmed input references identically for model reads and compaction."""
+    from types import SimpleNamespace
+
+    from clio_agent.arc.task_types import CoreReference
+    from clio_agent.gact.agents.clio_react_record import ContextReadError
+
+    acknowledged = (
+        history.acknowledged_notifications(session) if history is not None else frozenset()
+    )
+    proofs = history.committed_observations(session, scope) if history is not None else frozenset()
+    result = []
+    for segment in segments:
+        if segment.kind in {"recipient_input", "user"} and segment.content.get("rendered_content"):
+            if history is None:
+                raise ContextReadError(
+                    scope, ValueError("Confirmed input needs its Core content resolver")
+                )
+            identity = str(segment.id)
+            messages = cache.get(identity) if cache is not None else None
+            if messages is None:
+                messages = [
+                    SimpleNamespace(
+                        id=f"{identity}:{index}",
+                        kind="user",
+                        content=history.read_content(CoreReference.model_validate(reference)),
+                        logical_time=segment.logical_time,
+                    )
+                    for index, reference in enumerate(segment.content["rendered_content"])
+                ]
+                if cache is not None:
+                    cache[identity] = messages
+            result.extend(messages)
+        elif (
+            segment.kind == "observation"
+            and (
+                segment.content.get("notification_ids")
+                or segment.content.get("task_read_handles")
+                or segment.content.get("task_observe_handles")
+            )
+            and str(segment.id) not in proofs
+        ):
+            result.append(
+                SimpleNamespace(
+                    id=segment.id,
+                    kind="observation",
+                    content={
+                        "call_id": segment.content["call_id"],
+                        "is_error": True,
+                        "text": "Result recording is retained, but recipient input commitment or authorization is pending.",
+                    },
+                )
+            )
+        elif (
+            segment.kind == "user"
+            and segment.content.get("notification_ids")
+            and not set(segment.content["notification_ids"]) <= acknowledged
+        ):
+            continue  # historical staging is readable data, never an acknowledgement
+        else:
+            result.append(segment)
+    return result
 
 
 def _last_boundary(segments: Sequence[Any], start: int) -> int:

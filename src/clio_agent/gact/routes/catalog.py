@@ -16,13 +16,10 @@ plus the slash-command dispatch path:
   (``/clear`` / ``/cache-stats`` / ``/dump-trace``), then materialize a synthetic
   result message and audit row.
 
-The catalog primitives (built-in tool list, per-tool owner/tags/visibility, the
-on-disk command/skill loaders, the truthy-field coercion) live in the leaf
-:mod:`clio_agent.gact.catalog` and are shared with the agent-run path. The
-command-table assembly + dispatch helpers are concern-private and stay nested in
-the factory (they close over ``app``/``deps``). The dispatch route reaches the
-message-ledger primitives, the agent runner, and the destructive-action guard
-through ``deps`` rather than importing back into :mod:`clio_agent.gact.app`.
+Shared catalog primitives live in :mod:`clio_agent.gact.catalog`. Command assembly
+and dispatch helpers stay nested in this factory. Routes reach the message
+ledger, runner and destructive-action guard through ``deps`` without importing
+back into :mod:`clio_agent.gact.app`.
 """
 
 from __future__ import annotations
@@ -745,7 +742,9 @@ def register_catalog_routes(app: FastAPI, deps: "GactDeps") -> None:
         elif cmd_id == "/goal":  # P4.2 #1080: arm/clear a run-until goal (owner module)
             from clio_agent.gact.goal import run_goal_command  # noqa: PLC0415
 
-            body_text = run_goal_command(app, sid, request_body)
+            body_text = await app.state.task_history.io.run(
+                run_goal_command, app, sid, request_body
+            )
         elif cmd_id in ("/cron", "/schedule"):  # P4.3 #1081: cron triad (owner module)
             from clio_agent.gact.cron_tools import run_cron_command  # noqa: PLC0415
 

@@ -178,6 +178,13 @@ lm.provider: "lm_studio"
 # models needing fuller sampling than the temp-0 default.
 # lm.top_p:  # default unset; resolved in code
 
+# CLIO_LM15_SSE_LIMIT  (int)  <- src/clio_agent/providers/codex/sse_wire.py
+# Maximum SSE line size in bytes for CLIO's Codex direct HTTP bridge;
+# defaults to 1 MiB. Positive values above 1 MiB also raise its event
+# ceiling. Does not alter WebSocket frames or other providers' native
+# transports.
+lm15.sse_limit: 1048576
+
 # CLIO_CLAUDE_CODE_AUTH_STATUS_TIMEOUT_S  (float)  <- src/clio_agent/providers/model_discovery/claude_code.py
 # Seconds the Claude Code `auth status` sign-in check may run before it is
 # abandoned as inconclusive; raise on hosts where cold CLI startup is slow.
@@ -318,7 +325,7 @@ limits.lm_transient_retries: 2.0
 # (image/audio/resource) before it's elided; raise for larger images.
 limits.mcp_content_block_max_bytes: 524288
 
-# CLIO_MODEL_TOOL_RESULT_CHARS  (int)  <- src/clio_agent/tools/mcp_result_projection.py
+# CLIO_MODEL_TOOL_RESULT_CHARS  (int)  <- src/clio_agent/gact/session_mail.py
 # Characters of a tool result shown to the model; a longer result is saved
 # to the session's tool-output folder and the agent gets this many head
 # characters plus the file path. Distinct from limits.tool_result_chars.
@@ -359,7 +366,7 @@ limits.shell_max_output_bytes: 131072
 # ceiling.
 limits.shell_max_timeout_s: 0.0
 
-# CLIO_TOOL_RESULT_CHARS  (int)  <- src/clio_agent/tools/mcp_result_projection.py
+# CLIO_TOOL_RESULT_CHARS  (int)  <- src/clio_agent/gact/assignment_evidence.py
 # Character bound on the transcript/evidence-metadata preview of a tool
 # result; raise to keep more result text visible in the transcript.
 limits.tool_result_chars: 12000
@@ -392,9 +399,10 @@ limits.view_pdf_source_max_bytes: 536870912
 # Child-agent concurrency, declared-workflow step liveness, goal judging and
 # the cron scheduler.
 
-# CLIO_MAX_CONCURRENT_AGENT_TASKS  (int)  <- src/clio_agent/gact/turn_spawn_executor.py
-# Maximum running child tasks per nesting depth; 0 means unlimited. Changes
-# in Settings apply immediately to admission while existing work finishes.
+# CLIO_MAX_CONCURRENT_AGENT_TASKS  (int)  <- src/clio_agent/gact/agent_task_limits.py
+# Reserved or in-flight child inference at one spawn depth; tools and waits
+# release their inference permit. This does not cap active sessions or
+# background tasks.
 agent_tasks.max_concurrent: 3
 
 # CLIO_MAX_AGENT_TASK_DEPTH  (int)  <- src/clio_agent/gact/agent_task_limits.py
@@ -402,11 +410,6 @@ agent_tasks.max_concurrent: 3
 # unlimited. Changes apply to new spawns; existing deeper descendants remain
 # visible.
 agent_tasks.max_depth: 8
-
-# CLIO_CHILD_FORWARD_DEADLINE_S  (float)  <- src/clio_agent/gact/child_forward.py
-# Seconds before an unattended parent's forwarded HITL question auto-fails
-# the waiting child task; defaults to the elicitation window.
-# agents.child_forward_deadline_s:  # computed at runtime: DEFAULT_ELICITATION_TIMEOUT_S
 
 # CLIO_DEFAULT_AGENT_BLUEPRINT_ID  (str)  <- src/clio_agent/gact/agent_blueprint_refresh.py
 # Installed marketplace Agent Blueprint a fresh deployment bootstraps and
@@ -484,11 +487,6 @@ scheduler.min_interval_s: 60
 # so it bounds the cost.
 variants.max_n: 8
 
-# CLIO_WORKFLOW_STEP_INACTIVITY_S  (float)  <- src/clio_agent/gact/workflow_step_watch.py
-# No-activity window (seconds) before a declared-workflow step's child is
-# judged stalled; a long but active step never trips it.
-workflows.step_inactivity_s: 120.0
-
 # ==========================================================================
 # GACT server
 # ==========================================================================
@@ -557,11 +555,6 @@ gact.blueprint_source.clone_timeout_s: 30.0
 # may run before timing out; lower to keep the desktop versions panel
 # snappy, raise for a slow link.
 gact.blueprint_source.ls_remote_timeout_s: 10.0
-
-# CLIO_GACT_CANCELLATION_GRACE_S  (float)  <- src/clio_agent/gact/routes/session_cancellation.py
-# Seconds a cooperative session cancel is given before the turn task is
-# hard-cancelled; raise to let a mid-tool-call turn unwind cleanly.
-gact.cancellation_grace_s: 0.1
 
 # CLIO_CONTEXT_REFERENCE_BROWSE_LIMIT  (int)  <- src/clio_agent/gact/context_reference_search.py
 # Rows returned per reference kind when the picker opens with no query
@@ -682,49 +675,20 @@ gact.ledger_retention.turn_attempts.hard: 4000
 # protecting still-pending turn attempts.
 gact.ledger_retention.turn_attempts.max: 2000
 
-# CLIO_LEDGER_USER_QUESTIONS_HARD  (int)  <- src/clio_agent/gact/runtime/retention.py
-# Absolute ceiling on the in-memory ask-user question ledger; past this even
-# a still-pending question is force-evicted oldest-first.
-gact.ledger_retention.user_questions.hard: 4000
-
-# CLIO_LEDGER_USER_QUESTIONS_MAX  (int)  <- src/clio_agent/gact/runtime/retention.py
-# Soft cap on the ask-user question ledger where terminal
-# (answered/cancelled/expired) rows evict first, protecting questions
-# somebody is still waiting on.
-gact.ledger_retention.user_questions.max: 2000
-
 # CLIO_LIVE_EDGE_STREAMING  (bool)  <- src/clio_agent/gact/live_edge.py
 # Experimental flag enabling live-edge SSE atom sealing (default off); only
 # meaningful with the S5 atoms regime, leave off normally.
 gact.live_edge_streaming: false
 
-# CLIO_GACT_LOOP_INBOX_MAX_EVENTS  (int)  <- src/clio_agent/gact/loop_inbox.py
-# Per-session bound on buffered mid-turn wakes (child completions and user
-# steers) before the oldest recoverable one is evicted; raise for very fan-
-# out-heavy turns.
-gact.loop_inbox.max_events: 64
+# CLIO_MAILBOX_MAX_PENDING_MESSAGES  (int)  <- src/clio_agent/gact/session_mail.py
+# Undelivered peer-message ceiling per session; 0 means unlimited. Task
+# results and human input are exempt, and delivered history is retained.
+gact.mailbox.max_pending_messages: 0
 
 # CLIO_GACT_MEDIA_CACHE_BYTES  (int)  <- src/clio_agent/gact/agents/media_cache.py
 # Bytes of rehydrated tool media (viewed images, PDFs) kept for reuse across
 # context reads, least recently used first out; lower to bound memory.
 gact.media_cache_bytes: 67108864
-
-# CLIO_GACT_MAX_ACCEPTANCES_PER_SESSION  (int)  <- src/clio_agent/gact/message_intents.py
-# Per-session cap on retained message-acceptance records used for idempotent
-# POST replay; raise for clients that retry over long windows, lower to
-# shrink the intent store.
-gact.message_intents.max_acceptances_per_session: 200
-
-# CLIO_GACT_MAX_QUEUED_MESSAGES_PER_SESSION  (int)  <- src/clio_agent/gact/message_intents.py
-# Per-session cap on durable queued (future) messages; a create past it is
-# REFUSED with a typed 429, never evicted. Raise for heavy queue use.
-gact.message_intents.max_queued_per_session: 100
-
-# CLIO_GACT_MAX_SETTLED_STEERS_PER_SESSION  (int)  <- src/clio_agent/gact/message_intents.py
-# Per-session cap on retained SETTLED (consumed/cancelled) pending-steer
-# rows; undelivered steers are never evicted. Lower to shrink the intent
-# store.
-gact.message_intents.max_settled_steers_per_session: 100
 
 # CLIO_RESIDENT_LEDGERS_TTL_S  (float)  <- src/clio_agent/gact/resident_ledgers.py
 # Seconds an idle session's in-memory transcript ledger may sit resident
@@ -740,6 +704,42 @@ gact.resident_ledgers.max_bytes: 536870912
 # Max sessions whose transcript ledgers stay resident in memory at once;
 # raise to keep more sessions warm at the cost of memory.
 gact.resident_ledgers.max_sessions: 512
+
+# CLIO_TASKS_HEALTH_TIMEOUT_S  (float)  <- src/clio_agent/tools/task_client.py
+# Timeout in seconds for task transport discovery/cancellation RPC delivery;
+# accepted execution, result waits and physical cleanup retain their own
+# semantics. Must be finite and positive.
+gact.tasks.health_timeout_s: 10.0
+
+# CLIO_TASKS_SHELL_CONCURRENCY  (int)  <- src/clio_agent/tools/native_roots.py
+# Native Shell worker concurrency; positive, default 10.
+gact.tasks.shell.concurrency: 10
+
+# CLIO_TASKS_SHELL_QUEUE  (str)  <- src/clio_agent/tools/native_roots.py
+# Shell queue identity; empty selects an automatic clio-shell name, with an
+# incarnation suffix for the memory backend. Keep it separate from storage.
+# gact.tasks.shell.queue:  # default unset; resolved in code
+
+# CLIO_TASKS_SHELL_URL  (str)  <- src/clio_agent/tools/native_roots.py
+# Native Shell backend URL. memory:// loses local work on process loss;
+# persistent backends can redeliver execution and do not promise exactly-
+# once effects.
+gact.tasks.shell.url: "memory://"
+
+# CLIO_TASKS_STORAGE_CONCURRENCY  (int)  <- src/clio_agent/tools/native_roots.py
+# Native Download/Indexing worker concurrency; positive, default 10,
+# independent of Shell.
+gact.tasks.storage.concurrency: 10
+
+# CLIO_TASKS_STORAGE_QUEUE  (str)  <- src/clio_agent/tools/native_roots.py
+# Storage queue identity; empty selects an automatic clio-storage name, with
+# an incarnation suffix for the memory backend. Keep it separate from Shell.
+# gact.tasks.storage.queue:  # default unset; resolved in code
+
+# CLIO_TASKS_STORAGE_URL  (str)  <- src/clio_agent/tools/native_roots.py
+# Native Download/Indexing backend URL, independent of Shell. memory:// is
+# ephemeral; persistent backends can redeliver execution.
+gact.tasks.storage.url: "memory://"
 
 # CLIO_HOOKS_ALLOW_MANAGED_ONLY  (bool)  <- src/clio_agent/gact/hooks/dispatcher.py
 # Lockdown flag dropping every non-managed (user/project) hook source,
@@ -1264,14 +1264,6 @@ tools.mcp.discovery_concurrency: 8
 # discovery; lower to recover faster, raise to cut retry noise.
 tools.mcp.discovery_heal_interval_s: 20.0
 
-# CLIO_MCP_ELICITATION_AGENT_AUDIENCE_ANSWER_MODE  (str)  <- src/clio_agent/gact/agent_elicitation_policy.py
-# Which answerer fulfills a routed agent-audience elicitation: 'inline'
-# (default) runs one bounded tool-less completion on the session's own
-# model; 'turn' spawns the child answer turn (deadlocks while the parent
-# tool call holds the session's turn slot -- retained for lifecycle parity
-# only).
-tools.mcp.elicitation.agent_audience.answer_mode: "inline"
-
 # CLIO_MCP_ELICITATION_AGENT_AUDIENCE_DEFAULT_UNHINTED  (bool)  <- src/clio_agent/gact/agent_elicitation_policy.py
 # Whether an UNHINTED form-mode elicitation defaults to the agent. fastmcp
 # drops the nested _meta on the InputRequiredResult round-trip, so an
@@ -1299,16 +1291,10 @@ tools.mcp.elicitation.agent_audience.enabled: true
 # for deliberately layered server flows.
 tools.mcp.elicitation.agent_audience.max_depth: 1
 
-# CLIO_MCP_ELICITATION_AGENT_AUDIENCE_TIMEOUT_S  (float)  <- src/clio_agent/gact/agent_elicitation_policy.py
-# Seconds an agent-answer turn may take before the question falls back typed
-# to the human; bounds the 'agent is answering' window a pending question
-# can sit in.
-tools.mcp.elicitation.agent_audience.timeout_s: 90.0
-
-# CLIO_MCP_ELICITATION_URL_TRUSTED_ORIGINS  (list)  <- src/clio_agent/gact/elicitation_bridge.py
+# CLIO_MCP_ELICITATION_URL_TRUSTED_ORIGINS  (list)  <- src/clio_agent/gact/elicitation_config.py
 # CSV allow-list of origins a url-mode elicitation may point to; add one to
 # enable url elicitation for that server.
-# tools.mcp.elicitation.url_trusted_origins:  # computed at runtime: default
+# tools.mcp.elicitation.url_trusted_origins:  # default unset; resolved in code
 
 # CLIO_MCP_HOLD_WHILE_WAITING_S  (float)  <- src/clio_agent/gact/session_warmup.py
 # Seconds a session waiting on its user (a question or plan approval) keeps
@@ -1465,132 +1451,6 @@ search.searxng.request_timeout_s: 10.0
 # CLIO_SEARCH_SEARXNG_SAFE_SEARCH  (int)  <- src/clio_agent/search/settings.py
 # SearXNG safe-search level: 0 off, 1 moderate (default), 2 strict.
 search.searxng.safe_search: 1
-
-# ==========================================================================
-# Relay
-# ==========================================================================
-# The clio-relay integration: console/artifact transfer, the install-surface
-# CLI and remote agents.
-
-# CLIO_RELAY_CLUSTER  (str)  <- src/clio_agent/tools/relay_factory.py
-# This deployment's registered relay cluster identity; set it to route
-# jarvis/remote-MCP tool calls to a specific cluster.
-# relay.cluster:  # default unset; resolved in code
-
-# CLIO_RELAY_CONSOLE_ENABLED  (bool)  <- src/clio_agent/tools/relay_console.py
-# Whether the live job console tail folds into the task record; disable to
-# stop the periodic console pull entirely.
-relay.console.enabled: true
-
-# CLIO_RELAY_CONSOLE_PULL_LIMIT_BYTES  (int)  <- src/clio_agent/tools/relay_console.py
-# Bytes requested per poll of a relay job's console log (clamped to relay's
-# 1 MiB cap); raise to refill a window faster after a gap.
-relay.console.pull_limit_bytes: 65536
-
-# CLIO_RELAY_CONSOLE_STREAM  (str)  <- src/clio_agent/tools/relay_console.py
-# Which relay log stream ("console", "stdout", "stderr") the console fold
-# pulls from; switch to stdout/stderr only for diagnostics.
-relay.console.stream: "console"
-
-# CLIO_RELAY_CONSOLE_TAIL_CAP_BYTES  (int)  <- src/clio_agent/tools/relay_console.py
-# Byte cap on the rolling console tail kept on the task record for UI
-# display; raise for more scrollback, lower to shrink records.
-relay.console.tail_cap_bytes: 8192
-
-# CLIO_RELAY_FETCH_MAX_BYTES  (int)  <- src/clio_agent/tools/relay_artifact_fetch.py
-# Max artifact size in bytes this deployment transfers inline via
-# relay_fetch_artifact; raise for larger downloads, lower to block big ones.
-relay.fetch_max_bytes: 104857600
-
-# CLIO_RELAY_HTTP_URL  (str)  <- src/clio_agent/tools/relay_factory.py
-# Relay job/artifact HTTP endpoint URL; set together with relay.mcp_url to
-# enable the relay transport.
-# relay.http_url:  # default unset; resolved in code
-
-# CLIO_RELAY_INSTALL_ATTENTION_IDLE_S  (float)  <- src/clio_agent/tools/relay_cli_runner.py
-# Seconds of no subprocess output before a relay CLI job is relabeled "needs
-# operator attention" (e.g. SSH/2FA); tune for slow networks.
-relay.install_surface.attention_idle_seconds: 45.0
-
-# CLIO_RELAY_INSTALL_BOUNDED_TIMEOUT_S  (float)  <- src/clio_agent/tools/relay_cli_runner.py
-# Timeout in seconds for a fast, non-SSH-dialing clio-relay CLI sub-probe
-# (register/doctor/status); raise if calls time out on a slow host.
-relay.install_surface.bounded_timeout_seconds: 60.0
-
-# CLIO_RELAY_CLI_PATH  (str)  <- src/clio_agent/tools/relay_cli_runner.py
-# Explicit path to the deployed clio-relay executable, overriding PATH
-# discovery; set when it's installed somewhere non-standard.
-# relay.install_surface.cli_path:  # default unset; resolved in code
-
-# CLIO_RELAY_INSTALL_JOB_RETENTION_HARD_CAP  (int)  <- src/clio_agent/tools/relay_cli_runner.py
-# Hard ceiling on tracked relay CLI jobs before even a running one is force-
-# evicted; raise on a box driving many concurrent relay ops.
-relay.install_surface.job_retention_hard_cap: 400
-
-# CLIO_RELAY_INSTALL_JOB_RETENTION_MAX  (int)  <- src/clio_agent/tools/relay_cli_runner.py
-# Soft cap on tracked relay CLI jobs; past this the oldest terminal job is
-# evicted first to bound memory.
-relay.install_surface.job_retention_max: 200
-
-# CLIO_RELAY_INSTALL_LONG_OP_TIMEOUT_S  (float)  <- src/clio_agent/tools/relay_cli_runner.py
-# Runaway timeout (seconds) for SSH-dialing relay CLI ops (bootstrap,
-# session start/attach/teardown); raise for slow SSH targets.
-relay.install_surface.long_operation_timeout_seconds: 900.0
-
-# CLIO_RELAY_INSTALL_OUTPUT_TAIL_BYTES  (int)  <- src/clio_agent/tools/relay_cli_runner.py
-# Byte cap on the retained stdout/stderr tail from a relay CLI subprocess
-# call; raise for more diagnostic context on failures.
-relay.install_surface.output_tail_bytes: 4096
-
-# CLIO_RELAY_INSTALL_PARSED_DOCUMENT_MAX_BYTES  (int)  <- src/clio_agent/tools/relay_cli_runner.py
-# Byte buffer size for parsing a whole clio-relay CLI JSON document; raise
-# if a large session document is failing to parse.
-relay.install_surface.parsed_document_max_bytes: 262144
-
-# CLIO_RELAY_JARVIS_DOOR_NAMESPACE  (str)  <- src/clio_agent/tools/relay_factory.py
-# The relay-registered JARVIS tool-name namespace prefix; set to "" to use
-# relay's older compact-name door instead.
-relay.jarvis_door_namespace: "remote_jarvis"
-
-# CLIO_RELAY_MCP_URL  (str)  <- src/clio_agent/tools/relay_factory.py
-# Relay MCP control endpoint URL; set together with relay.http_url to enable
-# relay tool discovery.
-# relay.mcp_url:  # default unset; resolved in code
-
-# CLIO_RELAY_SESSION_GENERATION_ID  (str)  <- src/clio_agent/tools/relay_factory.py
-# Generation id paired with relay.owner_session_id identifying this
-# deployment's owned relay session; set both together or neither.
-# relay.owner_session_generation_id:  # default unset; resolved in code
-
-# CLIO_RELAY_OWNER_SESSION_ID  (str)  <- src/clio_agent/tools/relay_factory.py
-# This deployment's owned relay HTTP-API session id, required with
-# owner_session_generation_id when the relay door is session-bound.
-# relay.owner_session_id:  # default unset; resolved in code
-
-# CLIO_RELAY_REMOTE_AGENT_MCP_CONFIG_PATH  (str)  <- src/clio_agent/gact/relay_wiring.py
-# Path to the MCP config file used by a remote relay-placed agent
-# invocation; set to give spawned agents a specific tool config.
-# relay.remote_agent.mcp_config_path:  # default unset; resolved in code
-
-# CLIO_RELAY_REMOTE_AGENT_MODEL  (str)  <- src/clio_agent/gact/relay_wiring.py
-# Model identifier used for agents spawned onto a relay cluster; override to
-# run remote relay agents on a non-default model.
-# relay.remote_agent.model:  # default unset; resolved in code
-
-# CLIO_RELAY_REMOTE_AGENT_PROMPT_PATH  (str)  <- src/clio_agent/gact/relay_wiring.py
-# Path to the prompt file for a relay-cluster-placed remote agent; required
-# (with the cluster) for relay agent spawning to work.
-# relay.remote_agent.prompt_path:  # default unset; resolved in code
-
-# CLIO_RELAY_REMOTE_AGENT_WORKDIR  (str)  <- src/clio_agent/gact/relay_wiring.py
-# Working directory used for a relay-placed remote agent invocation; set to
-# point remote execution at a specific cluster directory.
-# relay.remote_agent.workdir:  # default unset; resolved in code
-
-# CLIO_RELAY_TOOL_SURFACES_TTL_SECONDS  (int)  <- src/clio_agent/gact/relay_wiring.py
-# Seconds a discovered relay tool catalog is trusted before re-discovery;
-# lower for faster pickup of new tools, raise to cut overhead.
-relay.tool_surfaces_ttl_seconds: 300
 
 # ==========================================================================
 # Provenance, trace and debug

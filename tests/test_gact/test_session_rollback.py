@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from clio_agent.gact.a2ui_catalogs.builtin import workspace_catalog_id
 from clio_agent.gact.app import build_app
 from clio_agent.gact.types import Message, Part
+from tests.test_gact.input_capture import capture_inputs
 
 A2UI_HEADERS = {"X-GACT-Version": "0.3", "X-A2UI-Version": "0.9.1"}
 
@@ -139,10 +140,7 @@ def test_undo_preserves_a2ui_action_record_from_removed_message(
             ],
         )
 
-        def _spawn(coro: Any, **_kwargs: Any) -> None:
-            coro.close()
-
-        monkeypatch.setattr(app.state.turn_runner, "spawn", _spawn)
+        capture_inputs(app, monkeypatch)
         action_response = client.post(
             f"/v1/sessions/{sid}/a2ui/actions",
             headers=A2UI_HEADERS,

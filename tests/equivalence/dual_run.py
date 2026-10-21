@@ -44,6 +44,7 @@ from tests.test_gact.test_post_messages import FakeClioAgent  # noqa: E402
 from tests.turn_signals import wait_for_terminal_status  # noqa: E402
 
 from . import normalizers as N
+from .task_identity import SessionRunIdentities
 
 _SESSION = "sess_equiv"
 _SCOPE = "agentA"
@@ -191,7 +192,8 @@ def _capture_gact_surfaces(
         ack = c.post(
             f"/v1/sessions/{sid}/messages", json={"parts": [{"type": "text", "text": "hi"}]}
         )
-        assert ack.status_code == 200, ack.text
+        assert ack.status_code == 202, ack.text
+        assert ack.json()["task_handle"]
         # Capture once the turn has SETTLED: its terminal status event publishes after
         # the busy gate releases (#1466), which is after the completion events are
         # persisted (#1469). A fixed wall-clock window failed on a slow first turn.
@@ -259,13 +261,19 @@ def dual_run(
 
     # SSE: mask the extra cross-run id fields on top of the standard non-normative set.
     global_sse_mask = N.SSE_MASK_FIELDS | _SSE_XRUN_EXTRA
+    identities_a = SessionRunIdentities(
+        [event.id for event in cap_a.sse if N._sse_included(event.type)]
+    )
+    identities_b = SessionRunIdentities(
+        [event.id for event in cap_b.sse if N._sse_included(event.type)]
+    )
     sse_ref = [
-        {"type": r["type"], "payload": N._mask(r["payload"], global_sse_mask)}
+        {"type": r["type"], "payload": N._mask(identities_a.payload(r["payload"]), global_sse_mask)}
         for r in N.bus_events_to_records(cap_a.sse)
         if N._sse_included(r["type"])
     ]
     sse_cand = [
-        {"type": r["type"], "payload": N._mask(r["payload"], global_sse_mask)}
+        {"type": r["type"], "payload": N._mask(identities_b.payload(r["payload"]), global_sse_mask)}
         for r in N.bus_events_to_records(cap_b.sse)
         if N._sse_included(r["type"])
     ]
@@ -293,6 +301,8 @@ def dual_run(
         "trace": N.diff_trace(cap_a.trace_live, cap_b.trace_live),
     }
     note = (
+        "SSE Session-run identities canonicalized with alias relationships retained "
+        "and event cursors mapped to semantic boundaries; "
         "SSE masked {" + ", ".join(sorted(global_sse_mask)) + "}; "
         "persistence masked {" + ", ".join(sorted(N.PERSISTENCE_XRUN_MASK)) + "}; "
         "context + trace masked NOTHING (their projections carry neither ids nor the "

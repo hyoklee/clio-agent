@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Any, Literal
 
 from clio_schemas.connected_resources import AccessMode, ConnectedSource
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
@@ -186,17 +186,19 @@ class TransferOperation(StorageModel):
     bytes_done: int = 0
     bytes_total: int = 0
     native_job_id: str | None = None
-    native_request: dict[str, object] | None = None
+    # Provider submission payload, including Globus's preallocated submission ID.
+    # This is workload recovery data, not a common-task lifecycle mirror.
+    native_request: dict[str, Any] | None = None
+    publication_started_at: str | None = None
+    provider_cleanup_confirmed: bool = False
+    provider_identity: dict[str, Any] | None = None
     selected_paths: list[str] | None = None
     cancel_requested: bool = False
     error: str | None = None
     applied_paths: list[str] = Field(default_factory=list)
     created_at: str = Field(default_factory=now)
     updated_at: str = Field(default_factory=now)
-    task_handle: str = ""
-    owner_session_id: str = ""
     description: str = ""
-    invocation_id: str = ""
     entries_done: int = 0
     manifest_id: str | None = None
     index_signature: str = ""

@@ -30,6 +30,8 @@ _LIVE_WORK_STATE = {
     "queued": "queued",
     "running": "running",
     "working": "running",
+    "pause_requested": "pause_requested",
+    "paused": "paused",
     # A standing watcher (spotter-ai) between checks: RUNNING in the registry,
     # live state "waiting". Armed and alive, so running -- never interrupted.
     "waiting": "running",
@@ -308,37 +310,17 @@ def _question_upsert(event: Event, payload: dict[str, Any], session: Any) -> _Pr
 
 
 def _task_path(payload: dict[str, Any]) -> list[str]:
-    """Walk this task's ancestors to the root, newest step last.
+    """Project confirmed ancestry; legacy events without Core retain their own ID."""
+    from clio_agent.gact.context import active_app
 
-    Without it a client holding a ``subagent.upserted`` frame knows the run exists
-    but not WHERE in the tree it belongs, so a nested spawn renders as another
-    top-level row. The chain is read off the live registry (the same one the
-    provenance lineage reads). Its seen set terminates cyclic or torn
-    projections without hiding children after a nesting-limit change.
-    """
-
-    from clio_agent.gact.context import active_app  # noqa: PLC0415 - avoid cycle
-
-    task_id = str(payload.get("task_id") or "")
-    app = active_app()
-    registry = getattr(getattr(app, "state", None), "agent_task_registry", None)
-    if not task_id or registry is None:
-        return [task_id] if task_id else []
-    # ONE snapshot, indexed by the child session each task owns: the ancestor
-    # chain is a lookup per step, not a scan per step.
-    owner_of = {task.child_session_id: task for task in registry.snapshot()}
-    path = [task_id]
-    parent_session_id = str(payload.get("parent_session_id") or "")
-    seen = {task_id}
-    while parent_session_id:
-        owner = owner_of.get(parent_session_id)
-        if owner is None or owner.task_id in seen:
-            break
-        seen.add(owner.task_id)
-        path.append(owner.task_id)
-        parent_session_id = owner.parent_session_id
-    path.reverse()
-    return path
+    handle = str(payload.get("handle") or payload.get("task_id") or "")
+    history = getattr(getattr(active_app(), "state", None), "task_history", None)
+    path: list[str] = []
+    while handle and handle not in path:
+        path.append(handle)
+        task = history.task_snapshot(handle) if history is not None else None
+        handle = task.owner.parent_handle or "" if task is not None else ""
+    return list(reversed(path))
 
 
 def _subagent_upsert(event: Event, payload: dict[str, Any], session: Any) -> _Projection:
@@ -365,6 +347,7 @@ def _subagent_upsert(event: Event, payload: dict[str, Any], session: Any) -> _Pr
         ),
         "title": title,
         "state": _LIVE_WORK_STATE.get(raw_state, "interrupted"),
+        "task": str(payload.get("description") or "Description unavailable for this older task"),
         "agent_id": expert_id,
         "task_path": _task_path(payload),
         **(

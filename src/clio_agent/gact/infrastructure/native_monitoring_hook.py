@@ -411,6 +411,7 @@ def databases(root: Path, manifest: dict[str, Any], credentials: dict[str, str])
                 from pymongo import MongoClient  # type: ignore[import-untyped]  # noqa: PLC0415
                 from pymongo.errors import OperationFailure  # noqa: PLC0415
 
+                client: MongoClient[dict[str, Any]]
                 try:
                     with MongoClient(
                         credentials["mongodb_uri"], serverSelectionTimeoutMS=5000
@@ -531,6 +532,7 @@ def main() -> None:
 
             with redis.Redis.from_url(credentials["redis_url"]) as task_backend:
                 task_backend.execute_command("PING")
+            client: MongoClient[dict[str, Any]]
             with MongoClient(credentials["mongodb_uri"], serverSelectionTimeoutMS=5000) as client:
                 client.admin.command("ping")
         # CMF's readiness only succeeds after its PostgreSQL-backed lifespan initializes.

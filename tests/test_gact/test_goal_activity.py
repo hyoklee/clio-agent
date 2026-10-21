@@ -8,15 +8,17 @@ from typing import Any
 
 import pytest
 
+from clio_agent.arc.memory import ARCMemory
 from clio_agent.gact import goal
+from tests.test_arc.conftest import core_arc as core_arc
 from tests.test_gact.test_goal import _app, _session
 
 
 @pytest.mark.parametrize("cancel", [False, True])
 def test_pending_judge_has_one_visible_owner(
-    tmp_path: Path, monkeypatch: Any, cancel: bool
+    tmp_path: Path, monkeypatch: Any, cancel: bool, arc: ARCMemory
 ) -> None:
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     goal.arm_goal(app, sid, condition="Finish verified phases")
 

@@ -571,6 +571,7 @@ def transport_for(spec: MCPServerSpec, *, cwd: str | None = None) -> Any:
     For http servers the ``cwd`` is irrelevant and ignored.
     """
     if spec.transport == "stdio":
+        cwd = os.path.abspath(cwd) if cwd else cwd
         from fastmcp.client.transports import StdioTransport  # noqa: PLC0415
 
         # Fail-loud preflight (iowarp/clio-agent MCP spawn diagnosability): catch the
@@ -639,8 +640,8 @@ def transport_for(spec: MCPServerSpec, *, cwd: str | None = None) -> Any:
             final_command, final_args = diet_command, diet_args
         else:
             final_command, final_args = resolved, resolved_args
-        # Keep final post-diet argv and its real cwd under the single confinement
-        # composer; writable roots remain permission grants rather than cwd choices.
+        # Route post-spawn-diet argv through the shared confinement owner (#975),
+        # preserving cwd independently of grants and the existing pdeathsig=False lifetime.
         from clio_agent.runtime import sandbox  # noqa: PLC0415 - avoid import cycle
 
         confined = sandbox.wrap_confined(
@@ -773,10 +774,9 @@ def transport_from_spec(spec: Mapping[str, Any]) -> Any:
         raw_args = spec.get("args") or []
         raw_env = spec.get("env") or None
         command, raw_args, base_env = dmr.prepare_desktop_stdio(command, raw_args, raw_env)
-        # #975: the pdeathsig argv-prefix folds INTO the single confinement composer
-        # (owner decision #974.5 — one prefix owner, no second site). pdeathsig=True
-        # preserves the exact Linux setpriv behavior this dict-spec path had before; the
-        # `fleet` backend is passthrough this slice, so the composed argv is identical.
+        # The shared confinement owner also composes parent-death cleanup (#975).
+        # Preserve inherited cwd independently of grants, retaining this dict-spec
+        # path's Linux setpriv behavior through pdeathsig=True.
         from clio_agent.runtime import sandbox  # noqa: PLC0415 - avoid import cycle
 
         confined = sandbox.wrap_confined(

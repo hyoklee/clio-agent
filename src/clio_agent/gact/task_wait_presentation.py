@@ -9,6 +9,36 @@ from typing import Any
 _UNSUCCESSFUL = {"failed", "error", "cancelled", "interrupted", "denied"}
 
 
+def wait_start_presentation(args: Mapping[str, Any]) -> dict[str, Any]:
+    """Describe an active wait using authorized task kinds, before a result exists."""
+    from clio_agent.gact.context import active_app, active_session_id
+    from clio_agent.gact.task_access import TaskAccess
+
+    if args.get("timeout_s") == 0:
+        return {"summary": "Checking task status", "blocks": []}
+    handles = args.get("tasks", [])
+    if isinstance(handles, str):
+        handles = [handles]
+    app, sid = active_app(), active_session_id()
+    if app is None or not sid or not isinstance(handles, list):
+        return {"summary": "Waiting for tasks", "blocks": []}
+    kinds = []
+    for handle in handles:
+        try:
+            row = TaskAccess(app.state.task_history, app.state.conversations.caller(sid)).require(
+                handle, "observe"
+            )
+        except ValueError:
+            return {"summary": "Waiting for tasks", "blocks": []}
+        kinds.append(row.kind)
+    return {
+        "summary": "Waiting for your answer"
+        if kinds and set(kinds) == {"Question"}
+        else "Waiting for tasks",
+        "blocks": [],
+    }
+
+
 def _result_text(value: Any) -> str:
     """Use returned text when available; retain structured results otherwise."""
     if isinstance(value, str):
@@ -27,8 +57,24 @@ def wait_presentation(args: Mapping[str, Any], result: Mapping[str, Any]) -> dic
     if isinstance(requested, str):
         requested = [requested]
     pending = [handle for handle in result.get("pending", []) if isinstance(handle, str)]
-    rows = [row for row in result.get("results", []) if isinstance(row, Mapping)]
-    errors = [row for row in result.get("errors", []) if isinstance(row, Mapping)]
+    outcomes = result.get("outcomes", result.get("results", []))
+    # Decode released receipt fields without consulting a second task authority.
+    outcomes = [
+        {**row, "handle": row.get("handle") or row.get("task_id")}
+        for row in outcomes
+        if isinstance(row, Mapping)
+    ]
+    rows = [row for row in outcomes if not row.get("error")]
+    errors = [row for row in outcomes if row.get("error")]
+    errors.extend(row for row in result.get("errors", []) if isinstance(row, Mapping))
+
+    def uncollected(row: Mapping[str, Any]) -> bool:
+        return (
+            row.get("status") == "task_state_uncertain"
+            or bool(row.get("pending"))
+            or row.get("handle") in pending
+        )
+
     handles = list(
         dict.fromkeys(
             [handle for handle in requested if isinstance(handle, str)]
@@ -65,17 +111,39 @@ def wait_presentation(args: Mapping[str, Any], result: Mapping[str, Any]) -> dic
         elif row is not None:
             status = str(row.get("status") or "")
             label = (
-                "Turn ended"
-                if row.get("kind") == "Subagent" and status == "completed"
+                "Assignment complete"
+                if row.get("kind") in {"Session", "Subagent"} and status == "completed"
                 else status.capitalize() or "Result collected"
             )
-            value = row.get("result")
+            value = row.get("result", row.get("output"))
             block.update(
                 label=f"{handle}: {label}",
                 text="No result body was recorded." if value is None else _result_text(value),
                 status=status,
-                result_kind="completion",
+                result_kind="snapshot" if uncollected(row) else "completion",
             )
+            state = row.get("workflow_state")
+            if isinstance(state, Mapping):
+                detail: list[str] = []
+                for group, fields in state.items():
+                    if isinstance(fields, Mapping):
+                        detail.extend(
+                            f"{str(group).replace('_', ' ').capitalize()} {key}: {_result_text(value)}"
+                            for key, value in fields.items()
+                        )
+                    else:
+                        detail.append(f"{group}: {_result_text(fields)}")
+                block["detail"] = "\n".join(detail)
+            if status == "task_state_uncertain":
+                block.update(
+                    label=f"{handle}: Needs attention",
+                    text=str(
+                        row.get("reason")
+                        or "Execution state could not be confirmed. Inspect this task and its effects before retrying."
+                    ),
+                    result_kind="snapshot",
+                    severity="warning",
+                )
             if status in _UNSUCCESSFUL:
                 block["severity"] = "error"
         elif handle in pending:
@@ -100,11 +168,15 @@ def wait_presentation(args: Mapping[str, Any], result: Mapping[str, Any]) -> dic
                 }
             )
     failed = sum(row.get("status") in _UNSUCCESSFUL for row in rows)
-    counts = [f"{len(rows)} {'result' if len(rows) == 1 else 'results'} collected"]
+    collected = sum(not uncollected(row) for row in rows)
+    attention = sum(row.get("status") == "task_state_uncertain" for row in rows)
+    counts = [f"{collected} {'result' if collected == 1 else 'results'} collected"]
     if pending:
         counts.insert(0, f"{len(pending)} pending")
     if failed:
         counts.append(f"{failed} unsuccessful")
+    if attention:
+        counts.append(f"{attention} {'task needs' if attention == 1 else 'tasks need'} attention")
     if errors:
         counts.append(f"{len(errors)} {'error' if len(errors) == 1 else 'errors'}")
     presentation = {
@@ -113,6 +185,6 @@ def wait_presentation(args: Mapping[str, Any], result: Mapping[str, Any]) -> dic
         "summary": ", ".join(counts),
         "blocks": blocks,
     }
-    if failed or errors:
+    if failed or errors or attention:
         presentation["status"] = "degraded"
     return presentation

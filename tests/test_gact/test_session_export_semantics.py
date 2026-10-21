@@ -17,15 +17,17 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.types import Message as ASGIMessage
 
+from clio_agent.arc.memory import ARCMemory
 from clio_agent.errors import ClioError
+from clio_agent.gact.app import build_app
 from clio_agent.gact.artifacts.minting import mint_artifact
 from clio_agent.gact.artifacts.records import ArtifactKind, Custody, IdentityEvidence, Mechanism
 from clio_agent.gact.artifacts.registry import ArtifactRegistry
 from clio_agent.gact.auth import BearerAuthMiddleware
 from clio_agent.gact.messages import MessageStore
+from clio_agent.gact.questions import QuestionCommands
 from clio_agent.gact.routes.session_export import (
     _ExportFileResponse,
-    register_session_export_routes,
 )
 from clio_agent.gact.semantic_events import SemanticEvent
 from clio_agent.gact.semantic_trace_file import FileSemanticTraceBackend
@@ -33,14 +35,21 @@ from clio_agent.gact.session_export import build_transcript
 from clio_agent.gact.session_export_archive import build_archive
 from clio_agent.gact.session_export_downloads import ExportDownloads
 from clio_agent.gact.sessions import SessionStore
+from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.types import Message, Part
 from clio_agent.gact.workspaces import WorkspaceStore
 from clio_agent.tools.servers.shell_spill_store import spill_directory
+from tests.test_gact.task_records import record_question_fixture
 
 
 @pytest.fixture
-def export_app(tmp_path: Path) -> tuple[FastAPI, str, str]:
-    app = FastAPI()
+def export_app(tmp_path: Path, arc: ARCMemory) -> tuple[FastAPI, str, str]:
+    # Export includes Questions, permissions and transcript-backed surfaces.
+    # Start from the real application's projections instead of a partial State.
+    app = build_app(sessions_path=tmp_path / "state" / "sessions.json", arc=arc)
+    app.state.task_history = TaskHistory(arc)
+    app.state.questions = QuestionCommands(app.state.task_history)
+    app.state.human_principal = "human"
     app.state.sessions = SessionStore(path=tmp_path / "state" / "sessions.json")
     app.state.workspaces = WorkspaceStore(path=tmp_path / "state" / "workspaces.json")
     root = tmp_path / "source"
@@ -51,7 +60,6 @@ def export_app(tmp_path: Path) -> tuple[FastAPI, str, str]:
     app.state.context_files = {}
     app.state.semantic_trace_backend = FileSemanticTraceBackend(tmp_path / "state" / "traces")
     app.state.artifact_registry = ArtifactRegistry()
-    register_session_export_routes(app)
     return app, session.id, workspace.id
 
 
@@ -758,23 +766,25 @@ def test_archive_keeps_all_answered_questions_beyond_attention_limit(
     from clio_agent.gact.types import UserQuestion
 
     app, sid, _ = export_app
-    app.state.user_questions = {}
     for index in range(105):
         question = UserQuestion(
             id=f"q{index}",
             session_id=sid,
             prompt=f"Question {index}",
+            allow_freeform=True,
             status="answered",
             answer=f"Answer {index}",
             created_at="2026-10-05T00:00:00Z",
             updated_at="2026-10-05T00:01:00Z",
             metadata={"invocation_id": f"call{index}", "tool_name": "ask_user"},
         )
-        app.state.user_questions[question.id] = question
+        question = record_question_fixture(app, question)
     interactions = build_transcript(app, sid)["interactions"]
     assert len(interactions) == 105
     assert interactions[-1]["source"]["invocation_id"] == "call104"
-    assert interactions[-1]["payload"]["answer_metadata"]["answer"] == "Answer 104"
+    assert [item["payload"]["answer"] for item in interactions] == [
+        f"Answer {index}" for index in range(105)
+    ]
 
 
 def test_archive_retains_resolved_permissions_only_from_its_session(

@@ -8,17 +8,30 @@ it when it builds the child's program.
 
 from __future__ import annotations
 
-import types
 from typing import Any
 
 import dspy
 import pytest
+from fastapi.testclient import TestClient
 
-from clio_agent.gact import context as ctx
 from clio_agent.gact.agents import module_variants as mv
-from clio_agent.gact.agents.module_variants import spawn_scope_with_strategy
-from clio_agent.gact.turn_spawn import SpawnError
+from tests.test_gact.task_records import active_turn_fixture, record_assignment_fixture
 from tests.test_gact.test_module_variants_s5 import _build_variant_module
+
+
+def _strategy_child(
+    world: tuple[Any, TestClient, str], strategy: dict[str, Any]
+) -> tuple[Any, str]:
+    """Record a real child and its strategy before declaration-only assembly."""
+    app, _client, parent_sid = world
+    parent = app.state.sessions.get(parent_sid)
+    child = app.state.sessions.create(
+        workspace_id=parent.workspace_id,
+        parent_session_id=parent_sid,
+        metadata={"variant_strategy": strategy},
+    )
+    record_assignment_fixture(app, child.id, parent_sid=parent_sid)
+    return app, child.id
 
 
 def test_a_strategy_becomes_the_validated_module_variant() -> None:
@@ -41,10 +54,9 @@ def test_a_strategy_becomes_the_validated_module_variant() -> None:
         ({"variant": "best_of_n", "n": 2, "rubric": "x", "judge": "crowd"}, "judge"),
     ],
 )
-def test_an_invalid_strategy_is_refused_before_any_child(strategy: Any, match: str) -> None:
-    with pytest.raises(SpawnError, match=match) as err:
-        spawn_scope_with_strategy({"workspace": "w"}, strategy, agent_id="writer")
-    assert err.value.reason == "invalid_strategy"
+def test_an_invalid_strategy_is_rejected_by_the_shared_parser(strategy: Any, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        mv.strategy_module(strategy, agent_id="writer")
 
 
 def test_a_user_judge_is_a_strategy_too_and_n_is_capped(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -57,52 +69,30 @@ def test_a_user_judge_is_a_strategy_too_and_n_is_capped(monkeypatch: pytest.Monk
     assert (module["n"], module["n_requested"]) == (3, 9)
 
 
-def test_the_strategy_rides_the_child_session_metadata() -> None:
-    scope = spawn_scope_with_strategy(
-        {"workspace": "w"}, {"variant": "best_of_n", "n": 2, "rubric": "x"}, agent_id="writer"
-    )
-
-    assert scope["workspace"] == "w"
-    assert scope["variant_strategy"]["variant"] == "best_of_n"
-
-
-def test_no_strategy_leaves_the_scope_alone() -> None:
-    assert spawn_scope_with_strategy({"workspace": "w"}, None, agent_id="writer") == {
-        "workspace": "w"
-    }
-
-
 def test_the_child_is_built_wrapped_from_its_session_strategy(
     monkeypatch: pytest.MonkeyPatch,
+    world: tuple[Any, TestClient, str],
 ) -> None:
     strategy = mv.strategy_module({"variant": "best_of_n", "n": 2, "rubric": "x"}, agent_id="kid")
-    row = types.SimpleNamespace(metadata={"variant_strategy": strategy})
-    app = types.SimpleNamespace(state=types.SimpleNamespace(sessions={"child": row}))
-    tokens = [ctx.set_app(app), ctx.set_session_id("child")]
-    try:
+    app, child_sid = _strategy_child(world, strategy)
+    with active_turn_fixture(app, child_sid):
         module = _build_variant_module(monkeypatch, {"kind": "react"}, agent_id="kid")
-    finally:
-        for token in reversed(tokens):
-            ctx.reset(token)
 
     assert isinstance(module.program, dspy.BestOfN)
     assert module.program.N == 2
 
 
-def test_a_user_judged_child_is_built_as_the_pause(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_user_judged_child_is_built_as_the_pause(
+    monkeypatch: pytest.MonkeyPatch, world: tuple[Any, TestClient, str]
+) -> None:
     from clio_agent.gact.agents.variant_drafts import UserJudgedVariant
 
     strategy = mv.strategy_module(
         {"variant": "refine", "n": 2, "rubric": "x", "judge": "user"}, agent_id="kid"
     )
-    row = types.SimpleNamespace(metadata={"variant_strategy": strategy})
-    app = types.SimpleNamespace(state=types.SimpleNamespace(sessions={"child": row}))
-    tokens = [ctx.set_app(app), ctx.set_session_id("child")]
-    try:
+    app, child_sid = _strategy_child(world, strategy)
+    with active_turn_fixture(app, child_sid):
         module = _build_variant_module(monkeypatch, {"kind": "react"}, agent_id="kid")
-    finally:
-        for token in reversed(tokens):
-            ctx.reset(token)
 
     assert isinstance(module.program, UserJudgedVariant)
     assert (module.program.spec.variant, module.program.spec.n) == ("refine", 2)

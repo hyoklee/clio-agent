@@ -27,7 +27,6 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from clio_agent.gact import agent_initialization
-from clio_agent.gact.relay_wiring import construct_agent_with_relay
 from clio_agent.gact.server_boot import process_arc_off_loop
 
 if TYPE_CHECKING:
@@ -126,9 +125,10 @@ async def ensure_host_agent(app: "FastAPI", sid: str, req: "PostMessageRequest")
             return
         try:
             cfg = _host_config(ref)
-            agent = await construct_agent_with_relay(
-                app, arc=await process_arc_off_loop(app), provider_config=cfg
-            )
+            from clio_agent.agent import ClioAgent  # noqa: PLC0415
+
+            arc = await process_arc_off_loop(app)
+            agent = await asyncio.to_thread(ClioAgent, verbose=False, arc=arc, provider_config=cfg)
         except Exception as exc:  # noqa: BLE001 - surfaced as the typed agent_init_error
             logger.warning(
                 "session host agent build failed reason=session_host_agent_failed "

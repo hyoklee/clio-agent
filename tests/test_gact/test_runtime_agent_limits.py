@@ -1,75 +1,21 @@
-"""Runtime limit updates over real task admission, worker pools and persistent settings."""
+"""Runtime inference and depth settings over the production conversation owner."""
 
 from __future__ import annotations
 
+import asyncio
 import threading
-from pathlib import Path
-from types import SimpleNamespace
+from functools import partial
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
-import clio_agent.agent  # noqa: F401 - preload the real agent before worker admission deadlines
-from clio_agent.gact.app import build_app
 from clio_agent.gact.protocol.v3.event import _task_path
 from clio_agent.gact.provenance.child_projection import child_session_lineage
 from clio_agent.gact.session_descendants import descendant_session_ids
-from clio_agent.gact.turn_spawn import SpawnError, TaskSpec, spawn_child_turn_threadsafe
-from clio_agent.gact.turn_spawn_executor import (
-    agent_task_executor_for_depth,
-    install_agent_task_executor,
-    shutdown_agent_task_executors,
-)
+from clio_agent.gact.task_access import TaskCaller
 from tests._config_layer import set_config
-from tests.test_gact.test_turn_spawn_s3 import _declare, _wait_terminal
-
-pytestmark = pytest.mark.usefixtures("host_agent_executor")
-
-
-def test_saved_unlimited_concurrency_restores_at_startup() -> None:
-    """A persisted zero must not revert to the old three-worker fallback at boot."""
-    set_config("agent_tasks.max_concurrent", 0)
-    app = SimpleNamespace(state=SimpleNamespace())
-    install_agent_task_executor(app)
-    assert app.state.max_concurrent_agent_tasks == 0
-    barrier = threading.Barrier(5)
-    try:
-        pool = agent_task_executor_for_depth(app, 1)
-        futures = [pool.submit(barrier.wait, 5) for _ in range(4)]
-        barrier.wait(5)
-        assert all(future.result(5) >= 0 for future in futures)
-    finally:
-        shutdown_agent_task_executors(app)
-
-
-class HeldCalls:
-    """Hold test agent calls independently while real executor/admission code runs."""
-
-    def __init__(self, count: int = 4) -> None:
-        self.entered = [threading.Event() for _ in range(count)]
-        self.release = [threading.Event() for _ in range(count)]
-        self.lock = threading.Lock()
-        self.count = 0
-        self.by_session: dict[str, threading.Event] = {}
-        self.parent_session_id = ""
-
-    def forward(self, question: str, session_id: str, **kwargs: Any) -> SimpleNamespace:
-        del question, kwargs
-        if session_id == self.parent_session_id:
-            return SimpleNamespace(answer="Collected.", selected_expert="", routing_rationale="")
-        with self.lock:
-            index = self.count
-            self.count += 1
-            self.by_session[session_id] = self.release[index]
-        self.entered[index].set()
-        assert self.release[index].wait(10), "test must release every real worker"
-        return SimpleNamespace(answer="Finished.", selected_expert="", routing_rationale="")
-
-    def finish(self) -> None:
-        """Release every worker, including after a failed assertion."""
-        for event in self.release:
-            event.set()
+from tests.test_gact.task_records import record_delegation_fixture
 
 
 def _save(client: TestClient, changes: dict[str, int | None]) -> dict[str, Any]:
@@ -82,149 +28,189 @@ def _save(client: TestClient, changes: dict[str, int | None]) -> dict[str, Any]:
     return saved.json()
 
 
-def test_live_concurrency_increase_starts_queued_work_and_decrease_drains(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def _children(app: Any, sid: str, count: int = 4, fanout: int | None = None) -> list[str]:
+    from clio_agent.arc.task_types import AssignmentDetails
+
+    children = []
+    for index in range(count):
+        task = record_delegation_fixture(app, sid, handle=f"task_limit_{index}")
+        if fanout:
+            details = AssignmentDetails.model_validate(
+                app.state.task_history.read_content(task.details)
+            )
+            details = app.state.task_history.write_content(
+                task.owner.session_id,
+                details.model_copy(update={"inference_concurrency": fanout}).model_dump(
+                    mode="json"
+                ),
+            )
+            app.state.task_history.record_snapshot(
+                task.model_copy(update={"details": details}), observation_id=f"limit-{index}"
+            )
+        children.append(task.owner.session_id)
+    return children
+
+
+def _held_calls(
+    app: Any, client: TestClient, children: list[str]
+) -> tuple[Any, list[threading.Event], Any]:
+    """Run real inference admission while test events hold only model-call bodies."""
+    entered = [threading.Event() for _ in children]
+    releases: list[asyncio.Event] = []
+    ready = threading.Event()
+
+    async def run() -> None:
+        releases.extend(asyncio.Event() for _ in children)
+
+        async def call(index: int, sid: str) -> None:
+            async with app.state.conversations.inference_slot(sid):
+                entered[index].set()
+                await releases[index].wait()
+
+        workers = [asyncio.create_task(call(index, sid)) for index, sid in enumerate(children)]
+        ready.set()
+        try:
+            await asyncio.gather(*workers)
+        finally:
+            for worker in workers:
+                worker.cancel()
+            await asyncio.gather(*workers, return_exceptions=True)
+
+    assert client.portal is not None
+    future = client.portal.start_task_soon(run)
+    assert ready.wait(5)
+
+    def release(index: int | None = None) -> None:
+        async def apply() -> None:
+            for event in releases if index is None else [releases[index]]:
+                event.set()
+
+        client.portal.call(apply)
+
+    return future, entered, release
+
+
+def test_saved_unlimited_concurrency_is_used_by_inference(
+    world: tuple[Any, TestClient, str],
 ) -> None:
-    _declare(monkeypatch, "main")
-    calls = HeldCalls()
-    app = build_app(sessions_path=tmp_path / "sessions.json", agent=calls)
-    # Populate the real prompt cache before measuring worker admission; the
-    # retained stack showed cold packaged-prompt reads consuming this deadline.
-    app.state.prompt_registry._builtins()
-    with TestClient(app) as client:
+    app, client, sid = world
+    set_config("agent_tasks.max_concurrent", 0)
+    children = _children(app, sid)
+    future, entered, release = _held_calls(app, client, children)
+    try:
+        assert all(event.wait(5) for event in entered)
+    finally:
+        release()
+        future.result(5)
+
+
+def test_live_concurrency_increase_starts_waiting_calls_and_decrease_drains(
+    world: tuple[Any, TestClient, str],
+) -> None:
+    app, client, sid = world
+    _save(client, {"agent_tasks.max_concurrent": 1})
+    future, entered, release = _held_calls(app, client, _children(app, sid))
+    try:
+        assert entered[0].wait(5)
+        assert not any(event.is_set() for event in entered[1:])
+        _save(client, {"agent_tasks.max_concurrent": 3})
+        assert entered[1].wait(5) and entered[2].wait(5)
+        assert not entered[3].is_set()
         _save(client, {"agent_tasks.max_concurrent": 1})
-        parent = app.state.sessions.create(workspace_id="ws_default", title="parent")
-        calls.parent_session_id = parent.id
-
-        def spawn() -> Any:
-            return spawn_child_turn_threadsafe(
-                app, TaskSpec(child_expert_id="main", task_text="Work", parent_session_id=parent.id)
-            )
-
-        try:
-            first, second, third = spawn(), spawn(), spawn()
-            assert calls.entered[0].wait(5)
-            assert second.status == third.status == "queued"
-            _save(client, {"agent_tasks.max_concurrent": 3})
-            assert calls.entered[1].wait(5) and calls.entered[2].wait(5)
-            assert app.state.max_concurrent_agent_tasks == 3
-            _save(client, {"agent_tasks.max_concurrent": 1})
-            fourth = spawn()
-            assert fourth.status == "queued"
-            for task in (first, second):
-                calls.by_session[task.child_session_id].set()
-                assert _wait_terminal(app, task.task_id).status == "completed"
-                assert app.state.agent_task_registry.get(fourth.task_id).status == "queued"
-            calls.by_session[third.child_session_id].set()
-            assert _wait_terminal(app, third.task_id).status == "completed"
-            assert calls.entered[3].wait(5)
-            calls.by_session[fourth.child_session_id].set()
-            assert _wait_terminal(app, fourth.task_id).status == "completed"
-        finally:
-            calls.finish()
+        release(0)
+        release(1)
+        assert not entered[3].wait(0.1)
+        release(2)
+        assert entered[3].wait(5)
+    finally:
+        release()
+        future.result(5)
 
 
-@pytest.mark.parametrize("fanout_bound,expected_running", [(0, 4), (2, 2)])
-def test_unlimited_concurrency_has_no_default_pool_cap_and_keeps_agent_bound(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fanout_bound: int, expected_running: int
+@pytest.mark.parametrize("fanout_bound,expected_running", [(None, 4), (2, 2)])
+def test_unlimited_depth_capacity_preserves_parent_fanout(
+    world: tuple[Any, TestClient, str],
+    fanout_bound: int | None,
+    expected_running: int,
 ) -> None:
-    _declare(monkeypatch, "main")
-    calls = HeldCalls()
-    app = build_app(sessions_path=tmp_path / "sessions.json", agent=calls)
-    with TestClient(app) as client:
-        _save(client, {"agent_tasks.max_concurrent": 0})
-        parent = app.state.sessions.create(workspace_id="ws_default", title="parent")
-        calls.parent_session_id = parent.id
-        try:
-            tasks = [
-                spawn_child_turn_threadsafe(
-                    app,
-                    TaskSpec(
-                        child_expert_id="main",
-                        task_text="Work",
-                        parent_session_id=parent.id,
-                        requesting_expert_id="main",
-                        fanout_bound=fanout_bound,
-                    ),
-                )
-                for _ in range(4)
-            ]
-            assert all(event.wait(5) for event in calls.entered[:expected_running])
-            assert (
-                sum(t.status == "running" for t in app.state.agent_task_registry.snapshot())
-                == expected_running
-            )
-            assert (
-                sum(t.status == "queued" for t in app.state.agent_task_registry.snapshot())
-                == 4 - expected_running
-            )
-        finally:
-            calls.finish()
-        assert all(_wait_terminal(app, task.task_id).status == "completed" for task in tasks)
+    app, client, sid = world
+    _save(client, {"agent_tasks.max_concurrent": 0})
+    future, entered, release = _held_calls(app, client, _children(app, sid, fanout=fanout_bound))
+    try:
+        assert all(event.wait(5) for event in entered[:expected_running])
+        assert sum(event.is_set() for event in entered) == expected_running
+    finally:
+        release()
+        future.result(5)
 
 
 def test_depth_updates_and_unlimited_preserve_deep_history_and_task_paths(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    world: tuple[Any, TestClient, str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _declare(monkeypatch, "main")
-    app = build_app(sessions_path=tmp_path / "sessions.json", agent=HeldCalls())
-    with TestClient(app) as client:
-        root = app.state.sessions.create(workspace_id="ws_default", title="root")
-        _save(client, {"agent_tasks.max_depth": 1})
-        with pytest.raises(SpawnError, match="max 1"):
-            spawn_child_turn_threadsafe(
-                app,
-                TaskSpec(
-                    child_expert_id="main", task_text="Work", parent_session_id=root.id, depth=2
-                ),
+    app, client, root = world
+    monkeypatch.setattr(app.state.conversations, "execution_gate", lambda _sid: "held_test_segment")
+    tasks = []
+    parent = root
+
+    def spawn(invocation: str) -> dict[str, Any]:
+        caller = TaskCaller(parent, app.state.human_principal)
+        assert client.portal is not None
+        return client.portal.call(
+            partial(
+                app.state.conversations.spawn,
+                caller,
+                "Keep the original assignment",
+                "main",
+                invocation,
+                start=False,
             )
-        _save(client, {"agent_tasks.max_depth": 0})
-        parent = root.id
-        tasks = []
-        for depth in range(1, 13):
-            task = spawn_child_turn_threadsafe(
-                app,
-                TaskSpec(
-                    child_expert_id="main",
-                    task_text="Work",
-                    parent_session_id=parent,
-                    depth=depth,
-                    start_turn=False,
-                ),
-            )
-            tasks.append(task)
-            parent = task.child_session_id
-        _save(client, {"agent_tasks.max_depth": 2})
-        ids = descendant_session_ids(app, root.id)
-        assert ids == [task.child_session_id for task in tasks]
-        lineage, truncated = child_session_lineage(app, root.id)
-        assert not truncated and lineage[-1]["depth"] == 12
-        assert lineage[-1]["task_path"] == [task.task_id for task in tasks]
-        monkeypatch.setattr("clio_agent.gact.context.active_app", lambda: app)
-        assert _task_path(
-            {"task_id": tasks[-1].task_id, "parent_session_id": tasks[-1].parent_session_id}
-        ) == [task.task_id for task in tasks]
+        )
+
+    _save(client, {"agent_tasks.max_depth": 1})
+    first = spawn("depth-first")
+    tasks.append(first)
+    parent = first["session_id"]
+    with pytest.raises(ValueError, match="depth"):
+        spawn("depth-rejected")
+    _save(client, {"agent_tasks.max_depth": 0})
+    for depth in range(2, 13):
+        task = spawn(f"depth-{depth}")
+        tasks.append(task)
+        parent = task["session_id"]
+    _save(client, {"agent_tasks.max_depth": 2})
+    assert descendant_session_ids(app, root) == [task["session_id"] for task in tasks]
+    lineage, truncated = child_session_lineage(app, root)
+    root_task = app.state.task_history.latest_assignment(root)
+    assert root_task is not None and root_task.kind == "Session"
+    handles = [task["handle"] for task in tasks]
+    assert not truncated and lineage[-1]["depth"] == 12
+    assert lineage[-1]["task_path"] == handles
+    monkeypatch.setattr("clio_agent.gact.context.active_app", lambda: app)
+    assert _task_path({"task_id": handles[-1]}) == [root_task.handle, *handles]
 
 
 def test_runtime_limit_settings_validate_zero_and_reject_invalid_updates(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    world: tuple[Any, TestClient, str],
 ) -> None:
-    monkeypatch.chdir(tmp_path)
-    app = build_app(sessions_path=tmp_path / "sessions.json", agent=HeldCalls())
-    with TestClient(app) as client:
-        snapshot = _save(client, {"agent_tasks.max_concurrent": 0, "agent_tasks.max_depth": 0})
-        for row in snapshot["settings"]:
-            if row["key"].startswith("agent_tasks."):
-                assert row["value"] == row["unlimited_value"] == 0
-                assert row["kind"] == "integer"
-        for invalid in (-1, 1.5, True, "unlimited"):
-            response = client.patch(
-                "/v1/settings/runtime",
-                json={
-                    "revision": snapshot["revision"],
-                    "changes": {"agent_tasks.max_depth": invalid},
-                },
-            )
-            assert response.status_code == 422
-        _save(client, {"agent_tasks.max_concurrent": None, "agent_tasks.max_depth": None})
-        assert app.state.max_concurrent_agent_tasks == 3
+    _app, client, _sid = world
+    snapshot = _save(client, {"agent_tasks.max_concurrent": 0, "agent_tasks.max_depth": 0})
+    for row in snapshot["settings"]:
+        if row["key"].startswith("agent_tasks."):
+            assert row["value"] == row["unlimited_value"] == 0
+            assert row["kind"] == "integer"
+    for invalid in (-1, 1.5, True, "unlimited"):
+        response = client.patch(
+            "/v1/settings/runtime",
+            json={"revision": snapshot["revision"], "changes": {"agent_tasks.max_depth": invalid}},
+        )
+        assert response.status_code == 422
+    restored = _save(client, {"agent_tasks.max_concurrent": None, "agent_tasks.max_depth": None})
+    assert (
+        next(
+            row["value"]
+            for row in restored["settings"]
+            if row["key"] == "agent_tasks.max_concurrent"
+        )
+        == 3
+    )

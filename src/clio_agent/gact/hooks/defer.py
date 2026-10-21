@@ -1,54 +1,8 @@
-"""Durable defer at every yield point (P2.6, epic #1031 Pillar 2).
+"""Hook deferral adapters.
 
-A hook may return ``defer`` at three yield points. ``defer`` is a *governance*
-outcome — "suspend this operation, accept the decision from an OUT-OF-BAND channel
-(an API resolve / loop-inbox), resume when approved" — deliberately distinct from
-"postpone the work". It NEVER silently drops or auto-approves: every defer persists a
-pending approval (typed, surfaced) and blocks the operation until it is resolved from
-anywhere.
-
-This module is the ONE owner of the defer protocol (no accretion into
-``permission_gate`` / ``turn`` / ``stop_loop``, which only call in):
-
-* **PreToolUse defer — the headline (within-session durable).** It GENERALIZES the
-  existing parked permission gate (``permission_gate._make_permission_gate`` already
-  blocks a tool call mid-step on a ``threading.Event``). :func:`park_pretool_defer`
-  registers a persisted pending-approval row (the SAME ``app.state.permissions`` +
-  ``app.state.permission_events`` store the interactive gate uses — no new store,
-  RULE 4) and parks the executor thread on that event with the interactive gate's
-  ~600s→deny timeout LIFTED to a long, configurable bound. An out-of-band
-  ``POST /v1/permissions/{pid}`` resolve (routed through
-  ``permission_gate.resolve_permission``) wakes the parked call: ``allow`` runs the
-  tool (or the ``modify``/``synthesize`` the approval carries); ``deny`` returns a
-  typed deny to the model. The paused call resumes when approved from anywhere.
-
-* **Turn-ending defer (Stop / UserPromptSubmit).** These are turn-ending yields, so
-  they do NOT hold a thread — they ride the #1031 deferred-resume fold exactly like
-  ``plan_exit`` (P1.4): :func:`suspend_turn_defer` persists a pending-approval row +
-  flips the session to ``waiting_user``; the SAME ``resolve_permission`` path, on
-  resolving a turn-defer row, calls :func:`resume_turn_defer`, which stages a new turn
-  (approve) or the event-specific tighten (deny) via the loop-inbox /
-  ``start_background_user_turn`` seam. No held thread, no new store.
-
-* **Cross-restart durability (rides the replay substrate).** Every defer additionally
-  mirrors its pending state onto ``session.metadata`` (:data:`HOOK_DEFER_PENDING_META`,
-  the #948 AgentTask no-fifth-store projection) so it survives a process restart. See
-  the module residual note below and ``docs/design/governance-surfaces-2026-07.md``
-  (P2.6): full deterministic REPLAY-to-defer-point resume of a mid-loop PreToolUse
-  across a restart is built on the P2.3 tool-synthesize + P2.4 dspy.LM-synthesize
-  recording; the durable pending surface + resolvability land here, the replay-resume
-  rehydration is the flagged residual.
-
-Invariants (all enforced here): a defer never silently drops or auto-approves (a
-persisted, typed pending row); the parked PreToolUse call never holds a thread
-forever unbounded (a configurable long bound → fail-safe deny, never a silent
-auto-approve; the thread-occupancy tradeoff is documented on
-:func:`defer_timeout_s`); ``deny`` beats ``defer`` (the merge in ``wire.py`` and the
-policy-deny-before-park check in ``permission_gate`` enforce tighten-only); a resume
-applies the approved decision EXACTLY ONCE (``resolve_permission`` is idempotent — the
-row flips to ``resolved`` and a second resolve is a no-op — and the ``threading.Event``
-fires once); reads are never gated (this is only ever reached after the gate's
-``is_read_only`` fast-allow).
+PreToolUse keeps the existing permission enforcement and parked-call events.
+Turn-ending approvals delegate to Core QuestionCommands; permission cards are
+projections and never the authority for those decisions.
 """
 
 from __future__ import annotations
@@ -60,13 +14,14 @@ from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from clio_agent.gact.events import Event
 from clio_agent.gact.hooks.wire import record_hook_reason
 from clio_agent.gact.permission_delivery import publish_permission_event
 from clio_agent.gact.runtime.retention import enforce_dict_bound
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
+
+    from clio_agent.gact.conversation_assignments import ConversationOutcome
 
 logger = logging.getLogger(__name__)
 
@@ -240,6 +195,9 @@ def park_pretool_defer(
         stash_pre_tool_intercept(None)
         return "deny"
 
+    from clio_agent.gact.permission_timeout import wait_for_permission
+
+    cancelled = app.state.cancel_events.get(sid)
     defer_reason = str(getattr(outcome, "reason", "") or "") or (
         f"tool call {name!r} was deferred by a PreToolUse hook for out-of-band approval"
     )
@@ -257,9 +215,6 @@ def park_pretool_defer(
         "status": "pending",
         "reason": REASON_HOOK_DEFER,
     }
-    app.state.permissions[pid] = row
-    app.state.permission_events[pid] = evt
-    enforce_dict_bound(app, app.state.permissions, "permissions", session_id=sid)
     _record_pending_meta(
         app,
         sid,
@@ -271,18 +226,26 @@ def park_pretool_defer(
             "created_at": row["created_at"],
         },
     )
+    # Discovery and immediate human responses must see a recoverable request.
+    # A failed metadata write leaves no resolvable row or stranded waiter.
+    app.state.permission_events[pid] = evt
+    app.state.permissions[pid] = row
+    enforce_dict_bound(app, app.state.permissions, "permissions", session_id=sid)
     _publish_pending(app, sid, row)
 
-    resolved = evt.wait(timeout=defer_timeout_s())
+    decision = wait_for_permission(
+        app, pid, row, evt, tool_name=name, cancelled=cancelled, timeout_s=defer_timeout_s()
+    )
     _clear_pending_meta(app, sid, pid)
-    if not resolved:
-        # Bounded (never infinite) — release the parked thread and DENY fail-safe.
-        row["status"] = "timeout"
+    if decision is not None:
         record_hook_reason(
-            "hook_defer_timeout", event="PreToolUse", tool_name=name, permission_id=pid
+            "hook_defer_timeout" if row.get("status") == "timeout" else "hook_defer_cancelled",
+            event="PreToolUse",
+            tool_name=name,
+            permission_id=pid,
         )
         stash_pre_tool_intercept(None)
-        return "deny"
+        return decision
 
     action = str(row.get("action", "deny") or "deny")
     if action in {"allow", "allow_session", "allow_workspace"}:
@@ -339,218 +302,13 @@ def suspend_turn_defer(
     resume_text: str,
     prev_status: str = "running",
     extra: Mapping[str, Any] | None = None,
+    completion: ConversationOutcome | None = None,
 ) -> str | None:
-    """Suspend a turn-ending yield a hook DEFERRED, persisting a resolvable approval.
-
-    Rides the #1031 deferred-resume substrate exactly like ``plan_exit`` (no held
-    thread): persist a pending-approval row (kind :data:`TURN_DEFER_KIND`) carrying the
-    ``hook_event`` and the ``resume_text`` to re-drive on approval, flip the session to
-    ``waiting_user``, and surface the pending approval. The SAME
-    ``permission_gate.resolve_permission`` path detects the turn-defer kind on resolve
-    and calls :func:`resume_turn_defer`. Returns the ``pid`` (or ``None`` when there is
-    no session to suspend under — the caller then proceeds normally, never silent).
-    """
+    """Delegate turn-ending approval to the existing Core Question owner."""
+    from clio_agent.gact.hooks.turn_approval import suspend
 
     if not sid:
         return None
-    pid = f"perm_{uuid.uuid4().hex[:12]}"
-    row: dict[str, Any] = {
-        "id": pid,
-        "session_id": sid,
-        "kind": TURN_DEFER_KIND,
-        "hook_event": hook_event,
-        "summary": f"{hook_event} hook deferred the turn (awaiting out-of-band approval)",
-        "defer_reason": reason or f"{hook_event} hook deferred this turn for approval",
-        "resume_text": resume_text,
-        "created_at": _now_iso(),
-        "status": "pending",
-        "reason": REASON_HOOK_DEFER,
-        "prev_status": prev_status,
-    }
     if extra:
-        row.update(dict(extra))
-    app.state.permissions[pid] = row
-    enforce_dict_bound(app, app.state.permissions, "permissions", session_id=sid)
-    _record_pending_meta(
-        app,
-        sid,
-        pid,
-        {"kind": TURN_DEFER_KIND, "hook_event": hook_event, "created_at": row["created_at"]},
-    )
-    app.state.sessions.update(
-        sid,
-        status="waiting_user",
-        metadata_patch={"pending_defer_permission_id": pid},
-    )
-    _publish_pending(app, sid, row)
-    if hasattr(app.state, "bus"):
-        app.state.bus.publish(
-            Event(
-                type="session.status_changed",
-                session_id=sid,
-                payload={
-                    "session_id": sid,
-                    "status": "waiting_user",
-                    "prev_status": prev_status,
-                    "pending_defer_permission_id": pid,
-                },
-            )
-        )
-    return pid
-
-
-def resume_turn_defer(app: "FastAPI", row: Mapping[str, Any], action: str) -> None:
-    """Resume a turn-ending defer after an out-of-band resolve (called from resolve_permission).
-
-    Dispatches on the deferred ``hook_event``:
-
-    * **UserPromptSubmit** — ``allow`` re-drives the ORIGINAL prompt as a NEW turn
-      (carrying :data:`HOOK_DEFER_RESUME_META` so the UserPromptSubmit hook does not
-      re-defer the just-approved prompt — the once-gate); ``deny`` rejects the prompt
-      and returns the session to ``idle`` with a typed reason (no turn runs).
-    * **Stop** — ``allow`` accepts completion: the turn is done, the session returns to
-      ``idle`` (no re-drive); ``deny`` re-drives ONE more turn carrying the deny reason
-      as "why you are not done" feedback (the bounded Stop-loop seam).
-
-    Rides ``start_background_user_turn`` / the loop-inbox fold (no held thread, no new
-    store). Guarded — a resume must never raise into the resolve path.
-    """
-
-    sid = str(row.get("session_id") or "")
-    if not sid:
-        return
-    _clear_pending_meta(app, sid, str(row.get("id") or ""))
-    app.state.sessions.update(sid, metadata_patch={"pending_defer_permission_id": ""})
-    approved = action in {"allow", "allow_session", "allow_workspace"}
-    hook_event = str(row.get("hook_event") or "")
-    try:
-        if hook_event == "Stop":
-            _resume_stop_defer(app, sid, row, approved)
-        else:
-            _resume_user_prompt_defer(app, sid, row, approved)
-    except Exception as exc:  # noqa: BLE001 - a resume must never break the resolve path
-        logger.warning(
-            "hook defer resume failed reason=defer_resume_error hook_event=%s sid=%s err=%r",
-            hook_event,
-            sid,
-            exc,
-        )
-
-
-def _resume_user_prompt_defer(
-    app: "FastAPI", sid: str, row: Mapping[str, Any], approved: bool
-) -> None:
-    session = app.state.sessions.get(sid)
-    if not approved:
-        # Reject: the prompt was denied out-of-band; no turn runs.
-        prev = str(row.get("prev_status") or "waiting_user")
-        app.state.sessions.update(sid, status="idle")
-        app.state.bus.publish(
-            Event(
-                type="session.status_changed",
-                session_id=sid,
-                payload={
-                    "session_id": sid,
-                    "status": "idle",
-                    "prev_status": prev,
-                    "reason": "user_prompt_defer_denied",
-                },
-            )
-        )
-        return
-    resume_text = str(row.get("resume_text") or "")
-    _stage_resume_turn(
-        app,
-        sid,
-        session,
-        resume_text,
-        {HOOK_DEFER_RESUME_META: True},
-        event="user_prompt_defer.resumed",
-        question_id=str(row.get("id") or ""),
-    )
-
-
-def _resume_stop_defer(app: "FastAPI", sid: str, row: Mapping[str, Any], approved: bool) -> None:
-    session = app.state.sessions.get(sid)
-    if approved:
-        # Completion accepted: the turn's answer stands, release the session.
-        app.state.sessions.update(sid, status="idle")
-        app.state.bus.publish(
-            Event(
-                type="session.status_changed",
-                session_id=sid,
-                payload={
-                    "session_id": sid,
-                    "status": "idle",
-                    "prev_status": "waiting_user",
-                    "reason": "stop_defer_approved",
-                },
-            )
-        )
-        return
-    # Not done: re-drive ONE more turn with the deny reason as feedback.
-    feedback = str(row.get("resume_text") or row.get("defer_reason") or "").strip() or (
-        "A Stop hook reported the task is not complete; continue working."
-    )
-    _stage_resume_turn(
-        app,
-        sid,
-        session,
-        feedback,
-        {"stop_defer_redrive": True},
-        event="stop_defer.redriven",
-        question_id=str(row.get("id") or ""),
-    )
-
-
-def _stage_resume_turn(
-    app: "FastAPI",
-    sid: str,
-    session: Any,
-    text: str,
-    metadata: dict[str, Any],
-    *,
-    event: str,
-    question_id: str,
-) -> None:
-    """Stage a deferred-resume turn (loop-inbox fold if busy, else a background turn).
-
-    Mirrors ``plan_mode._stage_plan_exit_resume`` — no held thread, no new store.
-    """
-
-    from clio_agent.gact.loop_inbox import enqueue_user_steer  # noqa: PLC0415
-
-    if app.state.agent is None or session is None:
-        app.state.sessions.update(sid, status="idle")
-        return
-    if app.state.turn_runner.busy(sid):
-        enqueue_user_steer(app, sid, text, {**metadata, "question_id": question_id})
-        app.state.bus.publish(
-            Event(
-                type=event,
-                session_id=sid,
-                payload={"session_id": sid, "permission_id": question_id, "reason": "session_busy"},
-            )
-        )
-        return
-    from clio_agent.gact.turn import _start_background_user_turn  # noqa: PLC0415
-
-    resumed = _start_background_user_turn(
-        app,
-        sid,
-        session,
-        text,
-        metadata=metadata,
-        prev_status=str(getattr(session, "status", "waiting_user") or "waiting_user"),
-    )
-    app.state.bus.publish(
-        Event(
-            type=event,
-            session_id=sid,
-            payload={
-                "session_id": sid,
-                "permission_id": question_id,
-                "queued_user_message_id": resumed.id,
-            },
-        )
-    )
+        raise ValueError("Turn approval bindings must be captured by their trusted owner")
+    return suspend(app, sid, hook_event, reason, resume_text, prev_status, completion=completion)

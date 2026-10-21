@@ -1,0 +1,67 @@
+{
+  "candidate": "8fbd41308bc5b961049fe441781d48b368aebb8e",
+  "gact": "3efef4afffb235bb2ee1873358591478ce63895c",
+  "marketplace": "3299065f3ee7f827f734d311d39b15bf7460ab42",
+  "is_error": false,
+  "text": "**Source-review verdict: NO-GO.** Two defects stop any live run. Several state-machine and migration defects would fail the acceptance rows even after those are fixed. This is a read-only source review. Nothing was executed, and none of Q1–Q9 or R1–R6 is evidenced. Paths are relative to `src/clio_agent/`.\n\n## P0: blocks any live run\n\n**1. Every described task fails projection, and the failed writes poison Core (bug).**\n- `arc/task_types.py:107-112` rejects a snapshot with a description when `description_missing` is `False`.\n- `gact/task_history.py:183-184` sets `stored[\"description\"] = None` once a reference exists, then calls `_project(\"task.observed\", stored)` at `:192`.\n- The validator then raises. The Core event and index are already written (`:185-191`), so the failure happens after the append.\n- Triggers: `conversations.py:294` (first human message), `native_tools.py:293` (every Shell call), `questions.py:52` (every Question).\n- `restore()` (`:606`) replays the same payload, so startup fails on the poisoned event. Fixing only the validator will not clear events already written, so the validator must also accept `description_reference` with a null description.\n- Do not run this build against a persistent Core until this is fixed.\n\n**2. The Codex and Claude async bridges are broken (missing implementation).** The removal deleted the executor-wait lines and nothing replaced them. `implementation-current.md` does not list them as outstanding.\n- `providers/codex/direct_engine.py:283-290`: `item` is never assigned, and `loop` at `:280` is unused. `_call_lm` uses `lm.acall` (`gact/agents/clio_react.py:662`), so the first Codex call raises `UnboundLocalError`.\n- `providers/claude_code_sessions.py:557-565`: `kind` and `val` are never assigned, and `caller_loop` at `:509` is unused.\n- `providers/claude_code_stream_bounds.py:211-217`: `acquired` is undefined, so the connect-slot wait fails.\n- Result: Q1–Q4 and Q8 are impossible, and A05 is unimplemented.\n\n## P1: high impact, bugs\n\n**3. Restart of an active assignment always fails.**\n- `conversations.py:606` registers the cancel job under `handle`. `restart()` looks it up under `\"cancel:\" + handle` (`:681`), and `restore()` also uses that key (`:131`).\n- `restart()` therefore never waits for settlement. `create()` finds `terminal_at is None` and raises (`:689-690`), which records a spurious \"not_started\" notice (`:709-717`).\n- Required fix: use one key for the cancel job in `cancel()`, `restore()` and `restart()`.\n\n**4. A Shell spawn failure becomes permanent `task_state_uncertain`.**\n- `tools/servers/shell_server.py:602-603` marks effects acquired before the spawn. The `except Exception` at `:628-629` returns an error without confirming cleanup.\n- `native_work.py:233-239` then records cleanup as unknown, and `native_tools.py:402-404` turns that into uncertainty and never reaches terminal.\n- Required fix: confirm cleanup in the failed-spawn path.\n\n**5. Core recovery never arms itself.**\n- `requires_recovery` is set at `task_history.py:647` and `:713`. Only `CoreRecovery.defer` starts the probe (`core_recovery.py:29-33`).\n- Writes that do not defer: `message_submission.py:549-575`, the `ask_user` post at `task_tools.py:130-145`, and `session_mail.peer` at `session_mail.py:155-190`.\n- After one failed write on those paths, durable admission is refused (`task_history.py:642`) and `_admit` returns `None` (`conversations.py:228`) until the process restarts.\n\n**6. The legacy migration has gaps.**\n- `message_intents.json` is never read. `message_intents.py:3-5` claims migration does, but `task_migration.py` has no reader and `path_migration.py:53` only relocates the file. That is missing M06/M07, so pending steers and queued future messages are lost.\n- Legacy mail is imported as `kind=\"peer\"` with no sender (`task_migration.py:199-204`). `_authorized` returns `False` without a sender (`session_mail.py:129-131`), so those items stay pending forever and count against the peer cap.\n- `anchor()` (`task_migration.py:227-228`) creates an \"interrupted\" historical Session for every session lacking an assignment, including new empty ones, on every startup. Migration also rescans all events and all contexts on every startup (`:45`, `:235-239`).\n\n## P2: medium\n\n7. **Single `history._lock` held across Core I/O and taken on the event loop.**\n   - Loop-thread callers: `external_tasks.py:223-227`, `routes/tasks.py:80-88` (`caller()`), `conversations.require_admission` (`:362`) and `TaskAccess.__init__` (`task_access.py:27-28`).\n   - `CoreRecovery._recover` runs a full `restore()` under the same lock (`core_recovery.py:52`), which can stall the loop.\n8. **\"Stopping\" is never recorded on the task.** Only the session status and the REST return value say it (`session_cancellation.py:29`, `human_controls.py:58`). The assignment shows `busy` until teardown, and \"stopped\" is written only after unwinding (`conversations.py:455-472`). The UI branch at `task-activity-row.tsx:127` cannot fire from task rows.\n9. **Confirmed rejection is classed as uncertain.** A JSON-RPC rejection of `tools/call` goes to the uncertain path in both places: `native_tools.py:226-227, 245-252` and `external_tasks.py:265-270`. That produces an attention episode with `retry_safe: false`. The plan requires rejection, recording-unconfirmed and acceptance-uncertain to be distinct.\n10. **A cancel for an unreachable external task is lost.** The intent is recorded (`external_tasks.py:514-529`) but never re-sent. `recover()` (`:151-183`) and `reconnect()` (`:299-318`) do not check `cancellation_requested_at`.\n11. **Shutdown aborts early.** `native_tools.py:92-98` has no try/finally. If one `cancel()` raises, `self._stack.__aexit__` is skipped and the clients and lifespans leak.\n12. **Dependency gating is too broad.** `conversations.py:217-222` holds every `task_result` and `goal` item until the declared dependencies settle. The plan says goal waiting gates only its declared dependency notices.\n13. **An external-input crash window leaves an orphan Question.**\n    - `external_tasks.py:441-446` records the Question snapshot and then calls `questions.post`.\n    - If the process dies between the two, the retry sees the snapshot (`:411`) and skips the post, so `wait` never returns.\n    - The `/v1/questions` list route then returns 500, because `question_view` raises when `details` is `None` (`question_surface.py:15-16`).\n    - Required fix: use the idempotent `QuestionCommands.create`.\n14. **Dead competing config.** `gact/workflow_step_watch.py` and `workflows.step_inactivity_s` (`config.defaults.yaml:473-476`) are not called by the new runner and should be deleted.\n15. **SDK coupling outside the one adapter.** `external_tasks.py:106-117` reads private `Client` fields: `_session_kwargs`, `_init_timeout`, `_cache_arg`, `_extensions_arg`, `_result_claims_arg`.\n\n## Lower, or needs runtime check\n\n- `routes/tasks.py:200-202` with `gact/auth.py:125-126`: grant routes return 401 whenever no bearer token is configured, so grants cannot be created in a tokenless source run. Q5 and Q9 need a token.\n- `external_tasks.py:41, 249, 387`: inline elicitation is bound by a `ContextVar` that the receive-loop callback may not inherit.\n- `native_progress.py:60`: the worker `Context` has `session=None` (`fastmcp_tasks/context.py:619-623`). Whether `report_progress` works there is unverified.\n- `routes/tasks.py:62-65` maps `idle` to \"queued\", and `recovering` is not in the UI enum. The static action list (`conversations.py:301`) offers pause and resume together.\n- I did not verify whether the Shell environment inherits `CLIO_AUTH_TOKEN`; check this for the Q5 rights tests.\n\n## Checked and correct in source\n\n- **Persistence and delivery:**\n  - Content is written before references.\n  - Withdrawn or already-acknowledged mail is refused at input commit.\n  - Attention and final notice IDs are distinct, and owner and subscriber notices are separate.\n  - Owner-side Question arbitration holds.\n- **Rights:**\n  - Authorization precedes lookup, counts and pagination.\n  - Observe-only responses redact descriptions and output.\n  - Child agents get no ancestor or sibling rights.\n  - Peer messages are re-authorized at stage and commit.\n- **Execution and controls:**\n  - Admission closes before subtree cancellation.\n  - Foreground Stop waits for physical settlement.\n  - The relay source is gone; only `__pycache__` remains.\n  - The six task controls and their delegating aliases exist.\n\n## Coverage and next step\n\nI did not read the marketplace, prompts, or most of the GACT web code beyond the task, session, source and Question UI.\n\nFix #1 and #2 first. Then fix #3–#6 before the new test batch, because the batch cannot pass its migration, restart and recovery rows otherwise.",
+  "permission_denials": [],
+  "model": "claude-sonnet-5-5",
+  "model_usage": {
+    "claude-sonnet-5-5": {
+      "inputTokens": 168,
+      "outputTokens": 93781,
+      "cacheReadInputTokens": 21622584,
+      "cacheCreationInputTokens": 417675,
+      "webSearchRequests": 0,
+      "costUSD": 4.7711044000000005,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 71551,
+      "canonicalModel": "claude-sonnet-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "custody": {
+    "status": "exited",
+    "candidate": "8fbd41308bc5b961049fe441781d48b368aebb8e",
+    "gact": "3efef4afffb235bb2ee1873358591478ce63895c",
+    "model": "claude-sonnet-5-5",
+    "config_root": "D:\\Temp\\clio-task-implementation-review-8fbd4130-c7",
+    "ports": [],
+    "product_services": [],
+    "created_at": "2026-10-13T21:34:13.884326-05:00",
+    "auth_sha256_before": "91F8ACA97A2781E15BED7746B6A98101D2F97850900E5EF128C70A415322BD0B",
+    "tools": [
+      "Read",
+      "Grep",
+      "Glob"
+    ],
+    "pid": 44948,
+    "helper_pid": 19004,
+    "started_at": "2026-10-13T21:34:13.895933-05:00",
+    "exit_code": 0,
+    "events": 816,
+    "has_result": true,
+    "ended_at": "2026-10-13T21:50:31.04767-05:00",
+    "auth_sha256_after": "91F8ACA97A2781E15BED7746B6A98101D2F97850900E5EF128C70A415322BD0B"
+  },
+  "process_identity": {
+    "pid": 44948,
+    "parent_pid": 19004,
+    "birth_utc": "2026-10-14T02:34:13.88829Z",
+    "executable": "C:\\Users\\jaime\\.local\\bin\\claude.exe",
+    "verified_at": "2026-10-14T02:35:12.1823533Z"
+  },
+  "cleanup": {
+    "root": "D:\\Temp\\clio-task-implementation-review-8fbd4130-c7",
+    "files": 11,
+    "logical_bytes": 19692.0,
+    "reparse_points": 0,
+    "status": "human_manual_only",
+    "process_absent": true,
+    "audited_at": "2026-10-14T02:51:43.5883572Z",
+    "rejection": "blocked by policy",
+    "command_executed": false
+  }
+}

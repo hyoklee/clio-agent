@@ -70,9 +70,8 @@ raising, so the caller's 422 never leaves a half-armed session behind:
   ever observes the refused mode. Other fields in the same PATCH body stay
   applied — only the mode transition is refused, and the 422 says so.
 
-Every non-refusal path that could hide a problem is typed and logged too (a
-watcher blueprint that is not installed, or declares no servers, has nothing to
-resolve and is NOT refused — arming for such a deployment is unchanged).
+An absent watcher blueprint is refused with the existing unmountable reason.
+An installed watcher that declares no servers needs no server-path resolution.
 """
 
 from __future__ import annotations
@@ -305,11 +304,11 @@ def _declared_watcher_servers(
         blueprints = discover_agent_blueprints(cwd=cwd)
     except Exception as exc:  # noqa: BLE001 - discovery failure must not fail the route
         _record_skip(_SKIP_DISCOVERY_FAILED, blueprint_id, error=repr(exc))
-        return {}, {}, cwd
+        raise ValueError(f"Watcher blueprint discovery failed: {blueprint_id}") from exc
     blueprint = select_blueprint(blueprints, blueprint_id)
     if blueprint is None:
         _record_skip(_SKIP_BLUEPRINT_NOT_INSTALLED, blueprint_id)
-        return {}, {}, cwd
+        raise ValueError(f"Watcher blueprint is not installed: {blueprint_id}")
     servers = blueprint_server_map(blueprint, app=app, workspace_root=cwd)
     if not servers:
         _record_skip(_SKIP_NO_DECLARED_SERVERS, blueprint_id)
@@ -501,9 +500,17 @@ def validate_watcher_arming(
     resolved_id = blueprint_id or _watcher_blueprint_id()
     if not resolved_id:
         return None
-    servers, raw_declarations, workspace_root = _declared_watcher_servers(
-        app, resolved_id, session_id=session_id, workspace_id=workspace_id
-    )
+    try:
+        servers, raw_declarations, workspace_root = _declared_watcher_servers(
+            app, resolved_id, session_id=session_id, workspace_id=workspace_id
+        )
+    except ValueError as error:
+        return WatcherArmingRefusal(
+            reason=REFUSAL_WATCHER_UNMOUNTABLE,
+            blueprint_id=resolved_id,
+            server="",
+            detail=str(error),
+        )
     for name, declaration in servers.items():
         refusal = _refusal_for_declaration(resolved_id, str(name), declaration, env=env)
         if refusal is not None:

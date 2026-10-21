@@ -1,38 +1,7 @@
-"""Finalize seam for the GACT turn engine (#767 Phase B).
+"""Assemble turn output once, confirm Core recording, then publish and settle it.
 
-Slice 6 of the ``turn.py`` decomposition — the last and most entangled. Three
-free functions taking :class:`~clio_agent.gact.turn_state.TurnState` first (the
-gact seam convention) move here:
-
-* :func:`maybe_pause_for_user` — the ask-user early-return path. When the
-  prediction carries an ``ask_user`` action and the turn has no error, it mints
-  the :class:`~clio_agent.gact.types.UserQuestion`, flips the session to
-  ``waiting_user``, settles the ledger, and returns ``True`` so the orchestrator
-  returns before the finalize region. Otherwise it returns ``False`` and the
-  turn proceeds.
-* :func:`finalize_turn` — everything after the forward except-chain: answer
-  grounding, assistant-part assembly (route banner, wrap-up thinking, canonical
-  answer channel, file diffs), diff indexing, nanoagent spawn, the terminal
-  publishes, persistence, retry bookkeeping, and the post_message hook. The
-  orchestrator runs THIS under the #756 ``try/except finalize_exc`` envelope; a
-  crash here is settled by :func:`settle_failed_finalize`.
-* :func:`settle_failed_finalize` — the #756 error envelope for a finalize-region
-  crash (relocated verbatim from ``turn.py``): structured log, ``turn.failed``
-  semantic event, ``message.completed`` with ``stop_reason=error``, a persisted
-  assistant error message, ledger freeze/retire, and a terminal
-  ``session.status_changed``. Nothing degrades silently.
-
-Behavior is byte-for-byte identical to the former in-``turn.py`` body. The two
-small per-turn closures the orchestrator still owns —
-``_drain_observed_tool_calls`` and ``_update_retry_attempt`` (both read by the
-body AND by finalize) — are threaded in by reference, exactly as
-``settle_failed_finalize`` already took ``update_retry_attempt`` (the #714 seam
-pattern).
-
-The #714 danger set (``_append_session_message`` /
-``_enrich_cancellation_error_info``, retargeted by ~83 ``app._X`` test
-monkeypatches) is resolved through ``app`` via a *function-local* import at each
-call site so those monkeypatches keep intercepting with zero test edits.
+Recording failures retain the completed message for owner-local recovery.
+Execution failures retain their original error outcome.
 """
 
 from __future__ import annotations
@@ -86,7 +55,6 @@ from clio_agent.gact.types import (
     Tokens,
 )
 from clio_agent.gact.usage import capture_reasoning_log
-from clio_agent.gact.user_question_pause import maybe_pause_for_user as maybe_pause_for_user
 from clio_agent.runtime import trace
 
 if TYPE_CHECKING:
@@ -113,25 +81,13 @@ def finalize_turn(
     *,
     drain_observed_tool_calls: "Callable[[list[dict[str, Any]]], list[dict[str, Any]]]",
     update_retry_attempt: "Callable[..., None]",
-) -> None:
-    """Assemble, publish, and persist the turn's assistant message (#767 Phase B).
+) -> bool:
+    """Assemble the original assistant output, then record it before publication.
 
-    Everything after the forward except-chain: answer grounding, assistant-part
-    assembly (route banner, wrap-up thinking, the canonical answer channel, file
-    diffs), diff indexing, nanoagent spawn, the terminal semantic + bus
-    publishes, persistence + settle, retry bookkeeping, and the post_message
-    hook. Byte-for-byte the former in-``turn.py`` finalize body.
-
-    The orchestrator runs this UNDER the #756 ``try/except finalize_exc``
-    envelope; an exception escaping here is settled by
-    :func:`settle_failed_finalize`. ``drain_observed_tool_calls`` and
-    ``update_retry_attempt`` are the orchestrator's per-turn closures, threaded
-    in by reference (both are also read by the linear body).
+    Provider execution is already finished. Recording retry must never repeat
+    grounding, artifact creation, prediction processing or tool execution.
     """
 
-    # #714 danger set: bind through app at call time so test monkeypatches of
-    # clio_agent.gact.app._enrich_cancellation_error_info /
-    # _append_session_message keep intercepting with zero test edits.
     from clio_agent.gact.app import _enrich_cancellation_error_info  # noqa: PLC0415
 
     # Final user-facing text only: correct any fabricated local artifact path the
@@ -147,29 +103,6 @@ def finalize_turn(
             schema=state.workflow_schema,
         )
 
-    # Build assistant parts — routing_decision (v0.2) first when we
-    # got a selected_agent, then optional thinking trace, then the
-    # text answer, then any file_diffs.
-    if (
-        state.error_info is None
-        and not state.answer_text
-        and not state.thinking_text
-        and not state.proposed_diffs
-        and not state.nanoagents
-    ):
-        termination_reason = str(getattr(pred, "termination_reason", "") or "")
-        state.error_info = ErrorInfo(
-            error="empty_response",
-            message="Agent completed without user-visible output.",
-            details={
-                "session_id": state.sid,
-                "routing_mode": getattr(state.sess, "routing_mode", "auto"),
-                "selected_agent": state.selected_agent,
-                "termination_reason": termination_reason,
-            },
-            recoverable=True,
-        )
-
     responder_agent_id = state.selected_agent or state.invocation_agent_id or "main"
     answer_agent_ids = {
         responder_agent_id,
@@ -179,6 +112,31 @@ def finalize_turn(
     current_stream_part_id = state.transcript.current_stream_part_id
     live_assistant_parts = state.transcript.snapshot()
     has_live_parts = bool(live_assistant_parts or current_stream_part_id)
+    # Task acceptance and other visible operations can be the whole segment's
+    # output. Assignment disposition remains the conversation owner's decision.
+    has_operation_output = any(
+        part.type in {"tool_call", "tool_result", "expert_handoff"} for part in live_assistant_parts
+    )
+    if (
+        state.error_info is None
+        and not state.answer_text
+        and not state.thinking_text
+        and not state.proposed_diffs
+        and not state.nanoagents
+        and not has_operation_output
+        and getattr(pred, "assignment_disposition", None) != "yield"
+    ):
+        state.error_info = ErrorInfo(
+            error="empty_response",
+            message="Agent completed without user-visible output.",
+            details={
+                "session_id": state.sid,
+                "routing_mode": getattr(state.sess, "routing_mode", "auto"),
+                "selected_agent": state.selected_agent,
+                "termination_reason": str(getattr(pred, "termination_reason", "") or ""),
+            },
+            recoverable=True,
+        )
     reconcile_tool_result_text(live_assistant_parts, state.tools_called)
 
     # Take the canonical-answer channel FIRST: its exactly-once identity seeds
@@ -223,23 +181,6 @@ def finalize_turn(
     # appended its expert_handoff parts once, at emit time; the
     # ``expert_handoffs`` rows stay message METADATA only (design §4 row 6).
     #
-    # iowarp/clio-agent#17: surface DSPy reasoning as a thinking Part so the TUI
-    # can collapse + render it. Gated by op identity (has_closed_text replaces
-    # the suppressed_thinking_part substring matching): when the responder's
-    # contract reasoning already streamed live as a text part this turn, the
-    # wrap-up copy is that same channel and must not land twice.
-    #
-    # Close the still-open streamed part FIRST: ``has_closed_text`` reads
-    # closed state only, and on the chat path (no selected_agent -> the
-    # routing-banner append above never ran to close it) a turn that
-    # streamed ``reasoning`` and returned a batch-only answer still holds
-    # that reasoning part OPEN here — the gate saw "nothing landed" and
-    # appended a verbatim batch ``thinking`` twin (the #732 duplicate
-    # class). On routed turns the banner's ``append_part`` already closed
-    # it, so this is a no-op there. An explicit close deliberately does
-    # NOT reset ``current_stream_part_id`` (captured above), so the
-    # live-vs-batch stream provenance below is unchanged; the canonical
-    # answer channel was taken above, while its part could still be open.
     state.transcript.close_open_text()
     if state.thinking_text and not state.transcript.has_closed_text(
         responder_agent_id, "reasoning"
@@ -316,9 +257,6 @@ def finalize_turn(
             ),
         )
 
-    # #968 item 2: give every artifact GENERATED this turn outbound wire identity —
-    # one ``resource_link`` part per new version (owner decision #966.9), owned by
-    # the artifacts package so finalize stays a one-line caller.
     append_turn_resource_links(
         state.app, state.sid, state.turn_id, state.transcript, agent_id=responder_agent_id
     )
@@ -331,8 +269,6 @@ def finalize_turn(
         state.app, state.sid, state.turn_id, state.transcript, agent_id=responder_agent_id
     )
 
-    # #972: cheap post-turn CAS budget check (owner-module guarded one-liner) — a
-    # running total vs the budget; the reachability eviction scan runs ONLY on a breach.
     finalize_cas_budget_check(state.app, state.sess, state.sid)
 
     state.error_info = _enrich_cancellation_error_info(state.app, state.sid, state.error_info)
@@ -380,9 +316,6 @@ def finalize_turn(
             for row in state.expert_handoffs
         ]
         state.assistant_metadata["expert_handoffs"] = state.expert_handoffs
-    # #953: stamp the turn's produced typed workflow_state so a spawned child's
-    # completion hook (turn_spawn._child_workflow_state, reading metadata["workflow_state"])
-    # threads it back — root seam, all kinds (a chain_of_thought LEAF's field was dropped here).
     produced_wf = _produced_turn_workflow_state(
         state.pred, state.expert_handoffs, state.app, state.sid, schema=state.workflow_schema
     )
@@ -396,24 +329,13 @@ def finalize_turn(
         state.assistant_metadata["agent_runtime"] = state.agent_runtime
     if state.prompt_resolution:
         state.assistant_metadata["prompt_resolution"] = state.prompt_resolution
-    # #953 [5]: surface a declared variant's winner stamp (additive) on the metadata.
     if getattr(state.pred, "variant_selection", None):
         state.assistant_metadata["variant_selection"] = state.pred.variant_selection
     # Reasoning capture: persist per-call chain-of-thought onto the assistant
     # message metadata (owner: usage.capture_reasoning_log). Best-effort, gated
     # by CLIO_CAPTURE_REASONING; mutates state.assistant_metadata in place.
     capture_reasoning_log(state)
-    # iowarp/clio-agent#6: the transcript is the sole minter of the assistant
-    # message id — reuse it when a producer already minted it (stream tap /
-    # tool observer / the finalize appends above); a turn with no parts at
-    # all mints + publishes message.created here, exactly once.
     asst_id = state.transcript.ensure_message()
-    # #767 PR3: persist the ledger VERBATIM. finalize() closes any still-open
-    # streamed part (publishing its completed event with the cleaned buffer),
-    # stamps the 1-based arrival-order ``sequence`` (#731: reload order IS
-    # stream order, by construction), freezes the ledger against late
-    # producers, and returns the parts. No text rewriting, no dedup, no
-    # re-publish — live and reload are two projections of this one ledger.
     assistant_parts = state.transcript.finalize()
     assistant_msg = Message(
         id=asst_id,
@@ -444,13 +366,6 @@ def finalize_turn(
     # Index file_diff parts so /diffs/apply + /diffs/reject find them (guarded owner).
     index_turn_file_diffs(state.app, state.sid, assistant_parts, message_id=assistant_msg.id)
 
-    # #767 PR3: finalize re-publishes NOTHING — every part's message.created /
-    # part.added / part.delta / part.completed already went out at append
-    # time, from the one producer API. Tool lifecycle events are only emitted
-    # by the live observer at the execution boundary. Prediction.tools_called
-    # remains summary metadata; do not reconstruct started/completed events
-    # after the turn, because that makes post-hoc facts look like live tool
-    # timing.
     completed_payload: dict[str, Any] = {
         "turn_id": state.turn_id,
         "message_id": assistant_msg.id,
@@ -464,76 +379,137 @@ def finalize_turn(
         completed_payload["error_info"] = state.error_info.model_dump(exclude_none=True)
     if state.assistant_metadata:
         completed_payload["metadata"] = state.assistant_metadata
-    # Persist BEFORE the completion events: a client acts on message.completed with a
-    # GET of this message id. #1339: close the registry FIRST -- persist's mint_remainder
-    # RPC can release the GIL while the message is already visible (#1334 append-first).
     state.app.state.turn_transcripts.close(state.sid)
-    persist_finalized_message(state.app, state.sid, assistant_msg)  # #1334: barrier first
-    # #737 S5: the final_message byte-copy rides the DURABLE turn.completed only under
-    # the LEGACY regime; the atoms regime derives it from the message_part atoms so the
-    # byte-copy dies (embed -> {}). SSE strips it either way (SENSITIVE_KEYS).
-    semantic_completed_payload = {
-        **completed_payload,
-        **final_message_embed(state.app, state.sid, assistant_msg),
-    }
-    _emit_semantic_event(
+    return persist_finalized_message(
         state.app,
         state.sid,
-        "turn.completed" if state.error_info is None else "turn.failed",
-        turn_id=state.turn_id,
-        trace_id=state.trace_id,
-        status="completed" if state.error_info is None else "failed",
-        summary=(
-            "CLIO turn completed."
-            if state.error_info is None
-            else f"CLIO turn failed: {state.error_info.error}."
+        assistant_msg,
+        after_confirmed=lambda: publish_finalized_turn(
+            state, assistant_msg, completed_payload, update_retry_attempt=update_retry_attempt
         ),
-        actor={"agent_id": state.selected_agent or "orchestrator"},
-        subject={"message_id": assistant_msg.id},
-        payload=semantic_completed_payload,
-    )
-    _publish_transcript_event(
-        state.bus,
-        state.sid,
-        "turn.completed",
-        {"turn_id": state.turn_id},
-    )
-    state.bus.publish(
-        Event(
-            type="message.completed",
-            session_id=state.sid,
-            payload=completed_payload,
-        )
+        after_withdrawn=lambda: settle_withdrawn_turn(
+            state.app, state.sid, state.turn_cancel_event, update_retry_attempt=update_retry_attempt
+        ),
     )
 
-    final_status = (
-        "cancelled" if state.cancelled_turn else ("error" if state.error_info else "idle")
-    )
+
+def settle_withdrawn_turn(
+    app: Any,
+    sid: str,
+    turn_cancel_event: threading.Event,
+    *,
+    update_retry_attempt: Callable[..., None] | None = None,
+) -> None:
+    """Retire a withdrawn turn's projections without publishing its discarded output."""
+    if update_retry_attempt is not None:
+        update_retry_attempt("cancelled", metadata_patch={"reason": "transcript_withdrawn"})
+    if app.state.cancel_events.get(sid) is turn_cancel_event:
+        app.state.cancel_events.pop(sid, None)
+    with app.state.task_history.serialized():
+        current = app.state.sessions.get(sid)
+        if (
+            current is not None
+            and current.status == "waiting_user"
+            and current.metadata.get("execution_gate")
+        ):
+            return  # A surfaced approval still owns this input gate.
+        publish_turn_settled_status(
+            app, sid, "idle", payload_extra={"reason": "transcript_withdrawn"}
+        )
+
+
+def publish_finalized_turn(
+    state: "TurnState",
+    assistant_msg: Message,
+    completed_payload: dict[str, Any],
+    *,
+    update_retry_attempt: "Callable[..., None]",
+) -> None:
+    """Publish one already-recorded result; never rebuild the prediction or execute it again."""
+    from clio_agent.gact.transcript_recording import publication_step
+
+    steps = state.publication_steps
+    final_status = "cancelled" if state.cancelled_turn else "error" if state.error_info else "idle"
     retry_status = (
-        "cancelled" if state.cancelled_turn else ("failed" if state.error_info else "completed")
+        "cancelled" if state.cancelled_turn else "failed" if state.error_info else "completed"
     )
-    # #767 PR3: already frozen by transcript.finalize(); close() below no-ops.
     settle_turn_transcript(state)
     getattr(state.app.state, "live_assistant_message_ids", {}).pop(state.sid, None)
     getattr(state.app.state, "live_assistant_parts", {}).pop(state.sid, None)
     getattr(state.app.state, "live_assistant_part_keys", {}).pop(state.sid, None)
-    update_retry_attempt(
-        retry_status,
-        metadata_patch={
-            "executed_user_message_id": state.user_msg.id,
-            "assistant_message_id": assistant_msg.id,
-            "stop_reason": completed_payload["stop_reason"],
-        },
+    publication_step(
+        steps,
+        "retry_projection",
+        lambda: update_retry_attempt(
+            retry_status,
+            metadata_patch={
+                "executed_user_message_id": state.user_msg.id,
+                "assistant_message_id": assistant_msg.id,
+                "stop_reason": completed_payload["stop_reason"],
+            },
+        ),
+        retry=True,
     )
     current_session = state.app.state.sessions.get(state.sid)
     metadata_patch = context_usage_metadata_patch(state, current_session, assistant_msg)
-    state.app.state.sessions.update(
-        state.sid,
-        message_count=len(state.app.state.messages.get(state.sid, [])),
-        add_tokens_input=state.turn_tokens["input"],
-        add_tokens_output=state.turn_tokens["output"],
-        add_cost_usd=(state.turn_cost if state.turn_cost_known else None),
-        metadata_patch=metadata_patch,
+    if state.publication_usage is None:
+        if current_session is None:
+            raise ValueError("Finalized turn lost its session")
+        state.publication_usage = (
+            current_session.tokens_input + state.turn_tokens["input"],
+            current_session.tokens_output + state.turn_tokens["output"],
+            current_session.cost_usd + (state.turn_cost if state.turn_cost_known else 0.0),
+            current_session.cost_known or state.turn_cost_known,
+        )
+    publication_step(
+        steps,
+        "session_projection",
+        lambda: state.app.state.sessions.update(
+            state.sid,
+            message_count=len(state.app.state.messages.get(state.sid, [])),
+            usage_totals=state.publication_usage,
+            metadata_patch=metadata_patch,
+        ),
+        retry=True,
+    )
+    semantic_completed_payload = {
+        **completed_payload,
+        **final_message_embed(state.app, state.sid, assistant_msg),
+    }
+    publication_step(
+        steps,
+        "semantic",
+        lambda: _emit_semantic_event(
+            state.app,
+            state.sid,
+            "turn.completed" if state.error_info is None else "turn.failed",
+            turn_id=state.turn_id,
+            trace_id=state.trace_id,
+            status="completed" if state.error_info is None else "failed",
+            summary="CLIO turn completed."
+            if state.error_info is None
+            else f"CLIO turn failed: {state.error_info.error}.",
+            actor={"agent_id": state.selected_agent or "orchestrator"},
+            subject={"message_id": assistant_msg.id},
+            payload=semantic_completed_payload,
+        ),
+        retry=True,
+    )
+    publication_step(
+        steps,
+        "transcript_event",
+        lambda: _publish_transcript_event(
+            state.bus, state.sid, "turn.completed", {"turn_id": state.turn_id}
+        ),
+        retry=False,
+    )
+    publication_step(
+        steps,
+        "completion_event",
+        lambda: state.bus.publish(
+            Event(type="message.completed", session_id=state.sid, payload=completed_payload)
+        ),
+        retry=False,
     )
     cancellation_status: dict[str, Any] = {}
     if state.cancelled_turn and state.error_info is not None:
@@ -541,58 +517,81 @@ def finalize_turn(
             "execution_cancellation": state.error_info.details.get("execution_cancellation"),
             "cancellation_attempt": state.error_info.details.get("cancellation_attempt", {}),
         }
-    # The terminal status publishes once the runner releases the slot (never ahead of
-    # the busy gate while the hooks / GOAL tail below still run inside this turn).
-    publish_turn_settled_status(
-        state.app, state.sid, final_status, payload_extra=cancellation_status
+    publication_step(
+        steps,
+        "status",
+        lambda: publish_turn_settled_status(
+            state.app, state.sid, final_status, payload_extra=cancellation_status
+        ),
+        retry=True,
     )
-    from clio_agent.gact.spotter_watcher import on_turn_finalized  # noqa: PLC0415
+    from clio_agent.gact.spotter_watcher import on_turn_finalized
 
-    on_turn_finalized(state.app, state.sid)
-    # P2.3 PostToolBatch: fire ONCE per turn, after the turn's whole tool batch resolved and before
-    # Stop/next step — only when the turn ran ≥1 tool. ``state.tools_called`` is the honest clio-owned
-    # batch boundary (the DSPy ReAct loop owns per-model-step rounds; a finer seam moves this there).
+    publication_step(steps, "spotter", lambda: on_turn_finalized(state.app, state.sid), retry=False)
     if state.tools_called:
-        from clio_agent.gact.hooks import fire_post_tool_batch  # noqa: PLC0415
+        from clio_agent.gact.hooks import fire_post_tool_batch
 
-        fire_post_tool_batch(
-            state.tools_called,
+        publication_step(
+            steps,
+            "tool_hook",
+            lambda: fire_post_tool_batch(
+                state.tools_called,
+                session_id=state.sid,
+                turn_id=state.turn_id,
+                cwd=str(getattr(state.sess, "workspace_root", "") or ""),
+            ),
+            retry=False,
+        )
+    from clio_agent.gact.conversation_assignments import ConversationOutcome
+    from clio_agent.gact.hooks.stop_loop import dispatch_stop_at_finalize
+    from clio_agent.gact.messaging import _prediction_summary
+
+    publication_step(
+        steps,
+        "stop_hook",
+        lambda: dispatch_stop_at_finalize(
+            state.app,
             session_id=state.sid,
             turn_id=state.turn_id,
+            trace_id=state.trace_id,
             cwd=str(getattr(state.sess, "workspace_root", "") or ""),
-        )
-    # P2.5 #1073: Stop hooks (the ported ``post_message`` consumer) run AFTER persistence so user
-    # audit code sees the settled assistant. A BOUNDED completion gate: a ``deny`` re-drives one more
-    # turn on the #1031 idle-hook seam, hard-bounded by a per-hook ``loopLimit`` + a global cap that
-    # settles DONE with a typed ``stop_loop_cap`` reason. Protocol lives in the hooks owner module.
-    from clio_agent.gact.hooks.stop_loop import dispatch_stop_at_finalize  # noqa: PLC0415
-
-    dispatch_stop_at_finalize(
-        state.app,
-        session_id=state.sid,
-        turn_id=state.turn_id,
-        trace_id=state.trace_id,
-        cwd=str(getattr(state.sess, "workspace_root", "") or ""),
-        assistant_msg_id=assistant_msg.id,
-        assistant_payload=assistant_msg.model_dump(exclude_none=True),
-        blueprint_id=_runtime_active_agent_blueprint_id(state.app, state.sid),
+            assistant_msg_id=assistant_msg.id,
+            assistant_payload=assistant_msg.model_dump(exclude_none=True),
+            blueprint_id=_runtime_active_agent_blueprint_id(state.app, state.sid),
+            completion=ConversationOutcome(
+                outputs=_prediction_summary(state.pred)
+                if state.pred is not None
+                else {"answer": state.answer_text},
+                context=getattr(state.pred, "clio_context_boundary", None),
+                error=state.error_info.model_dump(mode="json")
+                if state.error_info is not None
+                else None,
+            ),
+        ),
+        retry=False,
     )
-    # P4.1 #1079: the autonomous-loop bounded fallback (owner module; no-op when idle).
-    from clio_agent.gact.autonomous_loop import dispatch_loop_at_finalize  # noqa: PLC0415
+    from clio_agent.gact.autonomous_loop import dispatch_loop_at_finalize
 
-    dispatch_loop_at_finalize(state.app, session_id=state.sid, turn_id=state.turn_id)
-    # P4.2 #1080 GOAL gate: an LM call, so it is AWAITED on the loop after this returns
-    # (``turn_finalize_goal.finalize_turn_async``), never run sync on the loop thread (#1333).
-    # P1.6d #1068: stall-monitor leaky bucket (owner module; no-op for unstructured sessions).
-    from clio_agent.gact.replanning import dispatch_stall_monitor_at_finalize  # noqa: PLC0415
+    publication_step(
+        steps,
+        "loop_hook",
+        lambda: dispatch_loop_at_finalize(state.app, session_id=state.sid, turn_id=state.turn_id),
+        retry=False,
+    )
+    from clio_agent.gact.replanning import dispatch_stall_monitor_at_finalize
 
-    dispatch_stall_monitor_at_finalize(
-        state.app, session_id=state.sid, turn_id=state.turn_id, tools_called=state.tools_called
+    publication_step(
+        steps,
+        "stall_hook",
+        lambda: dispatch_stall_monitor_at_finalize(
+            state.app, session_id=state.sid, turn_id=state.turn_id, tools_called=state.tools_called
+        ),
+        retry=False,
     )
     if not (
         state.cancelled_turn
         and state.error_info is not None
-        and state.error_info.details.get("execution_cancellation") == "best_effort"
+        and (state.error_info.details.get("execution_cancellation") == "best_effort")
     ):
         if state.app.state.cancel_events.get(state.sid) is state.turn_cancel_event:
             state.app.state.cancel_events.pop(state.sid, None)
@@ -610,19 +609,10 @@ def settle_failed_finalize(
     update_retry_attempt: "Callable[..., None]",
     exc: BaseException,
 ) -> None:
-    """#756: the turn's error envelope for a finalize-region crash.
+    """Record the original finalize error and preserve already-streamed parts.
 
-    The finalize region runs inside a fire-and-forget task; an exception escaping it
-    used to die silently (no ``message.completed`` / ``session.status_changed``, the
-    session wedged in ``running``). This settles the turn instead: structured log,
-    ``turn.failed`` semantic event, ``message.completed`` with ``stop_reason=error`` +
-    ``error_info``, a persisted assistant error message (visible on reload, not just
-    live; #1337: carrying the parts already sealed) and a terminal status. Nothing
-    degrades silently: every best-effort step below logs its reason when it fails.
-    ``persist_finalized_message`` binds ``gact.app._append_session_message`` at call
-    time so the live==reload test monkeypatches keep intercepting. #1339 / L1: ``exc``
-    may carry ``settle_reason``/``settle_error_code`` (turn_prologue_guard) instead.
-    Every branch closes the turn minter -- never skipped regardless of session status.
+    A recording outage retains this exact message. It does not create another
+    execution failure or silently discard the output.
     """
 
     reason = getattr(exc, "settle_reason", "turn_finalize_error")
@@ -637,7 +627,6 @@ def settle_failed_finalize(
     if trace.HF_ON:
         trace.hot("TURN-FINALIZE-FAIL", "%s %s: %s", sid, type(exc).__name__, exc)
 
-    # #767 PR2/#1337: freeze+retire the ledger (sealed parts survive) before the return.
     asst_id, sealed_parts = failed_finalize_identity(app, sid)
     registry = getattr(app.state, "turn_transcripts", None)
     if registry is not None:
@@ -646,17 +635,10 @@ def settle_failed_finalize(
             transcript.abandon()
         registry.close(sid)
 
-    # A crashed finalize never reaches the resource_link drain; clear the turn's
-    # artifact buffer so a retry of the SAME turn cannot emit each part twice (#968
-    # finding [7]). Unconditional, before the already-settled early return.
     clear_turn_artifacts(app, sid)
 
     sess = app.state.sessions.get(sid)
     if sess is not None and getattr(sess, "status", "") != "running":
-        # Finalize already settled the turn (the exception escaped after the
-        # terminal publishes); re-running the envelope would double-publish
-        # completion. The failure stays visible via the log above. L1: this used to
-        # skip close_turn_minter below entirely -- every branch closes it now.
         close_turn_minter(app, sid)
         return
 
@@ -694,15 +676,43 @@ def settle_failed_finalize(
         "cost_usd": turn_cost,
         "error_info": error_info.model_dump(exclude_none=True),
     }
-    bus: EventBus = app.state.bus
-    try:
-        persist_finalized_message(app, sid, assistant_msg)  # before the completion events
-    except Exception:  # noqa: BLE001 - persistence degraded; the status flip must still happen
-        logger.exception(
-            "assistant error-message persistence failed during finalize settle: session=%s turn=%s",
+    persist_finalized_message(
+        app,
+        sid,
+        assistant_msg,
+        after_confirmed=lambda: publish_failed_finalize(
+            app,
             sid,
-            turn_id,
-        )
+            assistant_msg,
+            completed_payload,
+            turn_id=turn_id,
+            trace_id=trace_id,
+            turn_cancel_event=turn_cancel_event,
+            update_retry_attempt=update_retry_attempt,
+        ),
+        after_withdrawn=lambda: settle_withdrawn_turn(
+            app, sid, turn_cancel_event, update_retry_attempt=update_retry_attempt
+        ),
+    )
+
+
+def publish_failed_finalize(
+    app: "FastAPI",
+    sid: str,
+    assistant_msg: Message,
+    completed_payload: dict[str, Any],
+    *,
+    turn_id: str,
+    trace_id: str,
+    turn_cancel_event: threading.Event,
+    update_retry_attempt: "Callable[..., None]",
+) -> None:
+    """Publish the already-recorded error outcome without rebuilding or re-executing it."""
+    error_info = assistant_msg.error_info
+    if error_info is None:
+        raise ValueError("Failed-finalize output has no original error")
+    bus: EventBus = app.state.bus
+    sess = app.state.sessions.get(sid)
     try:
         _emit_semantic_event(
             app,

@@ -24,8 +24,11 @@ These tests lock the assembly seam (``gact/agents/tool_instrumentation.py``):
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Iterable
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import dspy
 import pytest
@@ -44,6 +47,7 @@ from clio_agent.gact.tool_observer import _install_tool_runtime_hooks
 from clio_agent.tools import execution as _execution
 from clio_agent.tools.execution import TOOL_OBSERVED_ATTR
 from scripts.check_tool_instrumentation import check_tool_instrumentation
+from tests.test_gact.task_records import active_turn_fixture, record_assignment_fixture
 
 pytestmark = pytest.mark.usefixtures("host_agent_executor")
 
@@ -59,15 +63,24 @@ def _bare_tool(func, name: str):
     return dspy.Tool(func=func, name=name, desc=func.__doc__ or name)
 
 
-def _observing_app(tmp_path: Path):
+def _observing_app(tmp_path: Path, *, approval_mode: str = "ask") -> tuple[Any, TestClient, str]:
     """A built app with its per-app tool-runtime hooks installed + one session."""
 
     app = build_app(sessions_path=tmp_path / "s.json")
     client = TestClient(app)
     client.__enter__()
-    sid = client.post("/v1/sessions", json={"title": "t"}).json()["id"]
+    sid = client.post("/v1/sessions", json={"title": "t", "approval_mode": approval_mode}).json()[
+        "id"
+    ]
+    record_assignment_fixture(app, sid)
     _install_tool_runtime_hooks(app)
     return app, client, sid
+
+
+def _instrument_in_app(app: Any, tools: Iterable[Any]) -> list[Any]:
+    """Bind declarations to their actual application before invoking them."""
+    with _gact_app_context(app):
+        return instrument_tools(tools)
 
 
 def _live_part_types(app, sid: str) -> list[tuple[str, str]]:
@@ -263,7 +276,8 @@ def test_stale_declaration_from_before_this_call_never_attaches_to_it(
         def plain(task: str) -> str:
             return f"did {task}"  # never declares its own structured content
 
-        (tool,) = instrument_tools(
+        (tool,) = _instrument_in_app(
+            app,
             [
                 native_tool(
                     plain,
@@ -273,9 +287,9 @@ def test_stale_declaration_from_before_this_call_never_attaches_to_it(
                     args={"task": {"type": "string"}},
                     domain="workspace",
                 )
-            ]
+            ],
         )
-        with _gact_app_context(app), _tool_session_context(sid):
+        with active_turn_fixture(app, sid), _tool_session_context(sid):
             # Simulate a PRIOR call's declaration that leaked past its own
             # cleanup (one of the three proven leak paths) — set BEFORE this
             # call's wrapper ever runs.
@@ -304,8 +318,8 @@ def test_real_p5_tool_declared_structured_content_does_not_leak_across_sequentia
 
     app, client, sid = _observing_app(tmp_path)
     try:
-        (tool,) = instrument_tools([build_goal_status_tool()])
-        with _gact_app_context(app), _tool_session_context(sid):
+        (tool,) = _instrument_in_app(app, [build_goal_status_tool()])
+        with active_turn_fixture(app, sid), _tool_session_context(sid):
             session_token = _ctx.set_session_id(sid)
             try:
                 assert tool()["active"] is False  # first call: no goal armed
@@ -348,7 +362,8 @@ def test_row_tool_lands_tool_parts_with_curated_title(tmp_path: Path) -> None:
             """Rank stations for a city."""
             return f"ranked {city}"
 
-        (tool,) = instrument_tools(
+        (tool,) = _instrument_in_app(
+            app,
             [
                 native_tool(
                     rank_stations,
@@ -359,9 +374,9 @@ def test_row_tool_lands_tool_parts_with_curated_title(tmp_path: Path) -> None:
                     args={"city": {"type": "string"}},
                     domain="workspace",
                 )
-            ]
+            ],
         )
-        with _gact_app_context(app), _tool_session_context(sid):
+        with active_turn_fixture(app, sid), _tool_session_context(sid):
             assert tool(city="LA") == "ranked LA"
 
         parts = (app.state.live_assistant_parts or {}).get(sid, [])
@@ -390,8 +405,8 @@ def test_uncurated_bare_tool_lands_parts_without_title(tmp_path: Path) -> None:
         def plain() -> str:
             return "done"
 
-        (tool,) = instrument_tools([_bare_tool(plain, "plain")])
-        with _gact_app_context(app), _tool_session_context(sid):
+        (tool,) = _instrument_in_app(app, [_bare_tool(plain, "plain")])
+        with active_turn_fixture(app, sid), _tool_session_context(sid):
             tool()
         parts = (app.state.live_assistant_parts or {}).get(sid, [])
         call_parts = [p for p in parts if p.type == "tool_call"]
@@ -424,7 +439,8 @@ def test_handoff_representation_notifies_but_appends_no_tool_parts(tmp_path: Pat
             """Perform a represented-elsewhere action."""
             return f"did {task}"
 
-        (tool,) = instrument_tools(
+        (tool,) = _instrument_in_app(
+            app,
             [
                 native_tool(
                     declared_action,
@@ -436,9 +452,9 @@ def test_handoff_representation_notifies_but_appends_no_tool_parts(tmp_path: Pat
                     args={"task": {"type": "string"}},
                     domain="agents",
                 )
-            ]
+            ],
         )
-        with _gact_app_context(app), _tool_session_context(sid):
+        with active_turn_fixture(app, sid), _tool_session_context(sid):
             assert tool(task="t1") == "did t1"
 
         # Telemetry recorded: bus lifecycle events carry the declared representation…
@@ -480,7 +496,8 @@ def test_chip_representation_notifies_and_still_appends_tool_parts(tmp_path: Pat
             """Perform a chip-represented action."""
             return f"did {task}"
 
-        (tool,) = instrument_tools(
+        (tool,) = _instrument_in_app(
+            app,
             [
                 native_tool(
                     declared_action,
@@ -492,9 +509,9 @@ def test_chip_representation_notifies_and_still_appends_tool_parts(tmp_path: Pat
                     args={"task": {"type": "string"}},
                     domain="artifacts",
                 )
-            ]
+            ],
         )
-        with _gact_app_context(app), _tool_session_context(sid):
+        with active_turn_fixture(app, sid), _tool_session_context(sid):
             assert tool(task="t1") == "did t1"
 
         # Telemetry recorded exactly like handoff…
@@ -554,15 +571,18 @@ def test_every_auto_tool_and_a_plain_tool_lands_a_tool_call_part(
     from clio_agent.gact.a2ui_catalogs.builtin import workspace_catalog_id
     from clio_agent.gact.agents.auto_tools import build_auto_react_tools
 
-    app, client, sid = _observing_app(tmp_path)
+    # This wire-evidence test executes non-read tools without a human responder.
+    # Authorize them through the real session policy, not a mocked permission gate.
+    app, client, sid = _observing_app(tmp_path, approval_mode="bypass")
     try:
         agent_def = SimpleNamespace(id="tester")
         auto_tools = {
             t.name: t
-            for t in instrument_tools(
+            for t in _instrument_in_app(
+                app,
                 build_auto_react_tools(
                     agent_def, a2ui_producers=True, supports_vision=True, ndp_tools=True
-                )
+                ),
             )
         }
         # The A2UI producer triad (S4) needs a real client-capabilities
@@ -580,7 +600,8 @@ def test_every_auto_tool_and_a_plain_tool_lands_a_tool_call_part(
         def plain_native() -> str:
             return "ok"
 
-        (row_tool,) = instrument_tools(
+        (row_tool,) = _instrument_in_app(
+            app,
             [
                 native_tool(
                     plain_native,
@@ -590,7 +611,7 @@ def test_every_auto_tool_and_a_plain_tool_lands_a_tool_call_part(
                     args={},
                     domain="workspace",
                 )
-            ]
+            ],
         )
 
         # Minimal args per tool: exercise its real body. Several are expected
@@ -657,15 +678,21 @@ def test_every_auto_tool_and_a_plain_tool_lands_a_tool_call_part(
                 "endpoint_id": "missing",
                 "operation_id": "GET /missing",
             },
-            "connected_data_download": {"source_id": "missing-source"},
+            "connected_data_download": {"source_id": "missing-source", "paths": ["missing.txt"]},
+            "connected_data_index": {"source_id": "missing-source"},
             "query_tasks": {},
             "observe_tasks": {"tasks": "missing-task"},
             "wait_tasks": {"tasks": "missing-task", "timeout_s": 0},
             "cancel_tasks": {"tasks": "missing-task"},
             "get_task_result": {"handle": "missing-task"},
-            # Invalid source locations and missing source records refuse before
-            # permission prompts, account access or network operations. They
-            # must still record the exact executed inputs and failure result.
+            "ask_user": {"question": "Which report should I produce?"},
+            "send_agent_message": {"target": "missing-session", "message": "Status?"},
+            "pause_agent": {"handle": "missing-task"},
+            "resume_agent": {"handle": "missing-task"},
+            "restart_agent": {"handle": "missing-task"},
+            # The session explicitly permits calls through the real gate. Invalid
+            # source locations and missing records then refuse before account
+            # access or network operations, retaining inputs and failure results.
             "connected_data_connect": {
                 "provider": "github",
                 "root": "not-a-repository",
@@ -694,12 +721,6 @@ def test_every_auto_tool_and_a_plain_tool_lands_a_tool_call_part(
             # Reads back compacted context; called with neither query nor ids on
             # purpose: a typed refusal, and the tool_call part must land anyway.
             "recall_context": {},
-            "memory_search_sessions": {"query": "missing"},
-            "memory_read_session_summary": {"target_session_id": sid},
-            "memory_read_context_frame": {
-                "target_session_id": sid,
-                "frame_id": "missing",
-            },
             # Phase 9 (tier-1 MAIN only): outside an agent loop it refuses typed
             # (draft_alternatives_refused); the tool_call part lands either way.
             "draft_alternatives": {"n": 2, "rubric": "short"},
@@ -713,10 +734,10 @@ def test_every_auto_tool_and_a_plain_tool_lands_a_tool_call_part(
         monkeypatch.setattr(
             "clio_agent.providers.model_discovery.refresh.refresh_all_sync", lambda: []
         )
-        with _gact_app_context(app), _tool_session_context(sid):
+        with active_turn_fixture(app, sid), _tool_session_context(sid):
             for name, kwargs in calls.items():
                 try:
-                    auto_tools[name](**kwargs)
+                    asyncio.run(auto_tools[name].acall(**kwargs))
                 except Exception:
                     pass  # only tool_call/tool_result wire evidence is under test
                 exercised.append(name)
@@ -960,6 +981,7 @@ def test_recording_rewrap_propagates_the_observed_marker() -> None:
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.usefixtures("builtin_tool_context")
 def test_auto_react_tools_carry_their_declared_presentation() -> None:
     """The auto-attached set declares through the factory: create_artifact is
     the chip; the rest are curated rows."""
@@ -982,69 +1004,58 @@ def test_auto_react_tools_carry_their_declared_presentation() -> None:
         assert declared_tool_title(name) == title, name
 
 
-def test_spawn_runtime_tools_declare_handoff_for_spawn_and_row_for_collectors(
-    tmp_path: Path, monkeypatch
-) -> None:
-    """spawn/fan-out present as their expert_handoff part (declared handoff);
-    the collectors + observe/message are real rows with curated titles."""
-
-    from clio_agent.gact.agents import spawn_runtime
-
-    app = build_app(sessions_path=tmp_path / "s.json")
-    monkeypatch.setattr(
-        "clio_agent.gact.agents.resolution._runtime_declared_child_ids",
-        lambda a, pid, session_id="": {"child_a"},
+@pytest.mark.usefixtures("builtin_tool_context")
+def test_shared_task_tools_declare_rows_without_legacy_default_controls() -> None:
+    """Actual declarations expose every mixed control with a readable operation row."""
+    from clio_agent.gact.task_declarations import (
+        TASK_COMPATIBILITY_ALIASES,
+        build_spawn_runtime_tools,
+        build_task_tools,
     )
-    with TestClient(app), _gact_app_context(app), _tool_session_context("sess_x"):
-        tools = spawn_runtime.build_spawn_runtime_tools(
-            SimpleNamespace(),
-            SimpleNamespace(
-                id="main",
-                metadata={"agent_blueprint_id": "bp"},
-                tools=["wait_agent_tasks", "observe_agent_tasks", "get_agent_task_output"],
-            ),
-        )
+
+    tools = build_spawn_runtime_tools(None, SimpleNamespace(fanout={})) + build_task_tools()
     instrument_tools(tools)
     expected = {
-        "spawn_agent_task": ("handoff", "Spawn Agent"),
-        "spawn_agents_parallel": ("handoff", "Spawn Agents"),
-        "wait_agent_tasks": ("row", "Wait"),
-        "observe_agent_tasks": ("row", "Observe"),
-        "get_agent_task_output": ("row", "Collect"),
-        "message_agent": ("row", "Message Agent"),
+        "spawn_agent_task": "Spawn agent task",
+        "spawn_agents_parallel": "Spawn agents parallel",
+        "query_tasks": "Query tasks",
+        "observe_tasks": "Observe tasks",
+        "wait_tasks": "Wait tasks",
+        "cancel_tasks": "Cancel tasks",
+        "get_task_result": "Get task result",
+        "send_agent_message": "Send agent message",
+        "pause_agent": "Pause agent",
+        "resume_agent": "Resume agent",
+        "restart_agent": "Restart agent",
     }
-    assert {t.name for t in tools} == set(expected)
-    for name, (representation, title) in expected.items():
-        assert declared_tool_representation(name) == representation, name
+    assert {tool.name for tool in tools} == set(expected)
+    assert not set(expected) & TASK_COMPATIBILITY_ALIASES
+    for name, title in expected.items():
+        assert declared_tool_representation(name) == "row", name
         assert declared_tool_title(name) == title, name
 
 
-def test_declared_workflow_keeps_a_tool_row_around_its_child_handoffs(
-    tmp_path: Path, monkeypatch
-) -> None:
+@pytest.mark.usefixtures("builtin_tool_context")
+def test_declared_workflow_keeps_a_tool_row_around_its_child_operations() -> None:
     """A compound workflow owns one visible operation boundary around its stages."""
+    from clio_agent.gact.task_declarations import build_spawn_runtime_tools
 
-    from clio_agent.gact.agents import spawn_runtime
-
-    app = build_app(sessions_path=tmp_path / "s.json")
-    monkeypatch.setattr(
-        "clio_agent.gact.agents.resolution._runtime_declared_child_ids",
-        lambda a, pid, session_id="": {"child_a"},
-    )
     agent = SimpleNamespace(
         id="main",
-        tools=[],
+        fanout={},
         metadata={
-            "agent_blueprint_id": "bp",
-            "workflow": {"steps": [{"id": "inspect", "child": "child_a", "task": "Inspect"}]},
+            "workflow": {"steps": [{"id": "inspect", "child": "child_a", "task": "Inspect"}]}
         },
     )
-    with TestClient(app), _gact_app_context(app), _tool_session_context("sess_x"):
-        tools = spawn_runtime.build_spawn_runtime_tools(SimpleNamespace(), agent)
+    tools = build_spawn_runtime_tools(None, agent)
     instrument_tools(tools)
-
+    assert {tool.name for tool in tools} == {
+        "spawn_agent_task",
+        "spawn_agents_parallel",
+        "run_workflow",
+    }
     assert declared_tool_representation("run_workflow") == "row"
-    assert declared_tool_title("run_workflow") == "Run Workflow"
+    assert declared_tool_title("run_workflow") == "Run workflow"
 
 
 def test_invalid_representation_is_a_typed_error() -> None:
@@ -1072,8 +1083,9 @@ def test_invalid_domain_is_a_typed_error() -> None:
     def f() -> str:
         return ""
 
+    invalid_domain: Any = "nonexistent"
     with pytest.raises(ValueError, match="unknown domain"):
-        native_tool(f, name="f", presentation="text", desc="", args={}, domain="nonexistent")
+        native_tool(f, name="f", presentation="text", desc="", args={}, domain=invalid_domain)
 
 
 # --------------------------------------------------------------------------- #
@@ -1097,39 +1109,25 @@ def test_title_sanitization_strips_controls_and_clamps() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_no_registered_native_title_contains_a_paren(tmp_path: Path, monkeypatch) -> None:
-    """Sweeps every curated native/auto/spawn-runtime title through the real
-    builder functions (not a source-grep) and asserts none carries parens.
-
-    Sabotage baseline: before the 2026-08-06 rename this failed on
-    ``spawn_agent_task``/``wait_agent_tasks``/
-    ``spawn_agents_parallel``/``run_workflow``/``create_artifact``/
-    ``observe_agent_tasks``/``message_agent``/``plan_exit``/``goal_status``/
-    ``load_skill``/``cron_create``/``cron_list``/``cron_delete`` — every one
-    of them baked a ``verb(object)`` shape into the title."""
-
-    from clio_agent.gact.agents import spawn_runtime
+@pytest.mark.usefixtures("builtin_tool_context")
+def test_no_registered_native_title_contains_a_paren() -> None:
+    """Sweep real native, shared-task, Question and skill declarations."""
     from clio_agent.gact.agents.auto_tools import build_auto_react_tools
     from clio_agent.gact.agents.skill_runtime import SkillRuntime, build_load_skill_tool
-
-    app = build_app(sessions_path=tmp_path / "s.json")
-    monkeypatch.setattr(
-        "clio_agent.gact.agents.resolution._runtime_declared_child_ids",
-        lambda a, pid, session_id="": {"child_a"},
+    from clio_agent.gact.task_declarations import (
+        build_ask_user_tool,
+        build_spawn_runtime_tools,
+        build_task_tools,
     )
-    tools = build_auto_react_tools(SimpleNamespace(id="tester"))
-    tools.append(build_load_skill_tool(SimpleNamespace(id="tester"), SkillRuntime()))
-    with TestClient(app), _gact_app_context(app), _tool_session_context("sess_x"):
-        tools += spawn_runtime.build_spawn_runtime_tools(
-            SimpleNamespace(),
-            SimpleNamespace(
-                id="main",
-                metadata={"agent_blueprint_id": "bp"},
-                tools=["wait_agent_tasks", "observe_agent_tasks", "get_agent_task_output"],
-            ),
-        )
+    from clio_agent.gact.types import AgentDef
+
+    agent = AgentDef(id="tester", title="Test agent")
+    tools = build_auto_react_tools(agent)
+    tools.append(build_load_skill_tool(agent, SkillRuntime()))
+    tools.append(build_ask_user_tool(agent))
+    tools += build_spawn_runtime_tools(None, agent) + build_task_tools()
     instrument_tools(tools)
-    assert len(tools) >= 12, "expected the full curated native/auto/spawn-runtime set"
+    assert len(tools) >= 12, "expected the full curated native, Question and task set"
     for tool in tools:
         title = declared_tool_title(tool.name)
         assert "(" not in title and ")" not in title, (tool.name, title)

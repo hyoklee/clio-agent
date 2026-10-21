@@ -1,0 +1,77 @@
+{
+  "checks": [
+    {
+      "command": [
+        "node_modules/.bin/prettier.cmd",
+        "--write",
+        "packages/core/src/v3/schemas.ts",
+        "web/src/lib/session-agent-tasks.ts",
+        "web/src/lib/session-agent-tasks.test.ts"
+      ],
+      "exit_code": 1,
+      "output": "'node_modules' is not recognized as an internal or external command,\noperable program or batch file.\n"
+    },
+    {
+      "command": [
+        "C:/Program Files/nodejs/node.exe",
+        "scripts/check_presentation_overrides.mjs"
+      ],
+      "exit_code": 0,
+      "output": "Presentation override ratchet passed (2/3 call sites).\n"
+    },
+    {
+      "command": [
+        "C:/Program Files/nodejs/node.exe",
+        "scripts/check_frontend_component_reuse.mjs"
+      ],
+      "exit_code": 0,
+      "output": "Frontend component-reuse ratchet passed (33 major surfaces).\n"
+    },
+    {
+      "command": [
+        "C:/Program Files/nodejs/node.exe",
+        "scripts/check_frontend_file_size.mjs"
+      ],
+      "exit_code": 0,
+      "output": "CLIO-owned TypeScript file-size ratchet passed (800 lines maximum).\n"
+    },
+    {
+      "command": [
+        "C:/Program Files/nodejs/node.exe",
+        "scripts/check_brand_literals.mjs"
+      ],
+      "exit_code": 0,
+      "output": "Brand literal guard passed (6 allowlisted phrases).\n"
+    },
+    {
+      "command": [
+        "C:/Program Files/nodejs/node.exe",
+        "scripts/check_infrastructure_ownership.mjs"
+      ],
+      "exit_code": 0,
+      "output": "Infrastructure ownership guard passed (drivers and pins live only in CLIO).\n"
+    },
+    {
+      "command": [
+        "C:/Program Files/nodejs/node.exe",
+        "scripts/check_icon_vocabulary.mjs"
+      ],
+      "exit_code": 0,
+      "output": "Icon vocabulary guard passed (action icons come from web/src/lib/icon-vocabulary.ts).\n"
+    },
+    {
+      "command": [
+        "C:/Program Files/nodejs/node.exe",
+        "node_modules/prettier/bin/prettier.cjs",
+        "--write",
+        "packages/core/src/v3/schemas.ts",
+        "web/src/lib/session-agent-tasks.ts",
+        "web/src/lib/session-agent-tasks.test.ts"
+      ],
+      "exit_code": 0,
+      "output": "packages/core/src/v3/schemas.ts 280ms (unchanged)\nweb/src/lib/session-agent-tasks.ts 18ms (unchanged)\nweb/src/lib/session-agent-tasks.test.ts 18ms\n",
+      "corrects": "Relative .cmd invocation failed; this invokes the installed formatter directly."
+    }
+  ],
+  "behavioral_tests": "constructed, unexecuted"
+}

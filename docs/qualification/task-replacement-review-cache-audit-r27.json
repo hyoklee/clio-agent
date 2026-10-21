@@ -1,0 +1,20 @@
+[
+  {
+    "review": "r25",
+    "root": "/home/jcernuda/.cache/clio-task-review-14cd98be-fable-r25",
+    "session_id": "0da611f8-730b-4f26-a1c7-03a5e5890ca3",
+    "settled": true,
+    "ended_at": "2026-10-15T00:24:53.963568+00:00",
+    "project": "/home/jcernuda/.claude/projects/-home-jcernuda--cache-clio-task-review-14cd98be-fable-r25",
+    "caches": []
+  },
+  {
+    "review": "r26",
+    "root": "/home/jcernuda/.cache/clio-task-review-8f40aa8d-fable-r26",
+    "session_id": "826ffc6d-5f47-485b-b88c-a680a9cf7c53",
+    "settled": true,
+    "ended_at": "2026-10-15T01:48:21.375814+00:00",
+    "project": "/home/jcernuda/.claude/projects/-home-jcernuda--cache-clio-task-review-8f40aa8d-fable-r26",
+    "caches": []
+  }
+]

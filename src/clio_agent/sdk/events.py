@@ -147,8 +147,7 @@ class MessagePartCompleted(StreamEvent):
 
 
 class MessageCompleted(StreamEvent):
-    """``message.completed`` — the turn settled (exactly one per turn,
-    except the ask-user pause)."""
+    """``message.completed`` — one execution segment settled, identified by its turn ID."""
 
     @property
     def message_id(self) -> str:

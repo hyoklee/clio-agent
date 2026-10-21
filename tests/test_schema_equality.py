@@ -5,11 +5,8 @@ The moved runtime records are the same class objects exported by the installed
 catches an in-repo shadow/monkeypatch and a package-pin/resource drift before either
 can silently alter the wire contract.
 
-The invoker records are not package-owned yet, so their dataclass and projected
-field inventories are compared with a generated committed expectation. Regenerate
-that file only through::
-
-    uv run --no-sync --no-cache python scripts/generate_schema_equality_expectations.py
+The replacement task contracts belong to ARC; the removed invoker and special
+relay records are no longer a live cross-repository schema contract.
 """
 
 from __future__ import annotations
@@ -27,10 +24,6 @@ from pydantic import TypeAdapter
 from clio_agent.gact.artifacts.records import ArtifactRecord, ArtifactVersion
 from clio_agent.gact.artifacts.transform_types import EdgeEvidence, ProvEdge
 from clio_agent.gact.artifacts.transforms import TransformRecord
-from scripts.generate_schema_equality_expectations import (
-    EXPECTATION_PATH,
-    build_expectations,
-)
 
 ModelSchema = Callable[[], dict[str, Any]]
 
@@ -97,25 +90,6 @@ def test_edge_evidence_is_the_package_enum() -> None:
     """The runtime enum is the installed package export, not a local duplicate."""
 
     assert EdgeEvidence is PackageEdgeEvidence
-
-
-def test_invoker_wire_shapes_match_generated_expectation() -> None:
-    """Invoker field drift in either direction must revise the convergence contract."""
-
-    committed = json.loads(EXPECTATION_PATH.read_text(encoding="utf-8"))
-    actual = build_expectations()
-    assert actual == committed, (
-        "invoker wire shape or RELAY_STATE_MAP drifted; revise the cross-repo "
-        "convergence contract, then run the documented expectation generator"
-    )
-
-
-def test_task_spec_expectation_includes_1122_binding_fields() -> None:
-    """The detached-executor bindings from #1122 are committed wire fields."""
-
-    committed = json.loads(EXPECTATION_PATH.read_text(encoding="utf-8"))
-    fields = set(committed["invoker_types"]["TaskSpec"]["wire_fields"])
-    assert {"workspace_id", "session_mode", "session_scope_metadata"} <= fields
 
 
 def test_shadowed_runtime_model_schema_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:

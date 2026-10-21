@@ -1,0 +1,226 @@
+{
+  "review_cache_c1": {
+    "root": "D:/Temp/clio-task-plan-review-5475042f-c1",
+    "action": "guarded owned review cache removal",
+    "executed": false,
+    "reason": "blocked by policy",
+    "manual_only": true,
+    "review_process": {
+      "pid": 59888,
+      "birth": 1791915882.8518937,
+      "controller_exit_code": 0,
+      "original_authentication_unchanged": true
+    },
+    "root_absence_verified": false
+  },
+  "guard_test_setup": [
+    {
+      "pid": 37108,
+      "runtime_root": "C:/Users/jaime/.codex/worktrees/agent-facing-async-tasks/.clio-agent.pytest-runtime/run-37108-a830bf4acb0a",
+      "test_body_executed": false,
+      "outcome": "private Core setup could not bind long Windows IPC path",
+      "core_pid": 9312,
+      "core_exit": "0x1",
+      "root_absence_verified": true,
+      "processes_absent": true
+    },
+    {
+      "pid": 40356,
+      "runtime_root": "C:/ct-r2/run-40356-5a707d0e4b3a",
+      "test_body_executed": false,
+      "outcome": "Core started; product setup failed on intentionally removed watch_step binding",
+      "fixture_parent_absent": true,
+      "processes_ended": true
+    }
+  ],
+  "review_cache_c2": {
+    "root": "D:/Temp/clio-task-removal-review-adfde88a-c2",
+    "action": "guarded owned review cache removal",
+    "executed": false,
+    "reason": "blocked by policy",
+    "manual_only": true,
+    "review_process": {
+      "pid": 51776,
+      "birth": 1791920908.97308,
+      "controller_exit_code": 0,
+      "tool_calls": 41,
+      "original_authentication_unchanged": true
+    },
+    "root_absence_verified": false
+  },
+  "review_cache_c3": {
+    "root": "D:/Temp/clio-task-removal-review-4804dd6f-c3",
+    "action": "guarded owned review cache removal",
+    "executed": false,
+    "reason": "blocked by policy",
+    "manual_only": true,
+    "review_process": {
+      "pid": 64520,
+      "birth": 1791921715.7990081,
+      "controller_exit_code": 0,
+      "tool_calls": 21,
+      "original_authentication_unchanged": true
+    },
+    "root_absence_verified": false
+  },
+  "review_cache_c5": {
+    "root": "C:/Users/jaime/.codex/worktrees/agent-facing-async-tasks/.clio-review-c5",
+    "action": "guarded owned review cache removal",
+    "executed": false,
+    "reason": "blocked by policy",
+    "manual_only": true,
+    "files": 7,
+    "logical_bytes": 52527,
+    "links": 0,
+    "review_process": {
+      "pid": 62776,
+      "birth": 1791930974.850556,
+      "exit_code": 0,
+      "original_authentication_unchanged": true
+    },
+    "root_absence_verified": false
+  },
+  "review_cache_c6": {
+    "root": "D:/Temp/clio-task-implementation-review-8fbd4130-c6",
+    "action": "guarded owned review cache removal",
+    "root_absence_verified": false,
+    "reason": "blocked by policy",
+    "manual_only": true,
+    "cleanup": {
+      "root": "D:/Temp/clio-task-implementation-review-8fbd4130-c6",
+      "status": "human_manual_only",
+      "command_executed": false,
+      "rejection": "blocked by policy",
+      "files": 13,
+      "logical_bytes": 2595153.0,
+      "reparse_points": 0
+    },
+    "executed": false,
+    "evidence": "docs/qualification/task-replacement-initial-review-claude-6.json"
+  },
+  "review_cache_c7": {
+    "root": "D:/Temp/clio-task-implementation-review-8fbd4130-c7",
+    "action": "guarded owned review cache removal",
+    "root_absence_verified": false,
+    "reason": "blocked by policy",
+    "manual_only": true,
+    "cleanup": {
+      "root": "D:\\Temp\\clio-task-implementation-review-8fbd4130-c7",
+      "files": 11,
+      "logical_bytes": 19692.0,
+      "reparse_points": 0,
+      "status": "human_manual_only",
+      "process_absent": true,
+      "audited_at": "2026-10-14T02:51:43.5883572Z",
+      "rejection": "blocked by policy",
+      "command_executed": false
+    },
+    "executed": false,
+    "evidence": "docs/qualification/task-replacement-initial-review-claude-7.json"
+  },
+  "review_cache_c8": {
+    "process_absent": true,
+    "removal_executed": false,
+    "root": "D:\\Temp\\clio-task-implementation-review-9b0a91ec-c8",
+    "files": 10,
+    "reparse_points": 0,
+    "status": "human_manual_only",
+    "logical_bytes": 7152,
+    "rejection": "blocked by policy",
+    "root_absence_verified": false
+  },
+  "review_cache_c9": {
+    "status": "human_manual_only",
+    "root_absence_verified": false,
+    "logical_bytes": 34550,
+    "removal_executed": false,
+    "reparse_points": 0,
+    "audited_at": "2026-10-14T06:14:20.6396674Z",
+    "directories": 9,
+    "root": "D:\\Temp\\clio-task-implementation-review-90a7db56-c9",
+    "files": 11,
+    "process_absent": true,
+    "rejection": "blocked by policy"
+  },
+  "test_scratch_90a7db56": {
+    "status": "human_manual_only",
+    "reparse_points": 0,
+    "process_absent": true,
+    "root_absence_verified": false,
+    "observed_at": "2026-10-14T12:53:44.0766953Z",
+    "rejection": "blocked by policy",
+    "files": 1,
+    "removal_executed": false,
+    "instruction": "Never retry or bypass removal of this exact root; absence proof only after human state change.",
+    "logical_bytes": 8035,
+    "root": "D:/Temp/clio-r2-regressions-90a7db56"
+  },
+  "test_runtime_t10_r2": {
+    "status": "human_manual_only",
+    "private_core_parent": 19296,
+    "files": 132,
+    "logical_bytes": 1463087499,
+    "reparse_detail": "Non-directory private AF_UNIX IPC endpoint clio_22881.ipc; no link target",
+    "root": "D:/t10-r2",
+    "observed_at": "2026-10-14T12:58:52.8527101Z",
+    "core_forced_closed_after_expiry": true,
+    "root_absence_verified": false,
+    "reparse_points": 1,
+    "pids_absent": [
+      55548,
+      65472,
+      54924,
+      18588,
+      19296,
+      24272,
+      45136
+    ],
+    "private_core_pid": 24272,
+    "removal_executed": false,
+    "rejection": "blocked by policy",
+    "instruction": "Never retry or bypass removal, and never reuse D:/t10-r2 as a test runtime root: test reapers could retry rejected cleanup. Root absence proof only after human state change."
+  },
+  "review_cache_c10": {
+    "process_absent": true,
+    "status": "human_manual_only",
+    "reparse_points": 0,
+    "root_absence_verified": false,
+    "root": "D:/Temp/clio-task-implementation-review-98a7a5ee-c10",
+    "directories": 6,
+    "rejection": "blocked by policy",
+    "logical_bytes": 8728,
+    "instruction": "Never retry or bypass this exact removal, and do not execute its review.py again.",
+    "files": 6,
+    "removal_executed": false
+  },
+  "review_cache_c11": {
+    "root": "D:/Temp/clio-task-implementation-review-057b93bd-c11",
+    "status": "human_manual_only",
+    "process_absent": true,
+    "pids_absent": [
+      27524,
+      18992
+    ],
+    "remaining_owned_pids": [],
+    "removal_executed": false,
+    "root_absence_verified": false,
+    "rejection": "blocked by policy",
+    "instruction": "Never retry, bypass, move, remove through a parent or reuse this exact root or execute its review.py again. Root absence proof only after human state change.",
+    "auth_observation": "Original credentials changed during the read-only review. The isolated copy has a different hash and an earlier write timestamp. Other long-running Claude processes exist. Attribution is unproven; no original credentials were restored or overwritten by the cleanup."
+  },
+  "review_cache_c12": {
+    "root": "D:/Temp/clio-task-implementation-review-f029d12b-c12",
+    "status": "human_manual_only",
+    "process_absent": true,
+    "pids_absent": [
+      62128,
+      27936
+    ],
+    "remaining_owned_pids": [],
+    "review_result": "blocked before inference: OAuth session expired and could not refresh",
+    "removal_executed": false,
+    "root_absence_verified": false,
+    "rejection": "blocked by policy",
+    "instruction": "Never retry or bypass removal, move or reuse this exact root, or execute its review.py again. Root absence proof only after human state change."
+  }
+}

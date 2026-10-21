@@ -25,7 +25,6 @@ turns as the messages they were. A read failure is a typed :class:`ContextReadEr
 
 from __future__ import annotations
 
-import base64
 import json
 import logging
 from collections.abc import Mapping, Sequence
@@ -44,23 +43,34 @@ from dspy.lm15 import (
 
 from clio_agent.errors import ClioError
 from clio_agent.gact.agents.context_reader import ContextReader
-from clio_agent.gact.agents.media_cache import cached_media
+from clio_agent.gact.agents.recorded_media import (
+    _media as _media,
+)
+from clio_agent.gact.agents.recorded_media import (
+    _observation_text as _observation_text,
+)
+from clio_agent.gact.agents.recorded_media import (
+    _split_data_url as _split_data_url,
+)
+from clio_agent.gact.agents.recorded_media import (
+    result_part as result_part,
+)
 from clio_agent.gact.injection_parts import emit_injection
 
 logger = logging.getLogger(__name__)
 
-# Tools whose successful call is itself the terminal outcome of the current model
-# turn. Their authoritative payload stays in session metadata until the post-forward
-# pause seam mints the user-facing interaction.
-TURN_YIELD_METADATA: dict[str, str] = {
-    "ask_user": "pending_ask_user",
-    "plan_exit": "pending_plan_exit",
-}
-
 _FOLDED_KINDS = frozenset({"user", "thought", "tool_call", "observation", "summary"})
 # clio-core record kinds that are never the agent's context (skipped by declaration).
 _NON_CONTEXT_KINDS = frozenset(
-    {"answer", "semantic_event", "ws_op", "step_open", "message_part", "state_merge"}
+    {
+        "answer",
+        "semantic_event",
+        "ws_op",
+        "step_open",
+        "message_part",
+        "state_merge",
+        "recipient_input",
+    }
 )
 
 
@@ -303,98 +313,6 @@ class _StepFold:
         return out
 
 
-def result_part(call_id: str, name: str, value: Any, is_error: bool) -> ToolResultPart:
-    """A tool's result as the provider-native part (images/PDFs as media, else text).
-
-    Media the history can no longer show (its snapshot is gone) becomes a note the
-    agent reads -- one old image never fails the whole conversation.
-    """
-    try:
-        media = _media(value)
-    except ValueError as exc:  # ViewImageError / ViewPdfError / ViewedMediaUnavailable
-        logger.warning(
-            "tool media unavailable reason=%s call=%s detail=%s", type(exc).__name__, call_id, exc
-        )
-        note = (
-            f"[clio: media_unavailable] The media this call returned can no longer be shown: {exc}"
-        )
-        return ToolResultPart(
-            id=call_id, content=(TextPart(text=note),), name=name, is_error=is_error
-        )
-    content: tuple[Any, ...] = (
-        (media,) if media is not None else (TextPart(text=_observation_text(value)),)
-    )
-    if (
-        media is not None
-        and isinstance(value, Mapping)
-        and (value.get("capture") or isinstance(media, DocumentPart))
-    ):
-        # Media remains ephemeral provider input; keep exact provenance beside it
-        # so the agent can locate a PDF even when native delivery is refused.
-        content += (
-            TextPart(
-                text=_observation_text(
-                    {
-                        key: item
-                        for key, item in value.items()
-                        if key not in {"snapshot", "snapshot_sha256"}
-                    }
-                )
-            ),
-        )
-    return ToolResultPart(id=call_id, content=content, name=name, is_error=is_error)
-
-
-def _media(value: Any) -> ImagePart | DocumentPart | None:
-    """Hydrate a view_image / view_pdf result descriptor into a native media part."""
-    from clio_agent.gact.view_image_tool import (
-        _hydrate_descriptor as image_hydrate,  # noqa: PLC0415
-    )
-    from clio_agent.gact.view_image_tool import _is_descriptor as is_image  # noqa: PLC0415
-    from clio_agent.gact.view_pdf_tool import _hydrate_descriptor as pdf_hydrate  # noqa: PLC0415
-    from clio_agent.gact.view_pdf_tool import _is_descriptor as is_pdf  # noqa: PLC0415
-
-    if not isinstance(value, Mapping):
-        return None
-    if is_image(value):
-
-        def image() -> ImagePart:
-            media, _size = image_hydrate(value)
-            media_type, data = _split_data_url(str(getattr(media, "url", "")))
-            return ImagePart(data=data, media_type=media_type)
-
-        return cached_media("image", value, image, lambda part: len(part.data or ""))
-    if is_pdf(value):
-
-        def document() -> DocumentPart:
-            media, _size = pdf_hydrate(value)
-            media_type, data = _split_data_url(
-                str(getattr(media, "url", "") or getattr(media, "file_data", ""))
-            )
-            return DocumentPart(data=data, media_type=media_type or "application/pdf")
-
-        return cached_media("document", value, document, lambda part: len(part.data or ""))
-    return None
-
-
-def _split_data_url(url: str) -> tuple[str, str]:
-    header, _, data = url.partition(",")
-    media_type = header.removeprefix("data:").split(";", 1)[0]
-    if not data:
-        raise ValueError("an attachment descriptor did not hydrate to inline data")
-    base64.b64decode(data, validate=True)  # typed failure on a corrupt payload
-    return media_type, data
-
-
-def _observation_text(value: Any) -> str:
-    if isinstance(value, str):
-        return value or "(empty result)"
-    try:
-        return json.dumps(value, default=str)
-    except (TypeError, ValueError):
-        return str(value)
-
-
 # --------------------------------------------------------------------------- #
 # Recording                                                                   #
 # --------------------------------------------------------------------------- #
@@ -411,15 +329,31 @@ class StepRecorder:
         self.turn_id = _active_semantic_turn_id()
         self.expert_span_id = ""
         self.head_id = ""  # this forward's user message on the scope
+        self._mail_head: dict[str, Any] | None = None
         self._reader = ContextReader(arc, session, scope)
 
     def read_steps(self) -> list[Message]:
         """The scope's context as messages; only the open tail step is re-folded."""
         return self._reader.read()
 
+    def carry_over(self, ledger: Sequence[Any], *, allow_transcript: bool = True) -> None:
+        """Restore validated context for this exact session before the current input."""
+        from clio_agent.gact.agents.context_identity import restore_context
+
+        note = restore_context(
+            self.arc,
+            self.session,
+            self.scope,
+            self.turn_id,
+            ledger,
+            allow_transcript=allow_transcript,
+        )
+        if note:
+            emit_injection("context_recovery", note, agent_id=self.expert_id)
+
     def started(self, expert_span_id: str, inputs: Mapping[str, Any]) -> None:
         """Open the expert lifecycle on the highway."""
-        from clio_agent.gact.agents.context_recovery import context_identity
+        from clio_agent.gact.agents.context_identity import context_identity
         from clio_agent.gact.runtime.globals import _emit_expert_lifecycle_event  # noqa: PLC0415
         from clio_agent.tools.mcp_runtime import wire_value  # noqa: PLC0415
 
@@ -437,100 +371,154 @@ class StepRecorder:
 
     def user_message(self, message: Message) -> None:
         """Record the forward's user message; the projection starts every turn with it."""
-        self.head_id = self._write("user", user_to_record(message), 0, "")
+        content = user_to_record(message)
+        from clio_agent.gact import context
 
-    def carry_over(self, ledger: Sequence[Any]) -> None:
-        """Restore an absent scope from its recorded operations, once.
+        identity = context.current_turn().input_notification_id
+        if identity:
+            self._mail_head = content
+            return  # only the confirmed input record admits this head to context
+        self.head_id = self._write("user", content, 0, "")
 
-        Transcript reconstruction is used only when no scope operations exist;
-        it preserves recorded tool parts and declares any missing information.
-        """
-        if self.arc is None or self.arc.has_segments(self.session, self.scope):
+    def commit_input(self, step: int, *, attempt: int = 0) -> None:
+        """Confirm staged Core input immediately before constructing the model request."""
+        from clio_agent.arc.task_types import ContextBoundary
+        from clio_agent.gact import context
+
+        app = context.active_app()
+        owner = getattr(getattr(app, "state", None), "conversations", None)
+        if app is None or owner is None:
             return
-        from clio_agent.gact.conversation_projection import (  # noqa: PLC0415
-            model_context_messages,
+        assignment = context.active_assignment_handle()
+        if not assignment:
+            raise ValueError("Model input has no confirmed conversation assignment")
+        caller = owner.caller(self.session)
+        identity = context.current_turn().input_notification_id
+        with owner.history.serialized():
+            trigger = owner.history.mail_item(self.session, identity)
+        human_head = (
+            self._mail_head
+            if trigger is not None and trigger.kind in {"human", "composer"}
+            else None
         )
+        from clio_agent.gact.session_mail import StagedInput
 
-        rows = list(model_context_messages(list(ledger)))
-        # The loop records this forward's question itself. Earlier unanswered
-        # questions (e.g. a branch/rewind at a user message) remain model context.
-        if self.turn_id:
-            rows = [row for row in rows if _field(row, "id") != self.turn_id]
-        elif rows and _field(rows[-1], "role") == "user":
-            rows.pop()  # standalone callers supply the current question at the tail
-        from clio_agent.gact.agents.context_recovery import (
-            context_identity,
-            recorded_context,
-            recovery_details,
-            transcript_context,
-        )
+        segments = self.arc.context_view(self.session, self.scope).segments
+        committed = owner.history.committed_observations(self.session, self.scope)
+        from clio_agent.gact.task_access import TaskAccessDenied
 
-        restored = recorded_context(self.session, self.scope, ledger)
-        if restored:
-            fold_steps([s for s in restored if s.status == "live"])
-            identity = context_identity(self.arc, self.session, self.scope)
-            if self.arc.restore_empty_context(self.session, self.scope, restored):
-                note = f"Restored {len(restored)} recorded context segments for {self.scope} from the durable trace, including tool inputs and results."
-                self._write(
-                    "user", {"text": note, "source": "earlier_turns", "actor": "algorithm"}, 0, ""
+        for row in segments:
+            if (
+                row.kind == "observation"
+                and (
+                    row.content.get("notification_ids")
+                    or row.content.get("task_read_handles")
+                    or row.content.get("task_observe_handles")
                 )
-                emit_injection(
-                    "earlier_turns", recovery_details(note, restored), agent_id=self.expert_id
-                )
-                from clio_agent.gact import context
-                from clio_agent.gact.runtime.globals import _emit_semantic_event
-
-                app = context.active_app()
-                if app is not None:
-                    _emit_semantic_event(
-                        app,
-                        self.session,
-                        "context.recovered",
-                        turn_id=self.turn_id,
-                        status="completed",
-                        payload={
-                            **identity,
-                            "source": "durable_trace",
-                            "restored_segments": len(restored),
-                        },
+                and str(row.id) not in committed
+            ):
+                try:
+                    self._commit_collection(
+                        str(row.id),
+                        row.content,
+                        tuple(row.content.get("notification_ids", ())),
+                        str(row.content["call_id"]),
                     )
-            return
-        restored = transcript_context(self.session, self.scope, rows)
-        carried = len(restored)
-        if carried:
-            fold_steps(restored)
-            if not self.arc.restore_empty_context(self.session, self.scope, restored):
-                return
-            note = (
-                f"Reconstructed {carried} earlier context records from the saved transcript, "
-                "including recorded tool inputs and results. Provider continuation state is unavailable."
-            )
-            self._write(
-                "user", {"text": note, "source": "earlier_turns", "actor": "algorithm"}, 0, ""
-            )
-            emit_injection(
-                "earlier_turns", recovery_details(note, restored), agent_id=self.expert_id
-            )
+                except TaskAccessDenied:
+                    # ContextReader keeps this observation behind its existing safe
+                    # placeholder. Revocation must not strand unrelated accepted input.
+                    continue
+        segments = self.arc.context_view(self.session, self.scope).segments
+        collected = (identity,) if identity and human_head else ()
+        staged = (
+            StagedInput((), ())
+            if context.current().react_run >= 0
+            else owner.mail.stage(caller, collected=collected)
+        )
+        rendered = {}
+        for source, text in staged.injections:
+            for notification in text.notification_ids:
+                item = next(item for item in staged.items if item.id == notification)
+                payload = owner.history.read_content(item.content)
+                if item.kind == "delegation" and isinstance(payload, dict) and item.handle:
+                    from clio_agent.gact.assignment_evidence import render_delegation
+
+                    rendered[notification] = render_delegation(owner.history, item.handle, payload)
+                elif item.kind == "question_answer" and item.handle:
+                    from clio_agent.gact.question_surface import render_answer_input
+
+                    rendered[notification] = render_answer_input(
+                        app, caller, item.handle, str(text)
+                    )
+                elif (
+                    item.kind in {"human", "composer"}
+                    and isinstance(payload, dict)
+                    and payload.get("message")
+                ):
+                    from clio_agent.gact.messaging import queued_user_input
+
+                    rendered[notification] = queued_user_input(app, self.session, payload)
+                else:
+                    rendered[notification] = {
+                        "text": str(text),
+                        "source": source,
+                        "actor": "user" if source == "steer" else "algorithm",
+                    }
+        if identity and human_head:
+            rendered[identity] = human_head
+        staged = owner.mail.bound_rendered(staged, rendered)
+        from clio_agent.gact.session_store import project_accepted_mail_messages
+
+        project_accepted_mail_messages(app, owner.history, self.session, staged.items)
+        references = tuple(
+            owner.history.write_content(self.session, rendered[item.id])
+            for item in staged.items
+            if item.id in rendered
+        )
+        boundary = ContextBoundary(
+            session_id=self.session,
+            scope=self.scope,
+            logical_time=max((row.logical_time for row in segments), default=0),
+        )
+        owner.mail.commit(
+            caller,
+            staged,
+            assignment_id=assignment,
+            iteration_id=f"{self.turn_id}:{self.expert_span_id}:{step}"
+            + (f":recovery:{attempt}" if attempt else ""),
+            boundary=boundary,
+            turn_id=self.turn_id,
+            rendered_content=references,
+        )
+        for source, text in staged.injections:
+            if source != "steer":
+                for notification in text.notification_ids:
+                    value = rendered[notification]
+                    emit_injection(source, str(value.get("text", "")), agent_id=self.expert_id)
 
     def injections(self, injections: Sequence[tuple[str, str]]) -> None:
-        """Record CLIO's additions for this turn, each once.
-
-        An addition whose text equals the latest recorded one from the same source is
-        still in the model's context, so it is not repeated (prefix reuse); a changed
-        one is recorded again, as a new message.
-        """
+        """Record changed CLIO additions; retain identical existing context for prefix reuse."""
         if self.arc is None or not injections:
             return
         latest: dict[str, str] = {}
+        included_ids: set[str] = set()
         for seg in self.arc.render_working_set(self.session, self.scope):
             content = getattr(seg, "content", None) or {}
+            included_ids.update(content.get("notification_ids", []))
             if getattr(seg, "kind", "") == "user" and content.get("actor") == "algorithm":
                 latest[str(content.get("source"))] = str(content.get("text"))
         for source, text in injections:
+            identities = getattr(text, "notification_ids", ())
+            if identities and all(identity in included_ids for identity in identities):
+                continue
             if text and latest.get(source) != text:
-                record = {"text": text, "source": source, "actor": "algorithm"}
+                record: dict[str, Any] = {"text": str(text), "source": source, "actor": "algorithm"}
+                identities = getattr(text, "notification_ids", ())
+                if identities:
+                    record["notification_ids"] = list(identities)
                 self._write("user", record, 0, "")
-                emit_injection(source, text, agent_id=self.expert_id)
+                included_ids.update(identities)
+                emit_injection(source, str(text), agent_id=self.expert_id)
                 latest[source] = text
 
     def arrivals(self, arrivals: Sequence[tuple[str, str]], step: int) -> None:
@@ -541,10 +529,20 @@ class StepRecorder:
         """
         for source, text in arrivals:
             actor = "user" if source == "steer" else "algorithm"
-            record = {"text": text, "source": source, "actor": actor}
+            record: dict[str, Any] = {"text": str(text), "source": source, "actor": actor}
+            identities = getattr(text, "notification_ids", ())
+            if identities:
+                existing = {
+                    identity
+                    for segment in self.arc.render_working_set(self.session, self.scope)
+                    for identity in segment.content.get("notification_ids", [])
+                }
+                if all(identity in existing for identity in identities):
+                    continue
+                record["notification_ids"] = list(identities)
             self._write("user", record, step, "")
             if actor == "algorithm":
-                emit_injection(source, text, agent_id=self.expert_id)
+                emit_injection(source, str(text), agent_id=self.expert_id)
 
     def step_open(self, step: int, span: str, text: str, calls: Sequence[ToolCallPart]) -> None:
         """The pre-execution breadcrumb: a crash mid-step still leaves the step's opening."""
@@ -588,22 +586,52 @@ class StepRecorder:
         }
         if not thinking_complete:
             thought["thinking_incomplete"] = True
-        self._write("thought", thought, step, span)
+        thought_id = self._write("thought", thought, step, span)
         rows: list[dict[str, Any]] = []
         for call in calls:
             value, is_error = results.get(call.id, ("", False))
+            from clio_agent.gact.tool_observation import CollectedTaskResult
+
+            notification_ids = (
+                list(value.notification_ids) if isinstance(value, CollectedTaskResult) else []
+            )
+            read_handles = (
+                list(value.read_handles) if isinstance(value, CollectedTaskResult) else []
+            )
+            observe_handles = (
+                list(value.observe_handles) if isinstance(value, CollectedTaskResult) else []
+            )
             self._write(
                 "tool_call",
                 {"id": call.id, "name": call.name, "args": dict(call.input)},
                 step,
                 span,
             )
-            self._write(
-                "observation",
-                {"call_id": call.id, "text": _arc_obs_value(value), "is_error": is_error},
-                step,
-                span,
-            )
+            observation = {
+                "call_id": call.id,
+                "text": _arc_obs_value(value),
+                "is_error": is_error,
+                **({"notification_ids": notification_ids} if notification_ids else {}),
+                **({"task_read_handles": read_handles} if read_handles else {}),
+                **({"task_observe_handles": observe_handles} if observe_handles else {}),
+                **(
+                    {"task_collection": False}
+                    if isinstance(value, CollectedTaskResult) and not value.collect
+                    else {}
+                ),
+            }
+            observation_id = self._write("observation", observation, step, span)
+            if notification_ids or read_handles or observe_handles:
+                from clio_agent.gact.task_access import TaskAccessDenied
+
+                try:
+                    self._commit_collection(
+                        observation_id, observation, tuple(notification_ids), call.id
+                    )
+                except TaskAccessDenied:
+                    # The original observation stays protected by ContextReader.
+                    # Legitimate revocation does not fail the unrelated assignment.
+                    logger.info("Task disclosure withheld before input commit: %s", observation_id)
             rows.append(
                 {
                     "id": call.id,
@@ -612,6 +640,30 @@ class StepRecorder:
                     "observation": value,
                     "is_error": is_error,
                 }
+            )
+        from clio_agent.gact import context
+
+        owner = getattr(getattr(context.active_app(), "state", None), "conversations", None)
+        if (
+            owner is not None
+            and context.current().react_run < 0
+            and context.active_assignment_handle()
+        ):
+            import hashlib
+
+            from clio_agent.arc.task_types import CoreReference
+            from clio_agent.gact.task_history import _encoded
+
+            owner.record_progress(
+                context.active_assignment_handle(),
+                CoreReference(
+                    session_id=self.session,
+                    scope=self.scope,
+                    content_id=thought_id,
+                    sha256=hashlib.sha256(_encoded(thought)).hexdigest(),
+                ),
+                tuple(call.name for call in calls),
+                step,
             )
         _emit_react_step_event(
             expert_id=self.expert_id,
@@ -622,6 +674,40 @@ class StepRecorder:
             reasoning="".join(t.text for t in thinking),
             tool_calls=rows,
             is_finish=any(call.name == "submit" for call in calls),
+        )
+
+    def _commit_collection(
+        self, identity: str, content: dict[str, Any], notifications: tuple[str, ...], call_id: str
+    ) -> None:
+        """Delegate durable result disclosure to the existing session input owner."""
+        import hashlib
+
+        from clio_agent.arc.task_types import ContextBoundary, CoreReference
+        from clio_agent.gact import context
+        from clio_agent.gact.task_history import _encoded
+
+        app = context.active_app()
+        if app is None:
+            raise RuntimeError("Task collection requires its owning application")
+        segments = self.arc.context_view(self.session, self.scope).segments
+        app.state.conversations.mail.commit_collection(
+            app,
+            app.state.conversations.caller(self.session),
+            CoreReference(
+                session_id=self.session,
+                scope=self.scope,
+                content_id=identity,
+                sha256=hashlib.sha256(_encoded(content)).hexdigest(),
+            ),
+            notifications,
+            assignment_id=context.active_assignment_handle(),
+            iteration_id=f"tool:{self.turn_id}:{self.expert_span_id}:{call_id}",
+            turn_id=self.turn_id,
+            boundary=ContextBoundary(
+                session_id=self.session,
+                scope=self.scope,
+                logical_time=max((row.logical_time for row in segments), default=0),
+            ),
         )
 
     def completed(
@@ -704,41 +790,6 @@ def _token_estimate(content: Mapping[str, Any]) -> int:
     media = content.get("media") or []
     text = {k: v for k, v in content.items() if k != "media"}
     return max(1, len(json.dumps(text, default=str)) // 4 + _MEDIA_TOKENS * len(media))
-
-
-def _field(row: Any, name: str) -> Any:
-    return row.get(name) if isinstance(row, Mapping) else getattr(row, name, None)
-
-
-def pending_turn_yield(calls: Sequence[ToolCallPart]) -> str:
-    """The successful turn-ending tool in this step (``ask_user`` / ``plan_exit``), if any.
-
-    The tool name alone is not enough: a rejected ``plan_exit`` or malformed
-    ``ask_user`` stays an ordinary tool error. The un-surfaced session-metadata record
-    the tool wrote is the proof it completed and the turn should yield to the user.
-    """
-    from clio_agent.gact import context as _ctx  # noqa: PLC0415
-
-    names = {call.name for call in calls}
-    if not names.intersection(TURN_YIELD_METADATA):
-        return ""
-    app = _ctx.active_app()
-    session_id = _ctx.active_session_id()
-    sessions = getattr(getattr(app, "state", None), "sessions", None)
-    session = sessions.get(session_id) if sessions is not None and session_id else None
-    metadata = getattr(session, "metadata", None)
-    if not isinstance(metadata, Mapping):
-        return ""
-    for tool_name, key in TURN_YIELD_METADATA.items():
-        pending = metadata.get(key)
-        if (
-            tool_name in names
-            and isinstance(pending, Mapping)
-            and pending
-            and not pending.get("surfaced")
-        ):
-            return tool_name
-    return ""
 
 
 def _text(value: Any) -> str:

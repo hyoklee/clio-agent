@@ -152,8 +152,8 @@ if ($ClioRef) {
         RunNative uv @('venv', '--python', '3.13', $Venv)
         RunNative uv @(
             'pip', 'install', '--quiet', '--python', (Join-Path $Venv 'Scripts\python.exe'),
-            $pkgSpec, 'dspy==3.4.0', 'fastmcp==4.0.0b5',
-            'fastmcp-slim==4.0.0b5', 'fastmcp-tasks==4.0.0b5'
+            $pkgSpec, 'dspy==3.4.0', 'fastmcp==4.1.0',
+            'fastmcp-slim==4.1.0', 'fastmcp-tasks==4.1.0'
         )
     } else {
         RunNative python @('-m', 'venv', $Venv)
