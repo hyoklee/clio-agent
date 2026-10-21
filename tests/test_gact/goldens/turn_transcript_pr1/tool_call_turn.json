@@ -215,8 +215,10 @@
             "title": "CLIO Main Agent",
             "tools": [
               "fs_apply_edit_write",
+              "fs_list_directory",
               "fs_propose_edit",
               "fs_read_file",
+              "fs_search_text",
               "prepare_document",
               "prepare_document_runtime",
               "prepare_execution_runtime",
@@ -226,7 +228,7 @@
             ]
           },
           "prompt_resolution": {
-            "checksum": "a045d8dcae7f5cc7dbd926c09bf1dd1ed75c3b0f5988bef57b7ed59c9e790d13",
+            "checksum": "8dea078acb1f18f51f97b3981a7b620f52659d4d045d1bd3cb02b4f88d14178a",
             "id": "clio.chat",
             "profile": "default",
             "scope": "builtin",

@@ -247,6 +247,42 @@ class FileAccessPolicy:
 
     def validate_read(self, filepath: str, *, field: str = "filepath") -> Path:
         """Validate a read-only file path and return its resolved path."""
+        resolved = self._validate_read_location(filepath, field=field)
+        if not resolved.is_file():
+            raise self._error(
+                code="not_a_file",
+                message=f"Path is not a regular file: {resolved}",
+                field=field,
+                path=str(resolved),
+                next_action="Provide a regular file path.",
+            )
+        size = resolved.stat().st_size
+        if size > self.max_file_size_bytes:
+            raise self._error(
+                code="file_too_large",
+                message=f"File size {size} exceeds policy limit {self.max_file_size_bytes}: {resolved}",
+                field=field,
+                path=str(resolved),
+                next_action="Raise CLIO_MAX_FILE_SIZE_BYTES or use a smaller file sample.",
+                details={"size_bytes": size, "max_file_size_bytes": self.max_file_size_bytes},
+            )
+        return resolved
+
+    def validate_read_directory(self, path: str, *, field: str = "path") -> Path:
+        """Validate directory inspection through the same read roots and link policy."""
+        resolved = self._validate_read_location(path, field=field)
+        if not resolved.is_dir():
+            raise self._error(
+                code="not_a_directory",
+                message=f"Path is not a directory: {resolved}",
+                field=field,
+                path=str(resolved),
+                next_action="Provide an existing directory path.",
+            )
+        return resolved
+
+    def _validate_read_location(self, filepath: str, *, field: str) -> Path:
+        """Resolve one approved existing read target before checking its entry type."""
         raw_path = _coerce_path(filepath, field=field)
         self._check_connected_storage(raw_path, field=field)
         if not self.allow_symlinks and _has_symlink(raw_path):
@@ -271,27 +307,6 @@ class FileAccessPolicy:
 
         if not self.allows_source_read(resolved):
             self._ensure_allowed(resolved, field=field)
-        if not resolved.is_file():
-            raise self._error(
-                code="not_a_file",
-                message=f"Path is not a regular file: {resolved}",
-                field=field,
-                path=str(resolved),
-                next_action="Provide a regular file path.",
-            )
-
-        size = resolved.stat().st_size
-        if size > self.max_file_size_bytes:
-            raise self._error(
-                code="file_too_large",
-                message=(
-                    f"File size {size} exceeds policy limit {self.max_file_size_bytes}: {resolved}"
-                ),
-                field=field,
-                path=str(resolved),
-                next_action="Raise CLIO_MAX_FILE_SIZE_BYTES or use a smaller file sample.",
-                details={"size_bytes": size, "max_file_size_bytes": self.max_file_size_bytes},
-            )
         return resolved
 
     def allows_source_read(self, path: Path) -> bool:
