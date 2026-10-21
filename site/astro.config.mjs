@@ -86,6 +86,7 @@ export default defineConfig({
 								{ label: 'Messages and feedback', slug: 'docs/tasks/messages' },
 								{ label: 'Tools and sources', slug: 'docs/tasks/tools-and-sources' },
 								{ label: 'Session coordination', slug: 'docs/tasks/session-coordination' },
+								{ label: 'Real conversations', slug: 'docs/tasks/recorded-conversations' },
 							],
 						},
 						{ label: 'Answer a question', slug: 'docs/questions' },
