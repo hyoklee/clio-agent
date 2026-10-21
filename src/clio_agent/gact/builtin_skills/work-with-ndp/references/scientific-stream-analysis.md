@@ -8,6 +8,18 @@ continuation value is normally the agent's work.
 
 ## Establish what is being delivered
 
+For cataloged Kafka sources, use the configured `streaming_v2` SDK operations
+returned by `connected_data_ndp_endpoint_operations`. Select the exact catalog
+resource ID with `SDK streaming_v2.open`, capture with `SDK streaming_v2.read`,
+and analyze the retained resource. CLIO preserves the records returned during
+SDK initialization and owns durable partition positions between finite captures.
+Use `SDK streaming_v2.stop`/`resume` for the reader. These controls do not stop
+the independent source producer. Do not substitute custom Endpoint `/streams`
+HTTP routes or ask the user to copy cursors. An SDK runtime that is not configured
+is a CLIO setup requirement, not evidence that NDP refused access or lacks data.
+The separately installed SDK and private broker profile run on the connected
+computer or its approved SSH target; broker credentials remain private there.
+
 Inspect the selected catalog/resource metadata, provider documentation and actual
 payload. Establish the producing instrument or model, variable meanings and units,
 time encoding, reference frame and documented processing. Distinguish:

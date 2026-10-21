@@ -124,6 +124,22 @@ separately through approval. Do not work around a denied role with shell HTTP.
 
 ## Archived-file sampling and finite replay
 
+For actual cataloged Kafka sources, prefer the configured `streaming_v2` SDK
+operations. They are labeled `SDK`, separately from the Endpoint's observed HTTP
+API. Open the selected catalog resource, read bounded batches, and keep the
+returned CLIO checkpoint internally. Retrying the same cursor returns the same
+saved capture; an ordinary subsequent read continues at the current saved
+position. Reader stop/resume preserves those positions across turns and CLIO
+service restarts. It does not start or stop the source producer. Expired history,
+reset offsets or a changed source identity must be reported rather than silently
+restarting. See `scientific-stream-analysis.md` for scientific interpretation.
+
+The SDK is a separate consuming-application dependency, not an Endpoint install
+requirement. A configured runtime selects its interpreter and private broker
+profile. NDP sign-in and Kafka credentials are separate; never put broker secrets
+in tool parameters or ordinary conversation text. Keep replay/bridge HTTP
+services below distinct from these Kafka SDK operations.
+
 Use replay when it matches the user's requested source and purpose. Establish the
 file's provenance and processing before treating its values as scientific
 observations. A published CSV, or a URL supplied to a replay service, is not
