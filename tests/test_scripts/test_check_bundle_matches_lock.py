@@ -43,6 +43,19 @@ def _load_module() -> ModuleType:
 cbl = _load_module()
 
 
+def test_standalone_resolution_entry_point_needs_no_site_packages() -> None:
+    """The bare-interpreter CI resolution command must import without runtime dependencies."""
+    result = subprocess.run(
+        [sys.executable, "-I", "-S", str(SCRIPT), "--help"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "--resolve" in result.stdout
+
+
 @pytest.mark.parametrize("python_version", ["3.12.12", "3.13.9", "3.14.8", "3.15.0"])
 @pytest.mark.parametrize("platform", ["linux", "win32", "darwin"])
 def test_real_lock_selects_the_runtime_python_fork(python_version: str, platform: str) -> None:

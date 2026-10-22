@@ -40,8 +40,8 @@ Usage::
     python scripts/check_bundle_matches_lock.py --python <path/to/python>
     python scripts/check_bundle_matches_lock.py --resolve
 
-The script uses ``uv`` on PATH and the runtime's declared ``packaging`` dependency.
-Lock markers are evaluated for the interpreter being checked.
+Runtime validation uses the runtime's declared ``packaging`` dependency to evaluate
+markers for the interpreter being checked. ``--resolve`` needs only stdlib and ``uv``.
 """
 
 from __future__ import annotations
@@ -56,8 +56,6 @@ import tempfile
 import tomllib
 from collections.abc import Mapping
 from pathlib import Path
-
-from packaging.markers import Marker, default_environment
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -121,6 +119,8 @@ def load_lock_versions(
         FileNotFoundError: If ``lock_path`` does not exist.
         ValueError: If the lock is empty or selects conflicting versions of a package.
     """
+    from packaging.markers import Marker, default_environment
+
     data = tomllib.loads(lock_path.read_text(encoding="utf-8"))
     packages = data.get("package", [])
     if not packages:
