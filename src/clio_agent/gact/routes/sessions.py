@@ -203,9 +203,7 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
             summary=f"delete session {sid}",
             reason="user_requested_session_delete",
         )
-        active = app.state.task_history.tree_handles(sid) & app.state.task_history.task_handles(
-            active_only=True
-        )
+        active = app.state.task_history.tree_handles(sid, active_only=True)
         if active or app.state.turn_runner.busy(sid):
             raise HTTPException(
                 status_code=409,
@@ -233,7 +231,7 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
                 ).model_dump(exclude_none=True),
             ) from exc
         await run_off_loop(deps.delete_session_messages, app, sid)  # clio-core first: 503 keeps it
-        existed = app.state.sessions.delete(sid)
+        existed = await run_off_loop(app.state.sessions.delete, sid)  # trusted: off-loop only
         if not existed:
             raise HTTPException(
                 status_code=404,

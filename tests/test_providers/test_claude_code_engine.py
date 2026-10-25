@@ -294,7 +294,7 @@ def test_xml_parameter_fragment_is_a_protocol_error_not_a_completed_answer(pool:
         ('[{"name":"search","arguments":{"q":"actual data"}}]\n```', "missing opening"),
         ('<invoke name="search"><parameter name="q">actual data</parameter></invoke>', "XML"),
         ('<parameter name="q">actual data</parameter>\n</invoke>\n</invoke>', "XML"),
-        pytest.param("<br>\n" * 2000, "only HTML line breaks", id="formatting-only"),
+        pytest.param("<br>\n" * 2000, "only line breaks or one word", id="formatting-only"),
         pytest.param(
             '{"tool_calls":[{"name":"search","arguments":{"q":"actual data"}}]}',
             "fenced",
@@ -456,8 +456,10 @@ def test_a_dropped_client_of_another_session_leaves_this_one_kept(
 def test_the_sdk_cost_reaches_the_turn_usage_as_known(pool: FakePool) -> None:
     import dspy
 
-    from clio_agent.gact.usage import _usage_from_history_slice
+    from clio_agent.gact.usage import _usage_from_turn_calls
     from clio_agent.providers.claude_code_engine import ClaudeCodeEngine
+    from clio_agent.runtime.turn_lm_ledger import route_history
+    from tests._turn_ledger import turn_with_calls
 
     priced = _result()
     priced.total_cost_usd = 0.0125
@@ -469,9 +471,10 @@ def test_the_sdk_cost_reaches_the_turn_usage_as_known(pool: FakePool) -> None:
         cache=False,
         num_retries=0,
     )
-    lm(_request(HEAD))
-    with dspy.context(lm=lm):
-        usage = _usage_from_history_slice(0)
+    route_history(lm)  # as the lm.call callback every clio LM carries does
+    with turn_with_calls():
+        lm(_request(HEAD))
+        usage = _usage_from_turn_calls(0)
     assert (usage["cost_usd"], usage["cost_known"]) == (0.0125, True)
 
 
