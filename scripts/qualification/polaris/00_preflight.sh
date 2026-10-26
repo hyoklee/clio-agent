@@ -92,15 +92,18 @@ for url in https://github.com https://pypi.org/simple/ https://huggingface.co ht
 done
 
 # --- Apptainer (fallback only) --------------------------------------------------------------
-# --- native Flowcept prerequisites (CLIO builds Valkey, runs MongoDB's verified suse15 build) --
+# --- native Flowcept prerequisites (prebuilt Valkey + MongoDB's verified build; nothing is compiled) --
 add os_release "\"$(. /etc/os-release 2>/dev/null; echo "${ID:-?} ${VERSION_ID:-?}")\""
-add cc "\"$(command -v cc >/dev/null 2>&1 && cc --version 2>/dev/null | head -1 || echo none)\""
-add make "\"$(command -v make >/dev/null 2>&1 && make --version 2>/dev/null | head -1 || echo none)\""
+glibc=$(ldd --version 2>/dev/null | head -1 | awk '{print $NF}')
+add glibc "\"${glibc:-unknown}\""
 openssl11=$(/sbin/ldconfig -p 2>/dev/null | grep -c 'libssl.so.1.1 ' || true)
 add libssl_1_1 "${openssl11:-0}"
 if [ "$FLOWCEPT_VARIANT" = native ]; then
-  command -v cc >/dev/null 2>&1 && command -v make >/dev/null 2>&1 \
-    || problems+=("native Flowcept needs cc and make (module load gcc, or FLOWCEPT_VARIANT=managed)")
+  # Valkey's prebuilt Linux binary needs glibc 2.34+ (e.g. SLES 15 SP6, not SP5).
+  case "$(printf '%s\n2.34\n' "${glibc:-0}" | sort -V | head -1)" in
+    2.34) ;;
+    *) problems+=("native Flowcept needs glibc 2.34+ for Valkey's prebuilt binary; this host has ${glibc:-unknown}. Use FLOWCEPT_VARIANT=managed (Apptainer databases)") ;;
+  esac
   # Only MongoDB's suse15 build links OpenSSL 1.1; the other verified builds use the host's own.
   case "$(. /etc/os-release 2>/dev/null; echo "${ID:-}")" in
     sles|sled|sle_hpc|opensuse-leap)
