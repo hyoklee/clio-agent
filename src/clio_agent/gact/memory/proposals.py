@@ -6,9 +6,9 @@ document when it is new), supersede a fact, merge documents, retire a document -
 candidates it rests on. The server stamps each new fact's provenance from those
 candidates (the model never writes annotations), previews the result against the
 current document, and stores a ``memory_proposals`` record. A proposal changes memory
-only when it is accepted: by the user in the inbox, or by the auto-accept rule
-(``memory.auto_accept: user_stated``) when every source it rests on is ``user``.
-Anything resting on a ``tool`` or ``imported`` source always waits for review.
+only when it is accepted: by the user in the inbox, or by the selected auto-accept
+rule. ``user_stated`` applies only when every source is ``user``; ``all`` also applies
+changes based on tool and imported evidence. The source is always retained on the fact.
 
 Accepting re-applies the change to the document as it is then (so a document edited in
 between keeps its edits) and writes it through the memory service with the proposal
@@ -80,11 +80,13 @@ class Proposal:
     base_text: str = ""
     proposed_text: str = ""
     notes: list[str] = field(default_factory=list)
+    applied_before_text: str = ""
+    applied_text: str | None = None
 
     @property
     def needs_review(self) -> bool:
         """Whether any source keeps it out of auto-accept."""
-        return bool(REVIEW_SOURCES & set(self.sources))
+        return self.status == "pending" and bool(REVIEW_SOURCES & set(self.sources))
 
 
 def _now() -> str:
@@ -287,7 +289,7 @@ class ProposalStore:
         proposal.base_text = current.text if current else ""
         proposal.proposed_text = md.serialize(document) if document is not None else ""
         self._put(proposal)
-        if auto_accept == "user_stated" and proposal.sources == ["user"]:
+        if auto_accept == "all" or (auto_accept == "user_stated" and proposal.sources == ["user"]):
             return self.accept(proposal.id, decided_by="auto_accept")
         return proposal
 
@@ -313,17 +315,28 @@ class ProposalStore:
         ]
         author = Author("proposal", proposal.id, session=proposal.origin)
         document, base_sha = apply_change(self._service, proposal, evidence)
+        before = self._service.get(proposal.target)
+        if (before.sha if before else "") != base_sha:
+            from clio_agent.gact.memory.service import MemoryConflict  # noqa: PLC0415
+
+            raise MemoryConflict(
+                proposal.target, expected=base_sha, current=before.sha if before else ""
+            )
         if document is None:
             self._service.remove(proposal.target, expected_sha=base_sha, author=author)
+            applied_text = ""
         else:
-            self._service.write(
+            written = self._service.write(
                 proposal.target, document, expected_sha=base_sha or None, author=author
             )
+            applied_text = written.text
         for name in proposal.merge_from if proposal.change == "merge" else []:
             other = self._service.get(name)
             if other is not None:
                 self._service.remove(name, expected_sha=other.sha, author=author)
         proposal.status = "accepted"
+        proposal.applied_before_text = before.text if before else ""
+        proposal.applied_text = applied_text
         proposal.decided_by = decided_by
         proposal.decided_at = _now()
         self._put(proposal)

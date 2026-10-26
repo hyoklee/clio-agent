@@ -134,7 +134,26 @@ class Factorio(ScienceAgent):
 | `ctx.gather(calls, limit=, return_when=)` | Runs calls concurrently, bounded; `ctx.as_completed` yields each result as it settles, with no superstep barrier | `TaskOperations.wait` with `all` or `any` |
 | `ctx.ask(question, schema=)` | Asks the human and resumes on the answer | A Question task |
 | `ctx.step(fn, *args)` | Records any other side effect | A checkpoint in task history |
+| `ctx.permission_receipts()` | Snapshots historical tool-permission decisions for this assignment and confirmed descendants | ARC semantic events, pinned in the flow checkpoint |
+| `ctx.tool_results(handle)` | Reads exact terminal tool results in a confirmed child subtree | Content-addressed results, pinned metadata and current task-read authorization |
 | `ctx.workspace` | The session's workspace, for state that outlives one call | The existing workspace |
+
+Permission receipts carry safe ownership/scope identifiers, tool names, historical
+decisions and linked policy-refresh provenance; request arguments and policy
+resource patterns are omitted. Legacy events without confirmed assignment
+identity are excluded, so absence is not evidence that no decision occurred.
+Receipts do not authorize a call or establish current authority. Replaying a
+snapshot preserves what an earlier call saw. At a new review boundary, after
+reattaching earlier work, `ctx.permission_receipts(refresh=True)` observes current
+durable history and pins a new content-versioned snapshot. Use that to review new
+input explicitly, rather than changing an accepted call's original evidence.
+
+Tool evidence is a passive read: it starts no work and waits for none. The
+checkpoint pins the confirmed terminal task inventory and result references, not
+copies of their potentially large bodies. Replaying the same observation keeps
+that inventory; a later call can observe later tool completions. Each body read
+checks current authorization before and after disclosure and refuses a changed
+reference. The selected assignment must belong to the flow's confirmed subtree.
 
 An HPC job is a `ctx.call` on a task-capable MCP tool, now that relay is an ordinary MCP server, so there is no separate job primitive. Predictors called directly in `forward()` are model calls made inside the flow's own assignment.
 

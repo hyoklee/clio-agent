@@ -31,11 +31,11 @@ from collections.abc import AsyncIterator, Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
-from clio_agent.flows.call_metadata import child_model, child_session_metadata
+from clio_agent.flows.budget import FlowBudget
+from clio_agent.flows.call_metadata import child_model
 from clio_agent.flows.journal import FlowJournal, digest
 from clio_agent.flows.outcomes import (
     STATUS_OUTCOMES,
-    CallCancelled,
     CallFailed,
     CallRefused,
     FlowCheckpointLimit,
@@ -65,9 +65,11 @@ class FlowCall:
         invocation: str,
         evidence: list[str] | None,
         model: str = "",
+        label: str = "",
     ) -> None:
         self.ctx = ctx
         self.model = model  #: The model the child runs on; empty lets the child decide.
+        self.label = label.strip()  #: The child's human-facing name, separate from its target.
         self.target = target
         self.kind = kind
         self.name = name
@@ -137,7 +139,7 @@ class FlowContext:
         self._open_lock = asyncio.Lock()
         self._occurrences: dict[str, int] = {}
         self._model_calls = 0
-        self._spent_tokens = 0
+        self._budget = FlowBudget(app, self.journal, self.limits["budget_tokens"])
         concurrency = self.limits["max_concurrency"]
         self._slots = asyncio.Semaphore(concurrency if concurrency > 0 else 1_000_000)
         self.workflow_state: dict[str, Any] = {}
@@ -269,6 +271,7 @@ class FlowContext:
         evidence: list[str] | None = None,
         key: str = "",
         model: str = "",
+        label: str = "",
     ) -> FlowCall:
         """Run a subagent, agent, flow or tool and return its result (awaitable).
 
@@ -281,6 +284,8 @@ class FlowContext:
         ``key`` replaces the call site in the invocation id when the caller
         starts calls in an order replay may not repeat (the workflow flow keys each
         node's call by node id); keys must be unique within the run.
+        ``label`` names the child in its conversation, permissions and work views;
+        it does not replace the target or the durable invocation identity.
         """
 
         kind, name, spec = self._resolve_target(target)
@@ -297,6 +302,7 @@ class FlowContext:
             invocation,
             evidence,
             model or self.default_model,
+            label,
         )
         if kind == "flow":
             call.target = spec
@@ -310,10 +316,11 @@ class FlowContext:
         evidence: list[str] | None = None,
         key: str = "",
         model: str = "",
+        label: str = "",
     ) -> str:
         """Like :meth:`call`, but return the task handle once it is accepted."""
 
-        call = self.call(target, input, evidence=evidence, key=key, model=model)
+        call = self.call(target, input, evidence=evidence, key=key, model=model, label=label)
         if call.kind == "tool":
             raise CallRefused(
                 "ctx.start needs a subagent, agent or flow, not a tool", target=call.name
@@ -360,7 +367,15 @@ class FlowContext:
         if return_when == "any" and tasks:
             done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             return [task.result() if task in done else None for task in tasks]
-        results = list(await asyncio.gather(*tasks))
+        try:
+            results = list(await asyncio.gather(*tasks))
+        except Exception:
+            # A raw infrastructure exception can escape before ``gather`` has
+            # received the accepted handles. Retire only this gather's calls.
+            from clio_agent.flows.gather_cleanup import quiesce_gather  # noqa: PLC0415
+
+            await quiesce_gather(self, items, tasks)
+            raise
         await self.merge_results(results)
         if not return_exceptions and any(isinstance(r, FlowOutcome) for r in results):
             raise GatherFailed(
@@ -507,6 +522,27 @@ class FlowContext:
         await self.journal.record_step(invocation, {"name": name, "result": _plain(result)})
         return result
 
+    async def permission_receipts(self, *, refresh: bool = False) -> dict[str, Any]:
+        """Snapshot attributable tool-permission history for this run and its children.
+
+        Each call is checkpointed: replay sees the same evidence for that point
+        in the flow, while a later call may observe new decisions. The receipts
+        omit request arguments and describe history, never current authority.
+        Legacy events without confirmed assignment attribution are excluded.
+        ``refresh=True`` explicitly observes current durable history and pins a
+        content-versioned snapshot. Use that at a new review boundary after
+        reattaching earlier calls, not to change an accepted call's original input.
+        """
+        from clio_agent.flows.permission_evidence import permission_receipts  # noqa: PLC0415
+
+        return await permission_receipts(self, refresh=refresh)
+
+    async def tool_results(self, handle: str) -> list[dict[str, Any]]:
+        """Read pinned terminal tool results from this flow's confirmed child subtree."""
+        from clio_agent.flows.tool_evidence import tool_results  # noqa: PLC0415
+
+        return await tool_results(self, handle)
+
     async def react(self, task: Any) -> Any:
         """Run the agent's own ReAct program on ``task`` inside this assignment."""
 
@@ -554,14 +590,6 @@ class FlowContext:
                 limit="max_model_calls",
                 target=name,
             )
-        budget = self.limits["budget_tokens"]
-        if budget and self._spent_tokens >= budget:
-            raise FlowLimitExceeded(
-                f"flow {self.journal.flow_id} spent its {budget}-token budget",
-                limit="budget_tokens",
-                spent=self._spent_tokens,
-                target=name,
-            )
         if kind == "flow":
             max_depth = self.limits["max_depth"]
             if max_depth and self._depth + 1 > max_depth:
@@ -580,62 +608,9 @@ class FlowContext:
             return await self._wait(handle, call.invocation, kind=call.kind, name=call.name)
 
     async def _accept(self, call: FlowCall) -> str:
-        from clio_agent.gact.task_access import AdmissionClosed  # noqa: PLC0415
+        from clio_agent.flows.dispatch import accept_call  # noqa: PLC0415
 
-        row = self.journal.call(call.invocation)
-        if row is not None and row.get("handle"):
-            return str(row["handle"])
-        app = self.app
-        agent_id = "self" if call.kind == "flow" else call.name
-        session_metadata = child_session_metadata(call, self._depth + 1, self.journal.run_id)
-        launch_context: dict[str, Any] | None = None
-        if call.evidence:
-            from clio_agent.gact.assignment_evidence import (  # noqa: PLC0415
-                select_assignment_evidence,
-            )
-
-            pins = await app.state.task_history.io.run(
-                select_assignment_evidence, app.state.task_history, self.caller, call.evidence
-            )
-            launch_context = {"input_task_refs": [pin.model_dump(mode="json") for pin in pins]}
-        try:
-            accepted = await app.state.conversations.spawn(
-                self.caller,
-                render_input(call.input),
-                agent_id,
-                call.invocation,
-                launch_context=launch_context,
-                session_metadata=session_metadata,
-                parent_handle=self.root_handle,
-                model=call.model,
-            )
-        except AdmissionClosed as exc:
-            if exc.stopping:
-                # The run is being cancelled: the call is cancelled with it.
-                raise CallCancelled(str(exc), target=call.name, status="cancelled") from exc
-            raise CallRefused(str(exc), target=call.name) from exc
-        except ValueError as exc:
-            code = str(getattr(exc, "code", "") or "")
-            raise CallRefused(str(exc), target=call.name, reason_code=code) from exc
-        if not accepted.get("accepted", False):
-            raise CallRefused(
-                str(accepted.get("error") or accepted.get("reason") or "call was not accepted"),
-                target=call.name,
-                reason_code=accepted.get("reason", ""),
-            )
-        handle = str(accepted["handle"])
-        await self.journal.record_call(
-            call.invocation,
-            {
-                "kind": call.kind,
-                "target": call.name,
-                "handle": handle,
-                "session_id": accepted.get("session_id", ""),
-                "status": "accepted",
-                **({"together": call.together} if call.together else {}),
-            },
-        )
-        return handle
+        return await accept_call(self, call)
 
     def _collect(self, handle: str) -> None:
         """Retire the settled task's notice: the flow consumed its result.
@@ -673,7 +648,6 @@ class FlowContext:
             raise CallFailed(
                 f"{kind} {name!r}: {outcome['error']}", handle=handle, error=outcome["error"]
             )
-        await self._account(outcome)
         if status != "completed":
             await self._settle(invocation, status or "unknown")
             exception = STATUS_OUTCOMES.get(status, CallFailed)
@@ -703,23 +677,6 @@ class FlowContext:
         row = self.journal.call(invocation)
         if row is not None and row.get("status") != status:
             await self.journal.record_call(invocation, {**row, "status": status})
-
-    async def _account(self, outcome: Mapping[str, Any]) -> None:
-        """Add the child's model tokens to the run's spend (the budget limit)."""
-
-        if not self.limits["budget_tokens"]:
-            return
-        row = next(
-            (
-                r
-                for r in self.journal.content["calls"].values()
-                if r.get("handle") == outcome.get("handle")
-            ),
-            None,
-        )
-        session = self.app.state.sessions.get(str((row or {}).get("session_id") or ""))
-        if session is not None:
-            self._spent_tokens += int(session.tokens_input or 0) + int(session.tokens_output or 0)
 
     async def _run_tool(self, call: FlowCall) -> CallResult:
         recorded = self.journal.step(call.invocation)

@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier
+from typing import Any
 
 import pytest
 
 from clio_agent.plugins.check import check
 from clio_agent.plugins.resolve import Delta, ResolutionError
 from clio_agent.plugins.service import PluginService
-from clio_agent.plugins.store import PluginStore, StoreError, builtin_records
+from clio_agent.plugins.store import PluginStore, StoreError, UserAgent, builtin_records
 from tests.test_plugins.helpers import NATIVE, fragment, plugin, tools_module, write
 
 AGENTS = """
@@ -57,6 +60,28 @@ def _market(root: Path, *, version: str = "1.0.0") -> Path:
 
 def _service(tmp_path: Path) -> PluginService:
     return PluginService(PluginStore(tmp_path / "store"), native_tools=_native())
+
+
+def test_parallel_resolution_pins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Parallel child launches can pin the same resolution without sharing staging files."""
+    stores = [PluginStore(tmp_path / "store") for _ in range(3)]
+    ready = Barrier(len(stores))
+    write_text = Path.write_text
+
+    def simultaneous_staging(path: Path, data: str, *args: Any, **kwargs: Any) -> int:
+        count = write_text(path, data, *args, **kwargs)
+        if path.parent == tmp_path / "store" / "resolved" and path.suffix == ".tmp":
+            ready.wait(timeout=5)
+        return count
+
+    monkeypatch.setattr(Path, "write_text", simultaneous_staging)
+    payload = {"plugins": ["core", "web"], "prompt": "researcher"}
+    with ThreadPoolExecutor(max_workers=len(stores)) as pool:
+        futures = [pool.submit(store.save_resolution, "same-digest", payload) for store in stores]
+        paths = [future.result(timeout=10) for future in futures]
+    assert len(set(paths)) == 1
+    assert stores[0].load_resolution("same-digest") == payload
+    assert list(paths[0].parent.iterdir()) == [paths[0]]
 
 
 def test_external_marketplace_needs_the_trust_step(tmp_path: Path) -> None:
@@ -244,3 +269,23 @@ def test_a_changed_reader_rereads_installed_snapshots_and_keeps_trust(tmp_path: 
     assert reread["plugins"]["demo/pdf"]["description"] != "read by an older reader"
     assert service.store.marketplaces()["demo"]["trusted"] is True
     assert service.store.reread_installed() == []
+
+
+def test_create_only_user_agent_preserves_existing_bytes(tmp_path: Path) -> None:
+    store = PluginStore(tmp_path / "local-store")
+    original = UserAgent("mine", "My agent", "demo/standard")
+    path = store.save_user_agent(original, create_only=True)
+    before = path.read_bytes()
+    with pytest.raises(StoreError) as caught:
+        store.save_user_agent(UserAgent("mine", "Replacement", "demo/standard"), create_only=True)
+    assert caught.value.code == "user_agent_exists"
+    assert path.read_bytes() == before
+    assert not list(path.parent.glob("*.tmp"))
+
+
+def test_legacy_user_agent_cycle_has_a_typed_lookup_failure(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    service.store.save_user_agent(UserAgent("cycle", "Cycle", "user/cycle"))
+    with pytest.raises(LookupError) as caught:
+        service.lookup("user/cycle")
+    assert getattr(caught.value, "reason", "") == "user_agent_cycle"

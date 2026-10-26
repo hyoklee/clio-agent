@@ -166,6 +166,35 @@ class Greedy(Flow):
         for i in range(3):
             await ctx.call("self", f"call {i}")
         return "unreachable"
+
+
+class Budgeted(Flow):
+    id = "budgeted"
+    budget_tokens = 10
+    max_concurrency = 1
+
+    async def forward(self, task, ctx):
+        target = "budget-worker" if task == "nested" else "self"
+        calls = [ctx.call(target, f"budgeted part {i}") for i in range(3)]
+        results = await ctx.gather(calls, return_exceptions=True)
+        return ",".join(type(result).__name__ for result in results)
+
+
+class BudgetWorker(Flow):
+    id = "budget-worker"
+
+    async def forward(self, task, ctx):
+        return (await ctx.call("self", task)).answer
+
+
+class CrashFanout(Flow):
+    id = "crashfanout"
+
+    async def forward(self, task, ctx):
+        calls = [ctx.call("self", f"STALL member {index}") for index in range(3)]
+        calls.append(ctx.call("self", "FAIL-SPAWN"))
+        await ctx.gather(calls)
+        return "unreachable"
 """
 
 SUBAGENTS = """
@@ -207,8 +236,10 @@ Askerer = _agent("askerer", "asker")
 Stepperer = _agent("stepperer", "stepper")
 Breakerer = _agent("breakerer", "breaker")
 Greedier = _agent("greedier", Flow("greedy", max_model_calls=2))
+Budgeter = _agent("budgeter", "budgeted")
 Planner = _agent("planner", "workflowrunner")
 Nesterer = _agent("nesterer", "nester")
+CrashFanouter = _agent("crashfanouter", "crashfanout")
 
 
 class Orchestrator(Agent):

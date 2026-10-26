@@ -53,6 +53,7 @@ class SettingDefinition:
     unit: str | None = None
     unlimited_value: int | None = None
     choices: tuple[tuple[str, str], ...] = ()  # (value, label) for a choice setting
+    presets: tuple[tuple[int, str], ...] = ()  # (value, label) for common numeric choices
 
 
 _DEFINITIONS = (
@@ -182,8 +183,8 @@ _DEFINITIONS = (
         "memory.enabled",
         "CLIO_MEMORY_ENABLED",
         "Use memory",
-        "Let the agent read and keep long-term memory about you and your projects. "
-        "Turning it off keeps every memory document.",
+        "Use saved facts and preferences in later conversations. Turning this off keeps "
+        "existing memories.",
         "Memory",
         True,
         "Applies to sessions that start after the change.",
@@ -191,20 +192,21 @@ _DEFINITIONS = (
     SettingDefinition(
         "memory.background",
         "CLIO_MEMORY_BACKGROUND",
-        "Generate memory from sessions",
-        "After a conversation goes idle, propose what to remember from it.",
+        "Create memories from conversations",
+        "Uses background model calls, which count toward model usage. Models are set in Fleet.",
         "Memory",
         True,
-        "Applies at the next idle check.",
+        "Applies on the next background scheduler pass.",
     ),
     SettingDefinition(
         "memory.session_search",
         "CLIO_MEMORY_SESSION_SEARCH",
-        "Search past sessions",
-        "Let the agent search and read retained transcripts of earlier conversations.",
+        "Use conversation history",
+        "Recall earlier messages, separate from saved memories. Retrieved text can add model "
+        "usage; no background jobs.",
         "Memory",
         True,
-        "Applies to sessions that start after the change.",
+        "Applies to upcoming session-recall requests.",
     ),
     SettingDefinition(
         "memory.sensitive",
@@ -219,36 +221,56 @@ _DEFINITIONS = (
         "memory.auto_accept",
         "CLIO_MEMORY_AUTO_ACCEPT",
         "Apply background changes without review",
-        "Which proposed memory changes apply on their own. Anything resting on a tool result "
-        "or an import always waits for review.",
+        "Choose which new and updated memories save automatically. Retirement needs review.",
         "Memory",
         "user_stated",
         "Applies to proposals made after the change.",
-        choices=(("user_stated", "Facts you stated yourself"), ("none", "None")),
+        choices=(
+            ("user_stated", "Facts I state directly"),
+            ("all", "All new and updated memories"),
+            ("none", "Review every change"),
+        ),
     ),
     SettingDefinition(
         "memory.idle_minutes",
         "CLIO_MEMORY_IDLE_MINUTES",
-        "Idle minutes before processing",
-        "How long a conversation stays idle before background memory reads it.",
+        "Create memories",
+        "Runs after a completed turn or idle delay, at the next background check.",
         "Memory",
         30.0,
-        "Applies at the next idle check.",
-        minimum=1,
+        "Applies on the next scheduler pass, normally checked once a minute.",
+        minimum=0,
         integer=True,
         unit="minutes",
+        unlimited_value=0,
+        presets=(
+            (0, "After each completed turn"),
+            (5, "5 minutes"),
+            (15, "15 minutes"),
+            (30, "30 minutes"),
+            (60, "1 hour"),
+        ),
     ),
     SettingDefinition(
         "memory.expiry_days",
         "CLIO_MEMORY_EXPIRY_DAYS",
-        "Expire unused memories after",
-        "Propose retiring a document nobody read for this long. Profile and preferences never expire.",
+        "Review unused memories after",
+        "Profile and preferences are always kept. Other retirement proposals need review.",
         "Memory",
         60.0,
         "Applies at the next background pass.",
-        minimum=1,
+        minimum=0,
         integer=True,
         unit="days",
+        unlimited_value=0,
+        presets=(
+            (0, "Never"),
+            (30, "30 days"),
+            (60, "60 days"),
+            (90, "90 days"),
+            (180, "180 days"),
+            (365, "1 year"),
+        ),
     ),
 )
 _BY_KEY = {definition.key: definition for definition in _DEFINITIONS}
@@ -274,6 +296,7 @@ class RuntimeSetting(BaseModel):
     reason: str | None
     unlimited_value: int | None = None
     choices: list[dict[str, str]] = []
+    presets: list[dict[str, str | int]] = []
 
 
 class RuntimeSettings(BaseModel):
@@ -377,6 +400,7 @@ def _snapshot(document: dict[str, Any]) -> RuntimeSettings:
                 reason=reason,
                 unlimited_value=definition.unlimited_value,
                 choices=[{"value": v, "label": label} for v, label in definition.choices],
+                presets=[{"value": v, "label": label} for v, label in definition.presets],
             )
         )
     # Both the full file and effective sources participate: an external edit to

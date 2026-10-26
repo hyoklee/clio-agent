@@ -34,6 +34,7 @@ from clio_agent.plugins.manifest import (
     read_mcp_config,
     within,
 )
+from clio_agent.plugins.package_files import package_files
 from clio_agent.plugins.records import (
     FRAGMENT_SECTIONS,
     CatalogRecord,
@@ -134,10 +135,8 @@ def tree_digests(
         named.update(path.resolve() for path in root.glob(pattern) if path.is_file())
     exec_hash = hashlib.sha256()
     text_hash = hashlib.sha256()
-    for path in sorted(p for p in root.rglob("*") if p.is_file()):
+    for path in sorted(package_files(root)):
         relative = path.relative_to(root).as_posix()
-        if relative.startswith(".git/") or "__pycache__" in relative:
-            continue
         text = path.suffix.lower() in _TEXT_SUFFIXES or relative in _TEXT_FILES
         target = exec_hash if path.resolve() in named or not text else text_hash
         target.update(relative.encode("utf-8") + b"\0")
@@ -539,6 +538,12 @@ def load_plugin(root: Path, *, marketplace: str = "", trusted: bool) -> PluginRe
     except ManifestError as exc:
         raise PluginLoadError(str(exc)) from exc
     servers, server_diags = read_mcp_config(root, plugin)
+    for namespace, connection in (ext.get("connections") or {}).items():
+        if namespace in servers:
+            raise PluginLoadError(
+                f"{plugin}: connection namespace {namespace!r} is already declared"
+            )
+        servers[namespace] = {"type": "clio-connection", "connection": connection}
     exec_digest, text_digest = tree_digests(root, referenced=referenced_files(root, servers))
     skills, skill_diags = _skills(root, plugin)
     if library is not None:

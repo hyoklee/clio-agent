@@ -89,14 +89,17 @@ def test_remember_correct_and_forget_in_a_root_conversation(client: TestClient) 
         assert forgotten["fact"]["text"] == "My Frontier project id is CSC456"
         # Each write's row names the fact itself; the link opens its document.
         summary, blocks, subject = present_long_term_memory("create_memory", {}, created)
-        assert (summary, subject) == ("Memory updated", "fact")
-        assert blocks[0] == {"id": "fact", "type": "text", "text": created["fact"]["text"]}
-        assert blocks[1]["label"] == "Edit in memory"
+        assert (summary, subject) == ("Memory updated", "memory")
+        assert blocks[0]["type"] == "markdown"
+        assert created["fact"]["text"] in blocks[0]["text"]
+        assert blocks[1]["label"] == created["memory"]["description"]
         assert blocks[1]["uri"] == f"{name}#{fact_id}"  # opens the page on this fact
         summary, blocks, subject = present_long_term_memory("forget_memory", {}, forgotten)
-        assert (summary, subject) == ("Memory forgotten", "fact")
+        assert (summary, subject) == ("Memory forgotten", "memory")
         assert forgotten["document_removed"] is True
-        assert blocks == [{"id": "fact", "type": "text", "text": forgotten["fact"]["text"]}]
+        assert forgotten["fact"]["text"] in blocks[0]["text"]
+        assert not any(block["type"] == "link" for block in blocks)
+        assert updated["previous_fact"]["text"] == created["fact"]["text"]
         assert memory_tools.memory_search("Frontier project id")["hits"] == []
     finally:
         _leave(tokens)
@@ -237,6 +240,120 @@ def test_the_memory_page_edits_facts_with_a_hash_precondition(client: TestClient
     summary = client.get("/v1/memory/summary").json()
     assert summary["enabled"] is True and summary["inbox"] == 0
     assert client.get("/v1/memory/search", params={"q": "ALMA"}).json()["hits"][0]["name"] == name
+
+
+def test_manual_memory_creation_is_user_authored_and_logged_without_a_model(
+    client: TestClient,
+) -> None:
+    body = {
+        "scope": "user",
+        "category": "topics",
+        "slug": "writing-style",
+        "description": "Writing preferences",
+        "facts": ["Use short paragraphs", "Prefer concrete examples"],
+    }
+    created = client.post("/v1/memory/documents", json=body)
+    assert created.status_code == 200, created.text
+    document = created.json()
+    assert document["name"] == "user/topics/writing-style"
+    assert {fact["source"] for fact in document["facts"]} == {"user"}
+    assert {fact["session"] for fact in document["facts"]} == {"memory_page"}
+
+    duplicate = client.post("/v1/memory/documents", json=body)
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"]["error"] == "memory_conflict"
+
+    response = client.get("/v1/memory/creation-runs")
+    assert response.status_code == 200, response.text
+    runs = response.json()
+    manual_rows = [row for row in runs["runs"] if row["origin"] == "manual"]
+    manual = next(row for row in manual_rows if row["reason"] == "created_by_user")
+    assert manual["state"] == "completed" and manual["reason"] == "created_by_user"
+    assert manual["models"] == {"extract": None, "curator": None}
+    assert manual["targets"] == ["user/topics/writing-style"]
+    assert manual["usage"] == {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cost_usd": 0.0,
+        "cost_known": True,
+    }
+    assert manual["proposal_counts"] == {"accepted": 0, "pending": 0, "rejected": 0}
+    assert any(row["state"] == "failed" for row in manual_rows)
+    assert "background" in runs and runs["next_cursor"] is None
+
+    workspace = client.app.state.workspaces.create(name="memory-project", root_path=str(Path.cwd()))
+    project = client.post(
+        "/v1/memory/documents",
+        json={
+            "scope": f"project/{workspace.id}",
+            "category": "topics",
+            "slug": "cluster-plan",
+            "facts": ["Use the shared GPU queue"],
+        },
+    )
+    assert project.status_code == 200, project.text
+    project_log = client.get("/v1/memory/creation-runs").json()["runs"]
+    linked = next(
+        row
+        for row in project_log
+        if row["targets"] == [f"project/{workspace.id}/topics/cluster-plan"]
+    )
+    assert linked["workspace_id"] == workspace.id
+
+
+def test_manual_memory_creation_rejects_empty_or_duplicate_facts(client: TestClient) -> None:
+    base = {
+        "scope": "user",
+        "category": "topics",
+        "slug": "invalid",
+        "facts": [],
+    }
+    assert client.post("/v1/memory/documents", json=base).status_code == 422
+    base["facts"] = ["Same fact", " same  fact "]
+    assert client.post("/v1/memory/documents", json=base).status_code == 422
+    base["scope"] = "project/ws_global"
+    base["facts"] = ["A valid fact"]
+    assert client.post("/v1/memory/documents", json=base).status_code == 422
+
+
+def test_creation_run_cursor_is_validated(client: TestClient) -> None:
+    response = client.get("/v1/memory/creation-runs", params={"cursor": "not-a-cursor"})
+    assert response.status_code == 400
+
+
+def test_manual_singleton_entry_appends_without_replacing_existing_facts(
+    client: TestClient,
+) -> None:
+    first = client.post(
+        "/v1/memory/documents",
+        json={
+            "scope": "user",
+            "category": "preferences",
+            "slug": "ignored-name",
+            "description": "Preferences written by the user",
+            "facts": ["Use concise answers"],
+        },
+    )
+    assert first.status_code == 200, first.text
+    assert first.json()["name"] == "user/preferences/preferences"
+    second = client.post(
+        "/v1/memory/documents",
+        json={
+            "scope": "user",
+            "category": "preferences",
+            "slug": "also-ignored",
+            "description": "Must not replace the existing description",
+            "facts": ["Use concise answers", "Show concrete examples"],
+        },
+    )
+    assert second.status_code == 200, second.text
+    document = second.json()
+    assert document["description"] == "Preferences written by the user"
+    assert {fact["text"] for fact in document["facts"]} == {
+        "Use concise answers",
+        "Show concrete examples",
+    }
+    assert {fact["source"] for fact in document["facts"]} == {"user"}
 
 
 def test_a_withheld_write_tool_takes_its_prompt_fragment_along(client: TestClient) -> None:

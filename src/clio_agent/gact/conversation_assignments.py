@@ -281,20 +281,26 @@ def _new_assignment(
 
 
 def assignment_outputs(history: Any, details: AssignmentDetails, outputs: Any) -> Any:
-    """A turn's outputs, carrying the tool calls of the assignment's earlier turns first.
+    """A turn's outputs, retaining earlier tool calls and public response parts.
 
     An assignment can span turns: a child that yields on a question resumes once it is
-    answered. Its result is what the assignment did, so an editor's proposal made before
-    it yielded still reaches the workflow that reads its tool calls.
+    answered. An editor's proposals and authored evidence from before that yield
+    still reach the caller. The final value remains the completing turn's answer.
     """
 
     if not details.last_output or not isinstance(outputs, dict):
         return outputs
     earlier = history.read_content(details.last_output)
-    calls = earlier.get("tools_called") if isinstance(earlier, dict) else None
-    if not calls:
+    if not isinstance(earlier, dict):
         return outputs
-    return {**outputs, "tools_called": [*calls, *(outputs.get("tools_called") or [])]}
+    merged = dict(outputs)
+    if calls := earlier.get("tools_called"):
+        merged["tools_called"] = [*calls, *(outputs.get("tools_called") or [])]
+    if parts := earlier.get("response_parts"):
+        from clio_agent.gact.assignment_response import merge_response_parts
+
+        merged["response_parts"] = merge_response_parts(parts, outputs.get("response_parts") or [])
+    return merged if merged != outputs else outputs
 
 
 def _finish_segment(
@@ -617,8 +623,10 @@ async def spawn(
                     or existing.owner.human_id != caller.human_id
                     or session is None
                     or session.metadata.get("spawn_target", session.agent.get("id")) != agent_id
+                    or session.metadata.get("subagent_name", "")
+                    != str((session_metadata or {}).get("subagent_name") or "").strip()
                 ):
-                    raise ValueError("Spawn invocation was reused with different work")
+                    raise ValueError("Spawn invocation was reused with different work or name")
                 if session.metadata.get("variant_strategy") != normalized_strategy:
                     raise ValueError("Spawn invocation was reused with a different strategy")
                 if existing.details is None:
@@ -642,6 +650,25 @@ async def spawn(
                 or parent.owner.human_id != caller.human_id
             ):
                 raise ValueError("Spawning requires an active owning assignment")
+            terminal_parents = {
+                closed_parent
+                for closed_parent, _ in self._closed_spawn_invocations
+                if (closed_task := self.history.task_snapshot(closed_parent)) is None
+                or closed_task.terminal_at is not None
+            }
+            if terminal_parents:
+                self._closed_spawn_invocations.difference_update(
+                    {
+                        (closed_parent, closed_invocation)
+                        for closed_parent, closed_invocation in self._closed_spawn_invocations
+                        if closed_parent in terminal_parents
+                    }
+                )
+            if (
+                existing is None
+                and (parent.handle, invocation_id) in self._closed_spawn_invocations
+            ):
+                raise ValueError("Spawn invocation was closed before acceptance")
             self.require_admission(parent)
             if prepared_parent is not None and parent.handle != prepared_parent:
                 raise ValueError("Owning assignment changed during child preparation")

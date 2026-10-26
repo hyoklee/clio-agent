@@ -7,7 +7,6 @@ from itertools import cycle
 from typing import Any
 
 import dspy
-
 from clio_agent.sdk import Flow
 
 
@@ -75,9 +74,11 @@ council = sequence(choice(terminal("member 1"), terminal("member 2"), terminal("
             )
             for index, (member, view) in enumerate(pairs)
         ]
+        for index, (call, (member, view)) in enumerate(zip(calls, pairs, strict=True)):
+            call.label = f"Member {index + 1}: {view or member}"
         views = await ctx.gather(calls, limit=len(calls))
         labelled = [
-            f"{view or member}: {result.answer}"
+            f"{view or member}: {result.response_text}"
             for (member, view), result in zip(pairs, views, strict=True)
         ]
         handles = [result.handle for result in views]
@@ -89,14 +90,16 @@ council = sequence(choice(terminal("member 1"), terminal("member 2"), terminal("
             for (member, view), result in zip(pairs, views, strict=True)
         ]
         if self.synthesizer or self.synthesizer_model:
-            final = await ctx.call(
+            synthesis_call = ctx.call(
                 self.synthesizer or "self",
                 {"question": text, "views": labelled},
                 model=self.synthesizer_model,
             )
+            synthesis_call.label = "Synthesis"
+            final = await synthesis_call
             who.append(_on("synthesis", final.model))
             return {
-                "answer": f"{final.answer}\n\nMembers:\n" + "\n".join(who),
+                "answer": f"{final.response_text}\n\nMembers:\n" + "\n".join(who),
                 "members": handles,
                 "synthesizer": final.handle,
                 **asked,

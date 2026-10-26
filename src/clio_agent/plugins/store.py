@@ -38,6 +38,7 @@ from typing import Any
 
 from filelock import FileLock
 
+from clio_agent.platform_paths import rename_extended, rmtree_extended, win_extended_path
 from clio_agent.plugins.claude_code import import_claude_plugin
 from clio_agent.plugins.loader import PluginLoadError, load_plugin, tree_digests
 from clio_agent.plugins.manifest import within
@@ -47,6 +48,7 @@ from clio_agent.plugins.marketplace import (
     load_agent_specs,
     read_marketplace,
 )
+from clio_agent.plugins.package_files import ignored_package_names
 from clio_agent.plugins.records import Diagnostic, PluginRecord
 from clio_agent.plugins.sources import SourceError, fetch
 from clio_agent.sdk.agent import AgentSpec
@@ -119,20 +121,19 @@ def _copy_tree(source: Path, target: Path) -> None:
     if target.exists():
         return
     staging = target.with_name(f"{target.name}.partial-{uuid.uuid4().hex[:12]}")
-    shutil.copytree(
-        source,
-        staging,
-        symlinks=False,
-        ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc", ".venv", "node_modules"),
-    )
     try:
-        staging.rename(target)
+        shutil.copytree(
+            win_extended_path(source.absolute()),
+            win_extended_path(staging.absolute()),
+            symlinks=False,
+            ignore=ignored_package_names,
+        )
+        rename_extended(staging, target)
     except OSError:
+        rmtree_extended(staging, ignore_errors=True)
         if not target.is_dir():
-            shutil.rmtree(staging, ignore_errors=True)
             raise
         # Another install of the same content finished first: its copy is identical.
-        shutil.rmtree(staging, ignore_errors=True)
 
 
 def builtin_records() -> list[PluginRecord]:
@@ -287,7 +288,7 @@ class PluginStore:
                 )
             entry: dict[str, Any] = {
                 "id": market,
-                "source": source,
+                "source": fetched.url if fetched.local else source,
                 "url": fetched.url,
                 "ref": ref,
                 "commit": fetched.commit,
@@ -545,7 +546,7 @@ class PluginStore:
             )
         commit = entry["commit"] if entry.get("pinned") else ""
         return self.install(
-            entry["source"],
+            entry.get("url") or entry["source"],
             ref=entry.get("ref", ""),
             commit=commit,
             name=market,
@@ -566,7 +567,8 @@ class PluginStore:
             self._write_state(state)
 
     # ------------------------------------------------------------ user agents
-    def save_user_agent(self, agent: UserAgent) -> Path:
+    def save_user_agent(self, agent: UserAgent, *, create_only: bool = False) -> Path:
+        """Publish one local definition atomically; create-only refuses name collisions."""
         if not valid_plugin_id(agent.id):
             raise StoreError("user_agent_id_invalid", f"agent id {agent.id!r} is not a valid id")
         for value in (*agent.add, *agent.remove):
@@ -574,7 +576,17 @@ class PluginStore:
         base = self.root / "user-agents"
         base.mkdir(parents=True, exist_ok=True)
         path = base / f"{agent.id}.json"
-        path.write_text(json.dumps(agent.to_dict(), indent=1), encoding="utf-8")
+        with self.lock:
+            if create_only and path.exists():
+                raise StoreError(
+                    "user_agent_exists", f"Agent {agent.id!r} already exists; choose another name"
+                )
+            temporary = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
+            try:
+                temporary.write_text(json.dumps(agent.to_dict(), indent=1), encoding="utf-8")
+                os.replace(temporary, path)
+            finally:
+                temporary.unlink(missing_ok=True)
         return path
 
     def delete_user_agent(self, agent_id: str) -> None:
@@ -585,13 +597,19 @@ class PluginStore:
 
     # ------------------------------------------------------------------ pins
     def save_resolution(self, digest: str, payload: dict[str, Any]) -> Path:
+        """Pin a resolution atomically, with staging owned by this writer."""
         base = self.root / "resolved"
         base.mkdir(parents=True, exist_ok=True)
         path = base / f"{digest}.json"
         if not path.is_file():
-            temporary = path.with_suffix(".tmp")
-            temporary.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
-            os.replace(temporary, path)
+            temporary = path.with_suffix(f".{uuid.uuid4().hex}.tmp")
+            try:
+                temporary.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+                with self.lock:
+                    if not path.is_file():
+                        os.replace(temporary, path)
+            finally:
+                temporary.unlink(missing_ok=True)
         return path
 
     def load_resolution(self, digest: str) -> dict[str, Any] | None:

@@ -371,7 +371,11 @@ def _question_interaction(app: FastAPI, question: UserQuestion) -> PendingIntera
                 if isinstance(bundle, dict)
                 else {}
             ),
-            **(plan_exit_payload(question) if is_plan_exit_question(question) else {}),
+            **(
+                {"plan_exit": plan_exit_payload(question)}
+                if is_plan_exit_question(question)
+                else {}
+            ),
             "task_handle": question.task_handle,
             "response_mode": question.response_mode,
         },
@@ -392,8 +396,12 @@ def project_pending_interactions(
     caller = TaskCaller(root_session_id, app.state.human_principal, human_action=True)
     access = TaskAccess(history, caller)
     owners = _session_scope(app, root_session_id, include_children)
-    handles = set().union(*(history.session_handles(owner) for owner in owners))
-    handles.intersection_update(history.task_handles(kind="Question", human_id=caller.human_id))
+    handles = set().union(
+        *(
+            history.task_handles(kind="Question", human_id=caller.human_id, session_id=owner)
+            for owner in owners
+        )
+    )
     pending: list[PendingInteraction] = []
     resolved: list[PendingInteraction] = []
     degradations: list[dict[str, str]] = []

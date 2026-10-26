@@ -571,6 +571,8 @@ class TaskHistory:
             return state._tasks.get(handle) if handle is not None else None
 
     tree_handles = task_history_queries.tree_handles
+    descendant_handles = task_history_queries.descendant_handles
+    direct_child_by_invocation = task_history_queries.direct_child_by_invocation
     session_handles = task_history_queries.session_handles
     task_handles = task_history_queries.task_handles
     open_handles = task_history_queries.open_handles

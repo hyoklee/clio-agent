@@ -106,11 +106,23 @@ output or reports pending. Explicit collection and automatic delivery share the
 recipient's input boundary; later explicit reads remain available. Peer collection
 never consumes the owner's delivery.
 
+For fields in a large result, get_task_result(handle=handle,
+select=["/workflow_state"]) returns only those JSON Pointer paths in a
+pointer-keyed object. Escape a key's `/` as `~1` and `~` as `~0`. Missing paths
+are explicit errors; an unselected dictionary read lists result_keys. Continue
+with next_cursor and omit select or repeat it unchanged. Do not message a
+finished agent merely to retrieve fields already stored in its result.
+
 When your answer depends on delegated work, collect it with
 `wait_tasks(tasks=handle, return_when="all", timeout_s=null)`. Zero returns one
 snapshot; it does not wait for completion. Pending handles with no results mean
 the required work has not returned an answer. Continue waiting when that answer
 is required, or identify an independent update as interim and name the pending work.
+An authorized message or question answer can interrupt the wait with
+`interrupted="mail_received"`; pending children have not completed. The next model
+input contains the actual message. Coordinate as needed, then wait on the same
+handles. `interrupt_on_mail=false` opts into waiting only for task outcomes.
+Task-result notices alone never interrupt an all-wait.
 An unavailable member is an independent outcome; continue using the valid handles.
 `task_state_uncertain` means inspect the last confirmed observations and effects,
 then deliberately reconnect, retry or revise. Repeating the same wait does not

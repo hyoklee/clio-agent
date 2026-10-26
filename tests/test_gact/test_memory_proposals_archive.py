@@ -91,6 +91,28 @@ def test_tool_sourced_facts_always_wait_and_reject_is_kept(service: MemoryServic
         store.accept(proposal.id, decided_by="user")
 
 
+def test_explicit_all_mode_applies_tool_evidence_but_keeps_its_provenance(
+    service: MemoryService,
+) -> None:
+    proposal = ProposalStore(service).propose(
+        target="user/topics/notification-channel",
+        change="add",
+        facts=["Sends alerts to the project channel"],
+        replaces=[],
+        merge_from=[],
+        description="Notification preference",
+        evidence=[_evidence("tool", "c2")],
+        rationale="Confirmed by the user-selected source",
+        origin="session:sess_all",
+        handle="task_all",
+        auto_accept="all",
+    )
+    assert proposal.status == "accepted" and proposal.decided_by == "auto_accept"
+    [fact] = service.require("user/topics/notification-channel").document.live_facts
+    assert fact.source == "tool" and fact.session == "sess_a" and fact.message == "msg_1"
+    assert proposal.evidence[0]["source"] == "tool"
+
+
 def test_a_resumed_run_proposing_again_makes_no_duplicate(service: MemoryService) -> None:
     store = ProposalStore(service)
     kwargs = {
@@ -110,6 +132,13 @@ def test_a_resumed_run_proposing_again_makes_no_duplicate(service: MemoryService
     again = store.propose(**kwargs)  # type: ignore[arg-type]
     assert first.id == again.id and len(store.pending()) == 1
     accepted = store.accept(first.id, decided_by="user", edited_facts=["Project id is CSC124"])
+    actual = service.require(first.target)
+    assert accepted.applied_text == actual.text
+    assert accepted.applied_before_text != accepted.applied_text
+    assert "CSC124" in accepted.applied_text
+    assert "CSC123" in accepted.proposed_text
+    assert accepted.proposed_text != accepted.applied_text
+
     assert accepted.status == "accepted"
     doc = service.require("user/environments/frontier").document
     assert [f.text for f in doc.live_facts] == ["Project id is CSC124"]
