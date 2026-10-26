@@ -68,9 +68,65 @@ node, about 128k context). It then runs one attention smoke turn before OPAL.
   against a stand-in REST server.
 - Routes are verified from the code, with file:line in HANDOFF.
 
-## D. Live check in the cloud session
+## D. Live check in the cloud session: passed, one SPOTTER defect fixed
 
-(filled in below)
+Full write-up: [cloud-live/RESULTS.md](cloud-live/RESULTS.md); receipts and screenshots are next to it.
+Everything ran through CLIO's REST API and UI, on `claude_code` (no GPU, so no attention capture).
+
+- **Flowcept deployed by CLIO, both ways.**
+  - Native: install, start, Verify (write/readback), stop, restart, Verify, uninstall.
+  - Docker (`managed` + `container_runtime=docker`): install, start, Verify, stop, restart, Verify.
+  - Two workarounds were for this cloud container only, not CLIO defects: its proxy blocks GitHub
+    archive downloads (a git archive reproduced the pinned Valkey tarball byte for byte, and CLIO still
+    checked its sha256), and Docker Hub rate-limited (429), handled with a temporary registry mirror.
+- **Provenance.** The Flowcept connection was verified and selected; after the restart it was active.
+  CLIO read back 7–23 `lm.call` per session from Flowcept, from both the main and the SPOTTER
+  workflows.
+- **SPOTTER AI on plain requests** (no tools named), over a 40-row CSV with a planted typo:
+  - The analysis answer was correct and caught the typo.
+  - A write request was cleared by SPOTTER before every write and then approved by a person; the
+    original file stayed unchanged.
+  - With `query_default: flowcept`, SPOTTER read its records from Flowcept and returned a verdict that
+    named coverage gaps.
+- **Defect found and fixed: an endless SPOTTER loop.** Every watcher check completed its assignment.
+  The completion woke the parent, and the parent's turn woke the watcher again: one message made 5
+  watcher runs in 3 minutes. Fix `46897d8`: the watcher is a standing assignment and its checks yield,
+  as `agent-task-native-v3` §3 already required. Tests:
+  `tests/test_arc/test_standing_assignment_contracts.py`. **Without this fix every OPAL SPOTTER session
+  would loop.**
+
+### Consequences for the kit (applied)
+
+- Polaris runs SLES 15, and CLIO's native Flowcept refuses it (no verified MongoDB build for SLES). The
+  kit now deploys Flowcept `managed` on Apptainer by default.
+- The kit exports `CLIO_PROVENANCE_QUERY_DEFAULT=flowcept` so SPOTTER queries the captured provenance.
+  The shipped default is the native journal.
+
+### Follow-ups not done tonight
+
+Creating suggested tasks timed out in this environment, so they are listed here instead.
+
+1. **gact-tui: the armed SPOTTER watcher has no row in the parent conversation.** `isSpotterWatcher`
+   matches `SPOTTER AI` / `spotter_watcher`, but since #1825 the label is `SPOTTER` and the agent is
+   `spotter-ai`. The fix should be structural: the backend exposes a role on the subagent run and the UI
+   reads it, rather than matching strings.
+2. **gact-tui: a finished answer shows raw markdown until you scroll.**
+3. **gact-tui: the Infrastructure page "Inspecting this computer" spinner never clears**, although its
+   APIs answer.
+4. **clio-agent: SPOTTER's `session_search` cannot read the session it watches**, so it cannot confirm
+   that the person asked for a write.
+
+## E. What is pushed
+
+All on `claude/epic-hopper-6s2vhn`:
+
+- **clio-agent:** attention semantics, items and export; OPAL driver; Polaris kit and HANDOFF; QA
+  replay fixes; the SPOTTER standing-watcher fix; the evidence. Submodules are pinned to the gact-tui
+  branch and to marketplace `1b5280c`.
+- **gact-tui:** Prompt heat map, SPOTTER profile preset, items API client.
+- **clio-schemas and the marketplace:** unchanged.
+
+Nothing is merged, tagged or released, and nothing was pushed to spotter-ai-genesis.
 
 ## Open risks for Polaris
 
