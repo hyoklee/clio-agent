@@ -6,15 +6,15 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 from clio_agent.gact import context, document_tools
 from clio_agent.gact.agents.native_tool_registry import build_native_tools
 from clio_agent.gact.agents.resolution import resolution_agent_def, session_resolution
 from clio_agent.gact.app import build_app
 from clio_agent.plugins.service import PluginService
 from clio_agent.tools.file_policy import FileAccessPolicy
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-
 from tests._plugin_fixtures import FIXTURE, custom_marketplace
 
 

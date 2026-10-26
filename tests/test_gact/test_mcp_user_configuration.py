@@ -9,6 +9,8 @@ from typing import Any
 
 import pytest
 import yaml
+from fastapi.testclient import TestClient
+
 from clio_agent.gact.app import build_app
 from clio_agent.gact.mcp_user_configuration import (
     McpUserConfigurationError,
@@ -19,7 +21,6 @@ from clio_agent.gact.routes.mcp_configuration import (
     _probe_web_search_remote,
 )
 from clio_agent.tools.mcp_config import load_mcp_servers
-from fastapi.testclient import TestClient
 
 
 def _web_spec(remote_url: str) -> dict[str, Any]:

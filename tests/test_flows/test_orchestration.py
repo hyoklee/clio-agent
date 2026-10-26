@@ -360,8 +360,9 @@ def test_an_arena_returns_the_winner_with_the_judges_verdict(flow_app: TestClien
     """Three contestants answer; the judge's choice, rationale and the other entries reach
     the caller in the answer, and the votes are recorded in the run."""
 
-    from clio_agent.gact.flow_tools import start_flow
     from dspy.utils.dummies import DummyLM
+
+    from clio_agent.gact.flow_tools import start_flow
 
     started: dict[str, Any] = {}
     count = {"n": 0}
@@ -463,8 +464,9 @@ def test_each_restart_keeps_everything_finished_before_it(flow_app: TestClient) 
 def test_a_plan_node_can_be_an_arena_with_its_own_contestants(flow_app: TestClient) -> None:
     """A model-written workflow composes flows: one step is an arena of two contestants."""
 
-    from clio_agent.gact.flow_tools import start_flow
     from dspy.utils.dummies import DummyLM
+
+    from clio_agent.gact.flow_tools import start_flow
 
     started: dict[str, Any] = {}
     workflow = {
@@ -562,6 +564,7 @@ def test_flow_options_are_checked_against_the_types_the_flow_declares() -> None:
     """A count where a list of members belongs is refused by name, not crashed on later."""
 
     import pytest
+
     from clio_agent.sdk.flow import FlowOptionsInvalid
 
     council = _council_class()
@@ -578,6 +581,7 @@ def test_flow_options_keep_declared_constraints_and_refuse_a_flag_for_a_count() 
     """``Annotated`` bounds hold, and True is not read as 1 for an int option."""
 
     import pytest
+
     from clio_agent.sdk.flow import Flow, FlowOptionsInvalid
 
     class Bounded(Flow):

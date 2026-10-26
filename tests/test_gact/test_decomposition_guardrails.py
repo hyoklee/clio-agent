@@ -207,7 +207,10 @@ from clio_agent.gact.app import build_app
 # change in count.
 # 405 -> 407: SPOTTER per-item attention view + its CSV export, POST
 # /v1/sessions/{sid}/messages/{mid}/attention/items[/export], owned by gact/attention/routes.py.
-EXPECTED_ROUTE_METHOD_PAIRS = 407
+# 407 -> 420: #1854 added 13 without a bump -- plugins local/upload/export/inspect,
+# extensions MCP registry, model search page, MCP sign-in start/status/complete/cancel and
+# authorization delete, memory creation runs and memory documents POST.
+EXPECTED_ROUTE_METHOD_PAIRS = 420
 
 # app.py is build_app + lifecycle + re-export shims only. The ceiling is
 # the current size (~2892 lines) plus ~300 lines of headroom so ordinary
