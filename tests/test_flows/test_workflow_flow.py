@@ -196,7 +196,6 @@ def test_cancelling_one_step_cancels_it_and_ends_the_workflow_cancelled(
 
     from clio_agent.agent import cancellation_requested
     from clio_agent.gact.agents.clio_react import _turn_cancelled
-
     from tests.test_flows.conftest import default_program
 
     def program(question: str = "", **kwargs: Any) -> Any:
@@ -279,7 +278,6 @@ def test_a_cancelled_workflow_ends_cancelled_not_stalled(flow_app: TestClient) -
 
     from clio_agent.agent import cancellation_requested
     from clio_agent.gact.agents.clio_react import _turn_cancelled
-
     from tests.test_flows.conftest import default_program
 
     def program(question: str = "", **kwargs: Any) -> Any:

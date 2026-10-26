@@ -83,16 +83,24 @@ def test_sticky_consent_retains_stricter_policy_and_special_gates(
 def test_pending_grants_preserve_session_and_workspace_boundaries(
     tmp_path: Path, action: str
 ) -> None:
-    permissions = [{"tool_call": {"tool_name": "web_fetch", "input": {"target": "https://example.org"}}}]
+    permissions = [
+        {"tool_call": {"tool_name": "web_fetch", "input": {"target": "https://example.org"}}}
+    ]
     with _client(tmp_path, permissions) as client:
         app: Any = client.app
         sid = client.post("/v1/sessions", json={"title": "research"}).json()["id"]
         _turn(client, sid)
         source = next(iter(app.state.permissions.values()))
         matching = app.state.sessions.create(workspace_id="ws_default", title="research child")
-        different = app.state.sessions.create(workspace_id="different-workspace", title="other work")
+        different = app.state.sessions.create(
+            workspace_id="different-workspace", title="other work"
+        )
         for session in [matching, different]:
-            app.state.permissions[session.id] = {**source, "id": session.id, "session_id": session.id}
+            app.state.permissions[session.id] = {
+                **source,
+                "id": session.id,
+                "session_id": session.id,
+            }
         response = client.post(f"/v1/permissions/{source['id']}", json={"action": action})
         assert response.status_code == 204, response.text
         assert app.state.permissions[matching.id]["status"] == (

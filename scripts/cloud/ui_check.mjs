@@ -41,10 +41,14 @@ const settleMs = Number(opt("settle", 60000));
 function chromiumPath() {
   const base = "/opt/pw-browsers";
   if (!existsSync(base)) return undefined;
+  // The image links its browser here; older images only have versioned dirs.
+  if (existsSync(path.join(base, "chromium"))) return path.join(base, "chromium");
   const dirs = readdirSync(base).filter((d) => /^chromium-\d+$/.test(d)).sort();
   for (const d of dirs.reverse()) {
-    const exe = path.join(base, d, "chrome-linux/chrome");
-    if (existsSync(exe)) return exe;
+    for (const sub of ["chrome-linux64/chrome", "chrome-linux/chrome"]) {
+      const exe = path.join(base, d, sub);
+      if (existsSync(exe)) return exe;
+    }
   }
   return undefined;
 }

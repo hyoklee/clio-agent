@@ -237,6 +237,7 @@ def ensure_spotter_watcher(app: "FastAPI", session: "Session") -> TaskSnapshot |
             session_metadata={"spotter_parent_session": session.id},
             approval_profile="spotter-watcher",
             start=False,
+            standing=True,
         ),
         owner._loop,
     ).result()

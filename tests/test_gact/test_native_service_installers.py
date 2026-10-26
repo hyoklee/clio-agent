@@ -16,7 +16,11 @@ from clio_agent.gact.infrastructure.drivers import build_driver_plan, service_de
 from clio_agent.gact.infrastructure.models import InfrastructureTarget, TargetFacts
 from clio_agent.gact.infrastructure.native_archive import digest, extract
 from clio_agent.gact.infrastructure.native_model_services import native_model_plan
-from clio_agent.gact.infrastructure.native_monitoring_hook import mongo_platform, private
+from clio_agent.gact.infrastructure.native_monitoring_hook import (
+    check_mongod,
+    mongo_platform,
+    private,
+)
 from clio_agent.gact.infrastructure.probe import _amd_gpu
 
 
@@ -227,15 +231,34 @@ def test_database_mode_switch_preserves_managed_passwords(tmp_path: Path) -> Non
         ('ID=ubuntu\nVERSION_ID="24.04"', "ubuntu2404"),
         ('ID=debian\nVERSION_ID="12"', "debian12"),
         ('ID=rocky\nVERSION_ID="8.10"', "rhel8"),
+        ('NAME="SLES"\nVERSION="15-SP5"\nID="sles"\nVERSION_ID="15.5"', "suse15"),
+        ('ID="sle_hpc"\nVERSION_ID="15.4"', "suse15"),
+        ('ID="opensuse-leap"\nVERSION_ID="15.6"', "suse15"),
     ],
 )
 def test_native_mongo_chooses_host_libc_build(release: str, platform: str) -> None:
     assert mongo_platform(release) == platform
 
 
+def test_mongod_check_names_the_missing_library(tmp_path: Path) -> None:
+    mongod = tmp_path / "mongod"
+    mongod.write_text(
+        "#!/bin/sh\necho 'mongod: error while loading shared libraries: libssl.so.1.1: "
+        "cannot open shared object file' >&2\nexit 127\n"
+    )
+    mongod.chmod(0o755)
+    with pytest.raises(RuntimeError, match="libopenssl1_1") as refused:
+        check_mongod(mongod, "suse15")
+    assert "libssl.so.1.1" in str(refused.value) and "site databases" in str(refused.value)
+    mongod.write_text("#!/bin/sh\necho 'db version v8.0.14'\n")
+    check_mongod(mongod, "suse15")
+
+
 def test_native_mongo_refuses_unknown_distribution() -> None:
     with pytest.raises(RuntimeError, match="site databases"):
         mongo_platform('ID=unknown\nVERSION_ID="99"')
+    with pytest.raises(RuntimeError, match="site databases"):
+        mongo_platform('ID="sles"\nVERSION_ID="12.5"')
 
 
 def test_native_llama_device_memory_and_source_mtimes(tmp_path: Path) -> None:

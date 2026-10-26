@@ -47,11 +47,16 @@ _STATES = {
 def own_execution_tasks(
     app: Any, session_id: str, invocation_ids: set[str]
 ) -> dict[str, tuple[TaskSnapshot, ...]]:
-    """Authorize exact invocation joins within one session, excluding descendant work."""
+    """Authorize exact invocation joins within one session, excluding descendant work.
+
+    The transcript boot can publish ``task_history`` before the task runtime admits its
+    human principal; until then no caller exists to authorize, so there are no joins.
+    """
     history = getattr(app.state, "task_history", None)
-    if history is None or not invocation_ids:
+    principal = getattr(app.state, "human_principal", None)
+    if history is None or principal is None or not invocation_ids:
         return {}
-    caller = TaskCaller(session_id, app.state.human_principal, human_action=True)
+    caller = TaskCaller(session_id, principal, human_action=True)
     access = TaskAccess(history, caller)
     result: dict[str, tuple[TaskSnapshot, ...]] = {}
     for handle in history.session_handles(session_id):

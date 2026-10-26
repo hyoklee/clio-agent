@@ -68,6 +68,17 @@ async def stop_producers(*tasks: asyncio.Task[Any] | None) -> None:
     await asyncio.gather(*pending, return_exceptions=True)
 
 
+async def close_request_owners(app: "FastAPI") -> None:
+    """Close the owners that only serve requests, once the loop serves none any more.
+
+    Pending MCP browser sign-ins are released before the document store closes.
+    """
+    sign_ins = getattr(app.state, "mcp_sign_ins", None)
+    if sign_ins is not None:
+        await sign_ins.close()
+    await asyncio.to_thread(app.state.document_store.close)
+
+
 _PROCESS_ARC_LOCK = threading.Lock()
 
 

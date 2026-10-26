@@ -9,11 +9,12 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
+
 from clio_agent.gact.agents.resolution import SessionAgentUnavailable, agent_server_set
 from clio_agent.gact.app import build_app
 from clio_agent.gact.mcp_user_configuration import remove_user_mcp_server, set_user_mcp_server
 from clio_agent.plugins.servers import server_set_declarations
-from fastapi.testclient import TestClient
 
 
 @pytest.fixture

@@ -10,6 +10,7 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+
 from clio_agent.runtime.document_runtime import STACK_ROOT
 
 

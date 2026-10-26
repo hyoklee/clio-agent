@@ -42,7 +42,11 @@ MONGO_SHA = {
     "ubuntu2404": "9e6a8332ef0eddb52f7869d4363212b3ca379955fd70d80840d1b7fa6f5cb54b",
     "debian12": "c13e85583fc393e0b9f47911797f4e0f724cd6a563cd719ee3360aa592a96f16",
     "rhel8": "94a5f1bb0ec0bcf2d372e787b6bb39ed8662cc073f31271dc57a0c1c3f803dd2",
+    # SLES 15 / openSUSE Leap 15, e.g. HPE Cray OS on ALCF Polaris.
+    "suse15": "c18266c2566ab88bad100f1f42e8a2150e3669b70f46e032b0b0f77f9f3edd94",
 }
+#: os-release IDs of SUSE 15 systems that run MongoDB's ``suse15`` build.
+SUSE_IDS = frozenset({"sles", "sled", "sle_hpc", "opensuse-leap"})
 
 
 def private(root: Path, manifest: dict[str, Any]) -> dict[str, str]:
@@ -175,7 +179,7 @@ def install(root: Path, manifest: dict[str, Any]) -> None:
                 MONGO_SHA[platform],
             )
             shutil.copy2(source / "bin/mongod", binaries / "mongod")
-            subprocess.run([str(binaries / "mongod"), "--version"], check=True)
+            check_mongod(binaries / "mongod", platform)
             flowcept_settings(root, credentials)
         else:
             environment = build_tools(root)
@@ -219,6 +223,23 @@ def build_tools(root: Path) -> dict[str, str]:
     return environment
 
 
+def check_mongod(mongod: Path, platform: str) -> None:
+    """Run the fetched ``mongod`` once; name what the host lacks when it cannot start."""
+    result = subprocess.run([str(mongod), "--version"], capture_output=True, text=True, check=False)
+    if result.returncode == 0:
+        return
+    detail = (result.stderr or result.stdout).strip()[:400]
+    hint = (
+        " On SUSE 15 the OpenSSL 1.1 library comes from the libopenssl1_1 package."
+        if platform == "suse15" and "libssl.so.1.1" in detail
+        else ""
+    )
+    raise RuntimeError(
+        f"MongoDB's verified {platform} build does not run on this host: {detail}.{hint} "
+        "Install the missing system library or choose site databases."
+    )
+
+
 def mongo_platform(release: str) -> str:
     """Choose a compatible verified MongoDB build or require site databases."""
     fields = dict(line.split("=", 1) for line in release.splitlines() if "=" in line)
@@ -232,6 +253,8 @@ def mongo_platform(release: str) -> str:
     }.get((system, version))
     if system in {"rhel", "rocky", "almalinux", "centos"} and version.split(".")[0] == "8":
         selected = "rhel8"
+    if system in SUSE_IDS and version.split(".")[0] == "15":
+        selected = "suse15"
     if selected is None:
         raise RuntimeError(
             "No verified managed MongoDB binary for this Linux distribution; "

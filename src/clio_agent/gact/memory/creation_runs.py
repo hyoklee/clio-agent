@@ -156,7 +156,7 @@ def proposal_summaries(
     from clio_agent.gact.memory.store import PROPOSALS  # noqa: PLC0415
 
     counts_by_run = {run: {"accepted": 0, "pending": 0, "rejected": 0} for run in runs}
-    targets_by_run = {run: set() for run in counts_by_run}
+    targets_by_run: dict[tuple[str, str], set[str]] = {run: set() for run in counts_by_run}
     for name in service.store.scan_names(PROPOSALS):
         raw = service.store.get(PROPOSALS, name)
         if raw is None:
@@ -200,11 +200,11 @@ def load_run_rows(
         if run_id not in existing_names and (before is None or ordering < before):
             rows.append(row)
     for name in existing_names:
-        row = _read(store, name)
-        if row is not None:
-            ordering = (str(row.get("started_at") or ""), str(row.get("id") or ""))
+        stored = _read(store, name)
+        if stored is not None:
+            ordering = (str(stored.get("started_at") or ""), str(stored.get("id") or ""))
             if before is None or ordering < before:
-                rows.append(row)
+                rows.append(stored)
     rows_by_id = {str(row.get("id") or ""): row for row in rows}
     rows = list(rows_by_id.values())
     rows.sort(
@@ -388,13 +388,13 @@ def _normalize_usage(value: Any) -> dict[str, Any]:
         return _empty_usage(known=False)
     known = bool(value.get("cost_known"))
     cost = value.get("cost_usd")
-    input_raw = value.get("input_tokens", value.get("input"))
-    output_raw = value.get("output_tokens", value.get("output"))
-    input_known = bool(value.get("input_known", input_raw is not None))
-    output_known = bool(value.get("output_known", output_raw is not None))
+    input_value = value.get("input_tokens", value.get("input"))
+    output_value = value.get("output_tokens", value.get("output"))
+    input_known = bool(value.get("input_known", input_value is not None))
+    output_known = bool(value.get("output_known", output_value is not None))
     return {
-        "input_tokens": _int(input_raw) if input_known else None,
-        "output_tokens": _int(output_raw) if output_known else None,
+        "input_tokens": _int(input_value) if input_known else None,
+        "output_tokens": _int(output_value) if output_known else None,
         "input_known": input_known,
         "output_known": output_known,
         "cost_usd": float(cost) if known and isinstance(cost, (int, float)) else None,

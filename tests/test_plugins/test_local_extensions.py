@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+
 from clio_agent.platform_paths import rmtree_extended, win_extended_path
 from clio_agent.plugins.loader import load_plugin
 from clio_agent.plugins.local import archive_files, create_local

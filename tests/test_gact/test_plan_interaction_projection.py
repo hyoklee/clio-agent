@@ -4,9 +4,12 @@ from pathlib import Path
 
 import pytest
 
+from tests.test_gact import test_plan_exit
 from tests.test_gact.test_plan_exit import ApprovalWorld
 
-pytest_plugins = ("tests.test_gact.test_plan_exit",)
+# Bind the fixture here: ``pytest_plugins`` naming a test module is ignored when that
+# module was already collected in the same session, which made this order-dependent.
+approval_world = test_plan_exit.approval_world
 pytestmark = pytest.mark.usefixtures("native_builtin_lifespan")
 
 

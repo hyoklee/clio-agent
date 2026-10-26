@@ -240,6 +240,35 @@ async def test_denial_and_expiry_never_report_connection(
     await owner.close()
 
 
+@pytest.mark.asyncio
+async def test_failed_sign_in_is_recorded_typed_and_discloses_no_credentials(
+    handshake: dict[str, Any], monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    connected = mcp_auth.make_mcp_client
+
+    class Failing(connected):  # type: ignore[misc, valid-type]
+        async def list_tools(self) -> list[Any]:
+            raise RuntimeError("transport rejected token=private-credential")
+
+    monkeypatch.setattr(mcp_auth, "make_mcp_client", Failing)
+    owner = mcp_auth.McpSignIns()
+    try:
+        flow_id = (await owner.start("home", "http://localhost:5173/oauth/mcp"))["flow_id"]
+        callback = "http://localhost:5173/oauth/mcp?state=exact-state&code=secret"
+        await owner.complete("home", flow_id, callback)
+        task = owner.get(flow_id).task
+        assert task is not None
+        (outcome,) = await asyncio.gather(task, return_exceptions=True)
+        finished = owner.get(flow_id).public()
+        assert finished["state"] == "failed" and finished["error"] == str(outcome)
+        assert isinstance(outcome, mcp_auth.McpSignInFailed)
+        assert isinstance(outcome.__cause__, RuntimeError)
+        for text in (str(finished), str(outcome), caplog.text):
+            assert "private-credential" not in text
+    finally:
+        await owner.close()
+
+
 @pytest.mark.parametrize(
     "uri,origin",
     [

@@ -27,6 +27,32 @@ def mark_wait_interrupted(presentation: dict[str, Any], source: str = "") -> Non
     presentation["status"] = "interrupted"
 
 
+def completed_after_cancel_error(name: str, completion_error: str | None) -> str | None:
+    """A tool that finished after Stop failed, except a wait: its snapshot is still true."""
+    if completion_error is None and not is_wait_task_tool(name):
+        return "tool call completed after session cancellation"
+    return completion_error
+
+
+def completion_status(
+    name: str, ok: bool, completed_after_cancel: bool, result: Any, presentation: Any
+) -> str:
+    """``interrupted``, ``completed`` or ``failed``; marks a wait that unwound after Stop.
+
+    The read-only wait reports what it saw. Its interruption is not an execution failure.
+    """
+    if completed_after_cancel and ok and is_wait_task_tool(name):
+        interruption = (
+            result.get("interrupted", "session_cancelled")
+            if isinstance(result, Mapping)
+            else "session_cancelled"
+        )
+        mark_wait_interrupted(presentation, interruption if isinstance(interruption, str) else "")
+    if ok and is_wait_task_tool(name) and presentation.get("status") == "interrupted":
+        return "interrupted"
+    return "completed" if ok else "failed"
+
+
 def wait_start_presentation(args: Mapping[str, Any]) -> dict[str, Any]:
     """Describe an active wait using authorized task kinds, before a result exists."""
     from clio_agent.gact.context import active_app, active_session_id

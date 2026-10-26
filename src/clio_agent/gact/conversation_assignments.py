@@ -21,6 +21,7 @@ from clio_agent.arc.task_types import (
     TaskSnapshot,
     argument_digest,
 )
+from clio_agent.gact.assignment_response import assignment_outputs
 from clio_agent.gact.fleet.child_model import warm_model_catalog
 from clio_agent.gact.fleet.guard import guard_spending
 from clio_agent.gact.native_work import now
@@ -213,6 +214,9 @@ def _new_assignment(
         .model_copy(
             update={
                 "predecessor": predecessor.handle if predecessor is not None else None,
+                "standing": previous_details.standing
+                if previous_details is not None
+                else bool(initial_details and initial_details.standing),
                 "context": previous_details.context if previous_details is not None else None,
                 "context_epoch": previous_details.context_epoch if previous_details else "",
                 "context_epoch_after": previous_details.context_epoch_after
@@ -278,29 +282,6 @@ def _new_assignment(
             initial_details.execution_deadline if initial_details else None,
         )
     return task
-
-
-def assignment_outputs(history: Any, details: AssignmentDetails, outputs: Any) -> Any:
-    """A turn's outputs, retaining earlier tool calls and public response parts.
-
-    An assignment can span turns: a child that yields on a question resumes once it is
-    answered. An editor's proposals and authored evidence from before that yield
-    still reach the caller. The final value remains the completing turn's answer.
-    """
-
-    if not details.last_output or not isinstance(outputs, dict):
-        return outputs
-    earlier = history.read_content(details.last_output)
-    if not isinstance(earlier, dict):
-        return outputs
-    merged = dict(outputs)
-    if calls := earlier.get("tools_called"):
-        merged["tools_called"] = [*calls, *(outputs.get("tools_called") or [])]
-    if parts := earlier.get("response_parts"):
-        from clio_agent.gact.assignment_response import merge_response_parts
-
-        merged["response_parts"] = merge_response_parts(parts, outputs.get("response_parts") or [])
-    return merged if merged != outputs else outputs
 
 
 def _finish_segment(
@@ -381,9 +362,11 @@ def _finish_segment(
             for task in pending
         )
         startup_error = self.sessions.startup_retirement_error(segment.session_id)
+        # A standing assignment's check never completes it, so it publishes no
+        # outcome that would wake its owner (agent-task-native-v3 §3).
         disposition = (
             "yield"
-            if gated or startup_error
+            if gated or startup_error or details.standing
             else outcome.disposition or ("yield" if has_work else "complete")
         )
         if disposition not in {"yield", "complete"}:
@@ -547,11 +530,13 @@ async def spawn(
     resource_id: str | None = None,
     start: bool = True,
     model: str = "",
+    standing: bool = False,
 ) -> dict[str, Any]:
     """Persist the original assignment before enrichment or child inference starts.
 
     ``model`` names the model the child runs on (``account/model`` or a bare id);
     empty lets the child's preferences, then the caller's model, decide.
+    ``standing`` keeps the assignment across check segments until cancelled.
     """
     if not assignment.strip():
         raise ValueError("Subagent assignment cannot be empty")
@@ -689,6 +674,7 @@ async def spawn(
                     "approval_profile": approval_profile,
                     "resource": resource_id,
                     **({"model": model} if model else {}),
+                    **({"standing": True} if standing else {}),
                 }
             )
             initial_metadata = dict(session_metadata or {})
@@ -730,6 +716,7 @@ async def spawn(
                     inference_concurrency=inference_concurrency,
                     input_evidence=pins,
                     evidence_assignment=handle if pins else None,
+                    standing=standing,
                 ),
             )
             if resource_id is not None:

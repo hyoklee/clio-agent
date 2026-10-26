@@ -8,9 +8,12 @@ rewriting the final value or forwarding provider reasoning and tool payloads.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from clio_agent.gact.parts import Part
+
+if TYPE_CHECKING:
+    from clio_agent.arc.task_types import AssignmentDetails
 
 _PUBLIC_METADATA = frozenset(
     {"signature_field_name", "revises", "revised_by", "reason", "superseded_by"}
@@ -48,3 +51,24 @@ def merge_response_parts(
 
     by_id = {part["id"]: part for part in [*earlier, *later]}
     return list(by_id.values())
+
+
+def assignment_outputs(history: Any, details: AssignmentDetails, outputs: Any) -> Any:
+    """A turn's outputs, retaining earlier tool calls and public response parts.
+
+    An assignment can span turns: a child that yields on a question resumes once it is
+    answered. An editor's proposals and authored evidence from before that yield
+    still reach the caller. The final value remains the completing turn's answer.
+    """
+
+    if not details.last_output or not isinstance(outputs, dict):
+        return outputs
+    earlier = history.read_content(details.last_output)
+    if not isinstance(earlier, dict):
+        return outputs
+    merged = dict(outputs)
+    if calls := earlier.get("tools_called"):
+        merged["tools_called"] = [*calls, *(outputs.get("tools_called") or [])]
+    if parts := earlier.get("response_parts"):
+        merged["response_parts"] = merge_response_parts(parts, outputs.get("response_parts") or [])
+    return merged if merged != outputs else outputs

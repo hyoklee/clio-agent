@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -13,6 +14,8 @@ from clio_agent.gact.conversation_dispatch_fence import (
 
 if TYPE_CHECKING:
     from clio_agent.flows.context import FlowCall, FlowContext
+
+logger = logging.getLogger(__name__)
 
 
 async def quiesce_gather(
@@ -35,6 +38,8 @@ async def quiesce_gather(
         )
         fence_confirmed = confirmed_children is not None
     except Exception:
+        # Unconfirmed fence: children without a receipt are recorded cleanup_uncertain.
+        logger.exception("gather cleanup reason=gather_fence_unconfirmed root=%s", ctx.root_handle)
         confirmed_children = {}
     for task in tasks:
         if not task.done():
@@ -51,15 +56,15 @@ async def quiesce_gather(
             if not handles and row.get("handle"):
                 handles = (str(row["handle"]),)
             if not handles:
-                row = ctx.journal.call(call.invocation)
-                if row is not None and row.get("status") in {
+                recorded = ctx.journal.call(call.invocation)
+                if recorded is not None and recorded.get("status") in {
                     "dispatching",
                     "cleanup_uncertain",
                 }:
                     await ctx.journal.record_call(
                         call.invocation,
                         {
-                            **row,
+                            **recorded,
                             "status": "not_accepted" if fence_confirmed else "cleanup_uncertain",
                         },
                     )
@@ -97,10 +102,16 @@ async def quiesce_gather(
         except Exception:
             # The owning flow still fails with its original error. A missing
             # control/settlement receipt is represented as unresolved history.
+            logger.exception(
+                "gather cleanup reason=gather_child_cleanup_failed invocation=%s", call.invocation
+            )
             try:
                 await ctx._settle(call.invocation, "cleanup_uncertain")
             except Exception:
-                pass
+                logger.exception(
+                    "gather cleanup reason=gather_cleanup_unrecorded invocation=%s",
+                    call.invocation,
+                )
     if not pending_calls:
         try:
             history.io.submit(
@@ -112,4 +123,6 @@ async def quiesce_gather(
         except Exception:
             # The queued release is not required for safety: terminal parents
             # reject future work, and a delayed release stays ordered after closure.
-            pass
+            logger.exception(
+                "gather cleanup reason=gather_release_deferred root=%s", ctx.root_handle
+            )

@@ -9,6 +9,7 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from clio_agent.arc.loop_guard import on_server_loop
 from clio_agent.gact.context import active_app, active_assignment_handle, active_session_id
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ def emit_permission_resolution(app: Any, row: Mapping[str, Any]) -> None:
     Failure to record is reported and never changes an authorization decision.
     Missing historical attribution stays missing; current policy is not history.
     """
+    from clio_agent.gact.off_loop import schedule_off_loop  # noqa: PLC0415
     from clio_agent.gact.runtime.globals import _emit_semantic_event  # noqa: PLC0415
 
     tool = row.get("tool_call")
@@ -58,23 +60,31 @@ def emit_permission_resolution(app: Any, row: Mapping[str, Any]) -> None:
         "policy_scope_id": str(policy.get("scope_id") or ""),
         "resource_restricted": bool(policy.get("path_pattern") or policy.get("host_pattern")),
     }
-    try:
-        _emit_semantic_event(
-            app,
-            str(row.get("session_id") or ""),
-            "permission.resolved",
-            status="completed",
-            summary=f"Permission {payload['permission_id']} resolved: {payload['action']}.",
-            actor={"role": payload["grantor"]},
-            subject={"permission_id": payload["permission_id"], "action": payload["action"]},
-            payload=payload,
-        )
-    except Exception as exc:  # noqa: BLE001 - recording cannot alter the decision
-        logger.warning(
-            "permission receipt unavailable permission_id=%s error=%r",
-            payload["permission_id"],
-            exc,
-        )
+
+    def record() -> None:
+        try:
+            _emit_semantic_event(
+                app,
+                str(row.get("session_id") or ""),
+                "permission.resolved",
+                status="completed",
+                summary=f"Permission {payload['permission_id']} resolved: {payload['action']}.",
+                actor={"role": payload["grantor"]},
+                subject={"permission_id": payload["permission_id"], "action": payload["action"]},
+                payload=payload,
+            )
+        except Exception:  # noqa: BLE001 - recording cannot alter the decision
+            logger.exception(
+                "permission receipt unavailable reason=permission_receipt_unrecorded "
+                "permission_id=%s",
+                payload["permission_id"],
+            )
+
+    if on_server_loop():
+        # A route resolving on the server loop must not wait on the store write (#1334).
+        schedule_off_loop(record, label="permission.resolved")
+    else:
+        record()
 
 
 def permission_receipts(app: Any, session_id: str, root_handle: str) -> dict[str, Any]:
