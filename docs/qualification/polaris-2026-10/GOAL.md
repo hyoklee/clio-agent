@@ -9,16 +9,17 @@ each other). No merge, tag or release; nothing pushed to spotter-ai-genesis repo
 A Polaris agent takes this branch plus `HANDOFF.md` (this directory) and, without asking
 anyone, on a PBS compute node:
 
-1. lets **CLIO deploy** Flowcept, then vLLM with the attention connector (native or
-   Apptainer; Polaris has no Docker), then serves CLIO + the web UI;
+1. lets **CLIO deploy** Flowcept natively (Apptainer only as fallback; Polaris has no Docker),
+   then vLLM with the attention connector, then serves CLIO + the web UI;
 2. creates an OPAL workspace/session with the **SPOTTER AI** agent;
 3. runs OPAL: Bogdan's chain(s) from `opal_chains.csv` round by round through the session,
    then the broad SPOTTER investigation over the staged OPAL export;
 4. opens the attention view, which follows **Bogdan's semantics**.
 
-Model: **IBM Granite 4.2-30B** (`ibm-granite/granite-4.2-30b`, bf16, tensor-parallel over
-2 A100-40GB). The connector has never run under tensor parallelism: one attention turn is the
-first check.
+Model, in two stages (decided 2026-10-26): **stage 1, IBM Granite 4.2-8B on one A100** (no tensor
+parallelism; same chat template and tokenizer as the 30B); **stage 2, Granite 4.2-30B on two A100s**
+only after stage 1 passes. The connector has never run under tensor parallelism on CUDA: one attention
+turn is the first check of each stage.
 
 History is the model's own answers (no teacher forcing). Teacher forcing does not change the
 attention formula.

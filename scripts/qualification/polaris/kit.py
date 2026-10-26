@@ -388,7 +388,7 @@ def _dry_catalog():
              "configuration": {"flowcept_settings": services + "/flowcept/settings.yaml"}},
             {"id": "vllm", "state": "running", "connection_url": "http://127.0.0.1:41234",
              "configuration": {"model": "<model>", "storage.captures": services + "/vllm/evidence",
-                               "param.tensor_parallel_size": env("VLLM_TP", "4")}},
+                               "param.tensor_parallel_size": env("VLLM_TP", "1")}},
         ],
     }
 
@@ -509,7 +509,8 @@ def step_model():
         call("POST", "/v1/infrastructure/targets/local/models",
              {"repository": repo, "revision": revision})
         return receipt("04-model", "dry_run", path=candidates[-1])
-    say("downloading %s@%s through CLIO (58.5 GB; ~20-60 min via the proxy)" % (repo, revision[:12]))
+    say("downloading %s@%s through CLIO (8B 17.6 GB / 30B 58.5 GB; ~5-60 min via the proxy)"
+        % (repo, revision[:12]))
     row = call("POST", "/v1/infrastructure/targets/local/models",
                {"repository": repo, "revision": revision}, timeout=300)
     job = row.get("id")
@@ -534,7 +535,7 @@ def step_model():
 
 
 def step_flowcept():
-    variant = env("FLOWCEPT_VARIANT", "managed")
+    variant = env("FLOWCEPT_VARIANT", "native")
     configuration = {"port": env("FLOWCEPT_PORT", "8008"),
                      "redis_port": env("FLOWCEPT_REDIS_PORT", "16379"),
                      "mongo_port": env("FLOWCEPT_MONGO_PORT", "37017")}
@@ -556,7 +557,7 @@ def step_vllm():
     model = prior("04-model", {"path": "<dry:model snapshot>"}).get("path")
     if not model or not flowcept.get("settings_path"):
         raise KitError("run the model and Flowcept steps first (04-model, 05-flowcept receipts)")
-    tp = env("VLLM_TP", "4")
+    tp = env("VLLM_TP", "1")
     configuration = {
         "model": model,
         "model_revision": env("MODEL_REVISION"),
@@ -598,7 +599,7 @@ def step_provenance():
     vllm = prior("06-vllm", {"captures": "<dry:vllm evidence dir>", "model": "<dry:model snapshot>", "url": "http://127.0.0.1:41234"})
     if not vllm.get("captures"):
         raise KitError("06-vllm receipt has no captures directory")
-    body = {"service_id": "flowcept", "label": "Managed Flowcept (%s)" % HOST,
+    body = {"service_id": "flowcept", "label": "Flowcept (%s)" % HOST,
             "url": flowcept.get("url") or "http://127.0.0.1:%s" % env("FLOWCEPT_PORT", "8008"),
             "settings_path": flowcept["settings_path"], "attention_files_dir": vllm["captures"],
             "capture_attention": True}
@@ -621,10 +622,23 @@ def step_provenance():
     listing = call("GET", "/v1/infrastructure/provenance/connections",
                    dry={"connections": [{"id": cid, "active": True}]})
     current = next((c for c in listing.get("connections", []) if c.get("id") == cid), {})
-    providers = call("GET", "/v1/provenance/providers", dry={})
+    providers = call("GET", "/v1/provenance/providers", dry={"default_provider": "flowcept"})
+    if current.get("active") and providers.get("default_provider") != "flowcept" and not restarted:
+        # A connection activated by an older CLIO left queries on the native journal; using it
+        # again makes Flowcept the query source SPOTTER reads (needs one more restart).
+        say("provenance queries go to %r; selecting Flowcept again" % providers.get("default_provider"))
+        call("POST", "/v1/infrastructure/provenance/connections/%s/use" % cid,
+             dry={"restart_required": True})
+        serve_stop("07-serve-requery-stop")
+        serve_start()
+        restarted = True
+        providers = call("GET", "/v1/provenance/providers", dry={"default_provider": "flowcept"})
     write_json(os.path.join(JOB_EVIDENCE, "provenance-providers.json"), providers)
     if not current.get("active"):
         raise KitError("provenance connection %s is not active after restart" % cid)
+    if providers.get("default_provider") != "flowcept":
+        raise KitError("CLIO queries %r, not Flowcept, after using the connection"
+                       % providers.get("default_provider"))
     # vLLM is supervised outside CLIO and should survive the restart; give the
     # restarted CLIO a moment to observe it before deciding to start it again.
     state = ""
@@ -637,7 +651,8 @@ def step_provenance():
         say("vLLM is %s after the CLIO restart; starting it again through CLIO" % state)
         step_vllm()
     return receipt("07-provenance", "ok", connection_id=cid, restarted=restarted,
-                   verification=verified.get("verification"), vllm_state=state)
+                   verification=verified.get("verification"), vllm_state=state,
+                   query_default=providers.get("default_provider"))
 
 
 def step_bind():
@@ -751,7 +766,7 @@ def step_smoke():
     """ONE attention turn on the TP deployment: the gate before any OPAL work."""
     vllm = prior("06-vllm", {"captures": "<dry:vllm evidence dir>", "model": "<dry:model snapshot>", "url": "http://127.0.0.1:41234"})
     workspace = _workspace("attention-smoke", os.path.join(ROOT, "workspace-smoke"))
-    session = _session(workspace["id"], "Polaris attention smoke (TP=%s)" % env("VLLM_TP", "4"),
+    session = _session(workspace["id"], "Polaris attention smoke (TP=%s)" % env("VLLM_TP", "1"),
                        "", "auto-edits")
     prompt = env("SMOKE_PROMPT", "In three sentences, what does a dose-response curve show, "
                                  "and why can its peak sit at an intermediate dose?")
@@ -798,7 +813,7 @@ def step_smoke():
         "items_profile": (items.get("profile") or {}).get("name"),
         "response_id": attention.get("response_id"), "capture_sha256": attention.get("capture_sha256"),
         "lm_call_id": attention.get("lm_call_id"), "recent_capture_files": captures,
-        "tensor_parallel_size": env("VLLM_TP", "4"),
+        "tensor_parallel_size": env("VLLM_TP", "1"),
     }
     status = "ok" if available and reply.get("stop_reason") == "end_turn" else "failed"
     receipt("09-attention-smoke", status, **details)

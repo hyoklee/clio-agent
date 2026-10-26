@@ -60,9 +60,11 @@ No teacher forcing. Tests: `tests/test_scripts/test_opal_chain_run.py`.
 
 ## C. Polaris kit: written, statically checked, not run on a GPU
 
-See [HANDOFF.md](HANDOFF.md). CLIO itself deploys Flowcept (native; Apptainer is the labelled
-fallback) and vLLM `native-cuda-attention` serving Granite 4.2-30B at **tensor parallel 4** (the whole
-node, about 128k context). It then runs one attention smoke turn before OPAL.
+See [HANDOFF.md](HANDOFF.md). CLIO itself deploys Flowcept **natively** and vLLM
+`native-cuda-attention`. **Stage 1 serves Granite 4.2-8B on one A100** (no tensor parallelism; chat
+template and tokenizer byte-identical to the 30B's; about 100k tokens of context). Stage 2
+(`MODEL_STAGE=2`) serves the 30B on two A100s once stage 1 passes. Each stage runs one attention smoke
+turn before OPAL.
 
 - Checks: `bash -n`, shellcheck, `py_compile`, `DRY_RUN=1` of every step, and kit.py's control flow
   against a stand-in REST server.
@@ -97,10 +99,17 @@ Everything ran through CLIO's REST API and UI, on `claude_code` (no GPU, so no a
 
 ### Consequences for the kit (applied)
 
-- Polaris runs SLES 15, and CLIO's native Flowcept refuses it (no verified MongoDB build for SLES). The
-  kit now deploys Flowcept `managed` on Apptainer by default.
-- The kit exports `CLIO_PROVENANCE_QUERY_DEFAULT=flowcept` so SPOTTER queries the captured provenance.
-  The shipped default is the native journal.
+- **Native Flowcept now runs on SLES 15** (Polaris). CLIO refused SUSE before. It now pins MongoDB
+  8.0.14's `suse15` build (checksum from MongoDB, rechecked on a fresh download), and a missing system
+  library is reported by name. Proven through CLIO's API in an openSUSE Leap 15.6 container (SLES 15
+  userspace, gcc 7.5): install, start, Verify (write/readback), stop, restart, Verify.
+  Evidence: [suse15-native/](suse15-native/). Its one system requirement is OpenSSL 1.1
+  (`libopenssl1_1`, SLES 15's standard OpenSSL); the kit's preflight checks it. Apptainer stays as the
+  labelled fallback.
+- **SPOTTER reads Flowcept by product behaviour, not a kit override.** Using a Flowcept connection now
+  also makes it the provenance query source, and disconnecting returns queries to the native journal.
+  Proven on the openSUSE CLIO: after "use" and a restart, `default_provider: flowcept`, with Flowcept
+  ready and queryable.
 
 ### Follow-ups not done tonight
 
@@ -146,10 +155,12 @@ Nothing is merged, tagged or released, and nothing was pushed to spotter-ai-gene
 
 ## Open risks for Polaris
 
-1. **Attention capture under tensor parallelism on CUDA has never run.** The connector pin `95ab2ac`
-   gathers per-rank maxima and rank 0 writes the file. The smoke turn checks this first, and the
-   capture metadata must show the global head counts (32 query / 8 KV heads).
-2. **Connector build fix.** The pinned connector does not build without a one-line fix. The kit builds a
+1. **Stage 2 only: attention capture under tensor parallelism on CUDA has never run.** Stage 1 avoids
+   it (one GPU). The connector pin `95ab2ac` gathers per-rank maxima and rank 0 writes the file; the
+   stage-2 smoke turn checks that the capture metadata shows global head counts (32 query / 8 KV heads).
+2. **Native Flowcept on HPE Cray OS itself** is untested (verified on openSUSE Leap 15.6). Preflight
+   records `os_release`, `cc`, `make` and `libssl_1_1` before anything installs.
+3. **Connector build fix.** The pinned connector does not build without a one-line fix. The kit builds a
    patched wheel locally. Nothing was pushed to spotter-ai-genesis.
-3. **ALCF details not checkable from here:** queue names (`capacity`), `/local/scratch`, module names
+4. **ALCF details not checkable from here:** queue names (`capacity`), `/local/scratch`, module names
    for Apptainer, and the driver version (preflight flags a driver older than 570).

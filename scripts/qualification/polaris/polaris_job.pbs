@@ -1,6 +1,6 @@
 #!/bin/bash -l
 # CLIO on one Polaris node, unattended: preflight -> stage-up (no-op when current) -> CLIO
-# deploys Flowcept + vLLM attention (Granite 4.2-30B, TP=VLLM_TP) -> one attention smoke turn
+# deploys Flowcept + vLLM attention (Granite 4.2, MODEL_STAGE 1 = 8B on one GPU) -> one attention smoke turn
 # -> OPAL (only if the smoke passed and RUN_OPAL=1) -> serve for the user until the walltime
 # margin or `touch $ROOT/run/END-<job>` -> teardown. Submit with submit.sh (it passes -A,
 # because PBS directives cannot expand ${PBS_ACCOUNT}).

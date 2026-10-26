@@ -71,8 +71,6 @@ export CLIO_AGENT_HOME="$STATE"
 export CLIO_RUNTIME_STATE_DIR="$STATE/runtime-hosts/$HOST"
 export CLIO_WEB_DIR="$BUILD/clio-web"
 export CLIO_SEARCH_AUTO_INSTALL
-# SPOTTER reads its provenance from Flowcept (the shipped default is the native journal).
-export CLIO_PROVENANCE_QUERY_DEFAULT="${CLIO_PROVENANCE_QUERY_DEFAULT:-flowcept}"
 if [ -n "$CUDA_COMPAT_DIR" ]; then export LD_LIBRARY_PATH="$CUDA_COMPAT_DIR:${LD_LIBRARY_PATH:-}"; fi
 CONNECTOR_SOURCE_FILE="$BUILD/connector/CONNECTOR_SOURCE.txt"
 if [ -z "${CLIO_VLLM_ATTN_CONNECTOR:-}" ] && [ -s "$CONNECTOR_SOURCE_FILE" ]; then

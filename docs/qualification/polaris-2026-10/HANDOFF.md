@@ -6,10 +6,18 @@ failure table, fix the cause in the owning repository if you can, and report it.
 
 ## What you do
 
-On one Polaris node (4 x A100-40GB), CLIO itself deploys Flowcept, then vLLM
-`native-cuda-attention` serving **IBM Granite 4.2-30B** (`ibm-granite/granite-4.2-30b`
-@ `9e668ce1c538`, bf16, tensor parallel 4 = the whole node), then serves its web UI. You run ONE attention turn
-(the connector has never run under TP on CUDA), and only if it passes you run OPAL:
+On one Polaris node (4 x A100-40GB), CLIO itself deploys Flowcept **natively** (it builds Valkey and
+fetches MongoDB's verified `suse15` build; no containers), then vLLM `native-cuda-attention`, then
+serves its web UI. Two model stages:
+
+- **Stage 1 (default, `MODEL_STAGE=1`): IBM Granite 4.2-8B** (`ibm-granite/granite-4.2-8b` @
+  `a7042144125c`, bf16, 17.6 GB) on **one** A100. No tensor parallelism, so the attention capture never
+  splits across GPUs. Its chat template and tokenizer are byte-identical to the 30B's (the template
+  CLIO's alignment is verified on), dense, 40 layers, 32 query / 8 KV heads, 128k context.
+- **Stage 2 (only after stage 1 passes OPAL, `MODEL_STAGE=2`): Granite 4.2-30B** (`@9e668ce1c538`) on two
+  A100s (TP=2). Capture under tensor parallelism has never run on CUDA; expect about 40-50k tokens of context.
+
+You run ONE attention turn, and only if it passes you run OPAL:
 
 1. Bogdan's chain `exp32-chain-0020-hard` round by round, condition A then B, each in a
    fresh APPL-CORE session with SPOTTER approval;
@@ -58,17 +66,21 @@ Paths: `ROOT=/eagle/$PBS_ACCOUNT/$USER/clio-polaris-2026-10`, `K=$ROOT/src/clio-
 4. **Services (first node 40-90 min; a node that has them already: 10-15 min).** `bash $K/02_services_up.sh`.
    Expected receipts and times:
    - `02-serve`: CLIO boots in 2-5 min on Lustre and waits for "agent ready".
-   - `04-model`: 0 min if the hub snapshot is complete. A CLIO download of 58.5 GB through the proxy takes 20-60 min.
-   - `05-flowcept`: `managed` (Apptainer Redis/MongoDB), 5-15 min. The `native` variant refuses SLES 15: CLIO has no verified MongoDB build for it.
-   - `06-vllm`: env install 10-20 min, then start 5-10 min (TP=4 load and CUDA graphs).
-   - `07-provenance`: verify, use, CLIO restart, `active: true`.
+   - `04-model`: 0 min if the hub snapshot is complete. A CLIO download through the proxy: 8B (17.6 GB) 5-20 min, 30B (58.5 GB) 20-60 min.
+   - `05-flowcept`: `native`, 3-10 min (Valkey compiles with the system gcc; MongoDB 8.0.14 `suse15` is
+     fetched and checksum-verified). Verified on openSUSE Leap 15.6 with gcc 7.5 through CLIO's API:
+     install, start, Verify, stop, restart, Verify (`suse15-native/`).
+   - `06-vllm`: env install 10-20 min, then start 3-10 min.
+   - `07-provenance`: verify, use, CLIO restart, `active: true`. "Use" also makes Flowcept CLIO's
+     provenance query source, so SPOTTER reads the captured tasks; check `default_provider: flowcept` in
+     `GET /v1/provenance/providers`.
    - `08-bind`: reachable, lists the model, `credential_ref` set.
 
    Check `vllm-context-sizing.json` and the effective `max_model_len` in `06-vllm.json`.
 5. **Attention smoke (1-3 min).** `bash $K/03_attention_smoke.sh`. Pass:
    - `09-attention-smoke.json` has `status: ok`, `attention_available: true` and `items_available: true` (profile `attn-analytics`);
    - `thinking_separated: true`;
-   - `recent_capture_files[].metadata` shows the TP size and global head counts (32 query / 8 KV heads), not one rank's slice.
+   - `recent_capture_files[].metadata` shows global head counts (32 query / 8 KV heads; at stage 2 also TP=2), not one rank's slice.
 
    **Do not start OPAL if this fails.**
 6. **OPAL data (2-10 min).** `bash $K/04_stage_opal_data.sh`. Pass: `11-opal-data.json` is `ok` with 139 files and 1,237,266,797 bytes.
@@ -87,9 +99,9 @@ Paths: `ROOT=/eagle/$PBS_ACCOUNT/$USER/clio-polaris-2026-10`, `K=$ROOT/src/clio-
 |---|---|
 | Preflight: low inodes/space | Inspect `inode-census.txt`. Uninstall old hosts' services through CLIO (UI or `action: uninstall`), prune `cache/`. Never touch other users' files. `FORCE=1` only after freeing space. |
 | Driver < 570 / "CUDA driver version is insufficient" in the vLLM op log | Set `CUDA_COMPAT_DIR` to a cuda-compat lib dir (A100 supports forward compatibility; look under `/soft/compilers/cudatoolkit*/*/compat`) and rerun `02`. Otherwise report it: attention is native-only. |
-| Op failed (`failed-*.json`, `ops/*-log.json`) | Read the CLIO op log first. Flowcept `managed` fails to load Apptainer: fix `POLARIS_MODULES` (`module avail apptainer`). `native` is not an option on SLES 15. |
+| Op failed (`failed-*.json`, `ops/*-log.json`) | Read the CLIO op log first. Native Flowcept names what it lacks: no `cc`/`make` (load a gcc module) or "MongoDB's verified suse15 build does not run on this host: ... libssl.so.1.1" (SUSE package `libopenssl1_1`; preflight checks it). If the node cannot provide them, `FLOWCEPT_VARIANT=managed` (Apptainer via `POLARIS_MODULES`) is the labelled fallback. |
 | `02-serve` degraded / boot > 10 min | Lustre-slow boot or the bundled SearXNG install holding the target lock (Aurora A08). Wait. If it repeats, set `CLIO_SEARCH_AUTO_INSTALL=0` and record it as a deviation. |
-| vLLM OOM / KV too small | Lower `VLLM_MAX_MODEL_LEN` and record the change. `VLLM_TP=4` is already the whole node. If TP=4 capture fails but TP=2 works, run TP=2 and expect context pressure (below). |
+| vLLM OOM / KV too small | Lower `VLLM_MAX_MODEL_LEN` and record the change. The 8B on one A100 leaves about 100k tokens of KV; the 30B at TP=2 about 40-50k. |
 | Smoke `available: false` | Record `attention_reason`. `attention_capture_partial`: keep `max_num_seqs=1`. Missing capture file: inspect `06-vllm.captures`, the Flowcept `decode_attention` task and the connector log in the vLLM op log. Check whether one or both ranks wrote it. A head count of 16/4 means a per-rank slice: a connector TP defect. Fix it in the connector (another org: commit locally, do not push). |
 | SPOTTER unavailable at OPAL setup | Read the reason in `failed-opal-setup.json`. A cold MCP env sync timed out on Aurora (5m44s): open a SPOTTER session once to let the warmup finish, then rerun `05`. |
 | Driver refuses resume ("receipt belongs to different ... CLIO") | The endpoint or session changed (keep `CLIO_PORT=8100`). Start fresh: delete that kind from `opal-sessions.json` and use a new `--out`/receipt. Keep the old evidence. |
@@ -98,12 +110,14 @@ Paths: `ROOT=/eagle/$PBS_ACCOUNT/$USER/clio-polaris-2026-10`, `K=$ROOT/src/clio-
 
 ## Known risks
 
-- **TP capture is unproven on CUDA.** The connector pin `95ab2ac` gathers per-rank maxima and rank 0
-  writes the file, with the head count taken from `VllmConfig`. Aurora's XPU TP=2 run was
+- **Stage 2 only: TP capture is unproven on CUDA.** The connector pin `95ab2ac` gathers per-rank maxima
+  and rank 0 writes the file, with the head count taken from `VllmConfig`. Aurora's XPU TP=2 run was
   `available: true`. Connector `main` (`e857fd0`) lacks these fixes: never use it.
-- **Context:** TP=4 (the default) gives about 128k tokens. At TP=2 each A100 holds about 27 GiB of
-  weights, which leaves about 40-50k tokens of KV (256 KiB/token), and SPOTTER's watcher prompt exceeded
-  32k on Aurora, so TP=2 is the fallback only.
+- **Context:** stage 1 (8B, one A100) leaves about 100k tokens of KV (160 KiB/token). At stage 2 each
+  A100 holds about 27 GiB of 30B weights, leaving about 40-50k tokens (256 KiB/token); SPOTTER's watcher
+  prompt exceeded 32k on Aurora.
+- **Native Flowcept on SLES:** verified on openSUSE Leap 15.6 (same SLES 15 userspace and gcc 7.5), not
+  yet on HPE Cray OS itself. Preflight records `os_release`, `cc`, `make` and `libssl_1_1`.
 - **Chat-template alignment:** Granite 4.2 uses `qwen3_coder` tool calls and the `nemotron_v3` reasoning
   parser, chosen automatically by CLIO, and a pre-opened `<think>`. Check that the thinking selections
   and answer heat line up in the UI.
@@ -115,9 +129,10 @@ Paths: `ROOT=/eagle/$PBS_ACCOUNT/$USER/clio-polaris-2026-10`, `K=$ROOT/src/clio-
 
 ## Hard rules (DIRECTIVES, abridged)
 
-- **SPOTTER reads Flowcept:** `common.sh` exports `CLIO_PROVENANCE_QUERY_DEFAULT=flowcept` (the shipped default is the native journal).
+- **SPOTTER reads Flowcept** because using the Flowcept connection makes it the query source (product
+  behaviour on this branch, no override). Never set `CLIO_PROVENANCE_QUERY_DEFAULT` by hand.
 - **Deployment goes through CLIO's product interfaces (REST/UI).** Hand-rolled launches are labelled
-  fallbacks only. Every service has native and container variants on the host's runtime (Apptainer here).
+  fallbacks only. Every service has native and container variants on the host's runtime (native first; Apptainer is the container runtime here).
 - **Fix blockers in the owning repo, with tests.** Do not just report them. Do not merge, tag, release or
   push to `spotter-ai-genesis/*`.
 - **Never touch other users' files.** Keep secrets (API keys, tokens) out of logs, evidence and git.

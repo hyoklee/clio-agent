@@ -92,6 +92,23 @@ for url in https://github.com https://pypi.org/simple/ https://huggingface.co ht
 done
 
 # --- Apptainer (fallback only) --------------------------------------------------------------
+# --- native Flowcept prerequisites (CLIO builds Valkey, runs MongoDB's verified suse15 build) --
+add os_release "\"$(. /etc/os-release 2>/dev/null; echo "${ID:-?} ${VERSION_ID:-?}")\""
+add cc "\"$(command -v cc >/dev/null 2>&1 && cc --version 2>/dev/null | head -1 || echo none)\""
+add make "\"$(command -v make >/dev/null 2>&1 && make --version 2>/dev/null | head -1 || echo none)\""
+openssl11=$(/sbin/ldconfig -p 2>/dev/null | grep -c 'libssl.so.1.1 ' || true)
+add libssl_1_1 "${openssl11:-0}"
+if [ "$FLOWCEPT_VARIANT" = native ]; then
+  command -v cc >/dev/null 2>&1 && command -v make >/dev/null 2>&1 \
+    || problems+=("native Flowcept needs cc and make (module load gcc, or FLOWCEPT_VARIANT=managed)")
+  # Only MongoDB's suse15 build links OpenSSL 1.1; the other verified builds use the host's own.
+  case "$(. /etc/os-release 2>/dev/null; echo "${ID:-}")" in
+    sles|sled|sle_hpc|opensuse-leap)
+      [ "${openssl11:-0}" -gt 0 ] \
+        || problems+=("native Flowcept's MongoDB needs libssl.so.1.1 (SUSE package libopenssl1_1); else FLOWCEPT_VARIANT=managed") ;;
+  esac
+fi
+
 load_modules
 add apptainer "\"$(command -v apptainer >/dev/null 2>&1 && apptainer --version 2>/dev/null || echo none)\""
 add system_python "\"$(python3 -V 2>&1)\""
