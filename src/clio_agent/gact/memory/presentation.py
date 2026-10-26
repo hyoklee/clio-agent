@@ -140,14 +140,14 @@ def present_long_term_memory(
                 str(row.get("description") or target.rsplit("/", 1)[-1].replace("-", " ")),
             )
         )
-        changes = row.get("changes")
-        if isinstance(changes, list):
+        row_changes = row.get("changes")
+        if isinstance(row_changes, list):
             blocks.append(
                 {
                     "id": "memory-changes",
                     "type": "markdown",
                     "text": changes_markdown(
-                        [change for change in changes if isinstance(change, dict)]
+                        [change for change in row_changes if isinstance(change, dict)]
                     ),
                 }
             )

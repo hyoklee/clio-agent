@@ -24,7 +24,7 @@ def execution_view(content: dict[str, Any], calls: list[dict[str, Any]]) -> list
     research = content.get("flow") == "deep-research"
     actions = list((content.get("steps") or {}).values())
     names = [str(action.get("name") or "") for action in actions]
-    directions = []
+    directions: list[Any] = []
     if research:
         for action in actions:
             if str(action.get("name") or "").endswith("._plan"):
@@ -132,17 +132,17 @@ def execution_view(content: dict[str, Any], calls: list[dict[str, Any]]) -> list
         batch.append(key)
     previous = batch or previous
     if research and stopped:
-        for site, (number, direction) in planned.items():
+        for site, (number, planned_direction) in planned.items():
             if (
                 site not in recorded_directions
-                and direction.get("closure_kind", "web_research") == "web_research"
+                and planned_direction.get("closure_kind", "web_research") == "web_research"
             ):
                 add(
                     f"planned:{site}",
                     f"Planned research {number}",
                     "unknown",
                     ["run:plan"] if "run:plan" in {row["id"] for row in rows} else ["run:start"],
-                    detail=f"Planned question: {direction.get('question', '')}\nNo accepted child for this direction is recorded in this assignment. Whether it started is unconfirmed.",
+                    detail=f"Planned question: {planned_direction.get('question', '')}\nNo accepted child for this direction is recorded in this assignment. Whether it started is unconfirmed.",
                 )
     if research:
         wrote = any(name.endswith("._write") for name in names)

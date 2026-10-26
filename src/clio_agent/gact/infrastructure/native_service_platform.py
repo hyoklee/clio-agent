@@ -132,7 +132,8 @@ def _acquire_windows_lock(descriptor: int, path: Path) -> None:
     announced = False
     while True:
         try:
-            msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+            # Win32-only API; mypy checks this module against the host platform stubs.
+            msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
             break
         except OSError as exc:
             if exc.errno not in {errno.EACCES, errno.EAGAIN, errno.EDEADLK}:
