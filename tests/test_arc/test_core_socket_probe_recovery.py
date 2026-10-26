@@ -162,6 +162,7 @@ def test_live_diagnostic_probes_report_uncertainty(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Attach and gate diagnostics must not raise or state a daemon was lost."""
+    from clio_agent.arc import clio_core_attach
     from clio_agent.arc.clio_core_attach import ClioCoreAttachPhase, ClioCoreAttachState
     from clio_agent.runtime import clio_core_health as health
 
@@ -171,11 +172,11 @@ def test_live_diagnostic_probes_report_uncertainty(
         "liveness_snapshot",
         lambda: [{"quarantined": False, "reason": "", "port": 9413}],
     )
-    monkeypatch.setattr(
-        health,
-        "attach_state_snapshot",
-        lambda: ClioCoreAttachState(ClioCoreAttachPhase.ATTACHED, "attached", "", 9413),
-    )
+    attached = ClioCoreAttachState(ClioCoreAttachPhase.ATTACHED, "attached", "", 9413)
+    # The attach probe imports the snapshot at call time from its owner module, so patch
+    # there; otherwise the result depends on whatever attach state earlier tests left.
+    monkeypatch.setattr(clio_core_attach, "attach_state_snapshot", lambda: attached)
+    monkeypatch.setattr(health, "attach_state_snapshot", lambda: attached)
     for rows in (health.probe_clio_core_attach(), health.probe_clio_core_liveness()):
         assert len(rows) == 1
         assert rows[0].details["reason"] == liveness.SOCKET_PROBE_UNAVAILABLE_REASON

@@ -6,9 +6,12 @@ failure table, fix the cause in the owning repository if you can, and report it.
 
 ## What you do
 
-On one Polaris node (4 x A100-40GB), CLIO itself deploys Flowcept **natively** (it builds Valkey and
-fetches MongoDB's verified `suse15` build; no containers), then vLLM `native-cuda-attention`, then
-serves its web UI. Two model stages:
+On one Polaris node (4 x A100-40GB), CLIO itself deploys Flowcept, then vLLM
+`native-cuda-attention`, then serves its web UI. Flowcept runs **natively** only when the node can
+run the prebuilt binaries: Valkey's needs glibc 2.34 or newer (SLES 15 SP6 yes, SP5 no), and MongoDB's
+verified `suse15` build needs `libopenssl1_1`. CLIO never compiles anything; otherwise use
+`FLOWCEPT_VARIANT=managed` (Apptainer databases). Preflight checks both and says which. See
+[Managed infrastructure](https://clio.iowarp.ai/docs/managed-infrastructure/). Two model stages:
 
 - **Stage 1 (default, `MODEL_STAGE=1`): IBM Granite 4.2-8B** (`ibm-granite/granite-4.2-8b` @
   `a7042144125c`, bf16, 17.6 GB) on **one** A100. No tensor parallelism, so the attention capture never
@@ -67,9 +70,9 @@ Paths: `ROOT=/eagle/$PBS_ACCOUNT/$USER/clio-polaris-2026-10`, `K=$ROOT/src/clio-
    Expected receipts and times:
    - `02-serve`: CLIO boots in 2-5 min on Lustre and waits for "agent ready".
    - `04-model`: 0 min if the hub snapshot is complete. A CLIO download through the proxy: 8B (17.6 GB) 5-20 min, 30B (58.5 GB) 20-60 min.
-   - `05-flowcept`: `native`, 3-10 min (Valkey compiles with the system gcc; MongoDB 8.0.14 `suse15` is
-     fetched and checksum-verified). Verified on openSUSE Leap 15.6 with gcc 7.5 through CLIO's API:
-     install, start, Verify, stop, restart, Verify (`suse15-native/`).
+   - `05-flowcept`: `native`, 1-3 min (prebuilt Valkey 8.1.3 and MongoDB 8.0.14 `suse15`, both
+     checksum-verified and run once before install completes; a host they cannot run on is refused
+     with the missing library named), or `managed` (Apptainer databases).
    - `06-vllm`: env install 10-20 min, then start 3-10 min.
    - `07-provenance`: verify, use, CLIO restart, `active: true`. "Use" also makes Flowcept CLIO's
      provenance query source, so SPOTTER reads the captured tasks; check `default_provider: flowcept` in
@@ -115,7 +118,7 @@ The user shares their own screen; only their laptop connects to CLIO.
 |---|---|
 | Preflight: low inodes/space | Inspect `inode-census.txt`. Uninstall old hosts' services through CLIO (UI or `action: uninstall`), prune `cache/`. Never touch other users' files. `FORCE=1` only after freeing space. |
 | Driver < 570 / "CUDA driver version is insufficient" in the vLLM op log | Set `CUDA_COMPAT_DIR` to a cuda-compat lib dir (A100 supports forward compatibility; look under `/soft/compilers/cudatoolkit*/*/compat`) and rerun `02`. Otherwise report it: attention is native-only. |
-| Op failed (`failed-*.json`, `ops/*-log.json`) | Read the CLIO op log first. Native Flowcept names what it lacks: no `cc`/`make` (load a gcc module) or "MongoDB's verified suse15 build does not run on this host: ... libssl.so.1.1" (SUSE package `libopenssl1_1`; preflight checks it). If the node cannot provide them, `FLOWCEPT_VARIANT=managed` (Apptainer via `POLARIS_MODULES`) is the labelled fallback. |
+| Op failed (`failed-*.json`, `ops/*-log.json`) | Read the CLIO op log first. Native Flowcept names what it lacks, e.g. "Valkey's prebuilt Linux build does not run on this host: ... GLIBC_2.34 not found" or "MongoDB's verified suse15 build ...: libssl.so.1.1" (SUSE package `libopenssl1_1`). CLIO does not compile anything: if the node cannot run them, use `FLOWCEPT_VARIANT=managed` (Apptainer via `POLARIS_MODULES`). |
 | `02-serve` degraded / boot > 10 min | Lustre-slow boot or the bundled SearXNG install holding the target lock (Aurora A08). Wait. If it repeats, set `CLIO_SEARCH_AUTO_INSTALL=0` and record it as a deviation. |
 | vLLM OOM / KV too small | Lower `VLLM_MAX_MODEL_LEN` and record the change. The 8B on one A100 leaves about 100k tokens of KV; the 30B at TP=2 about 40-50k. |
 | Smoke `available: false` | Record `attention_reason`. `attention_capture_partial`: keep `max_num_seqs=1`. Missing capture file: inspect `06-vllm.captures`, the Flowcept `decode_attention` task and the connector log in the vLLM op log. Check whether one or both ranks wrote it. A head count of 16/4 means a per-rank slice: a connector TP defect. Fix it in the connector (another org: commit locally, do not push). |
@@ -132,8 +135,9 @@ The user shares their own screen; only their laptop connects to CLIO.
 - **Context:** stage 1 (8B, one A100) leaves about 100k tokens of KV (160 KiB/token). At stage 2 each
   A100 holds about 27 GiB of 30B weights, leaving about 40-50k tokens (256 KiB/token); SPOTTER's watcher
   prompt exceeded 32k on Aurora.
-- **Native Flowcept on SLES:** verified on openSUSE Leap 15.6 (same SLES 15 userspace and gcc 7.5), not
-  yet on HPE Cray OS itself. Preflight records `os_release`, `cc`, `make` and `libssl_1_1`.
+- **Native Flowcept on SLES:** the prebuilt Valkey runs on openSUSE Leap 15.6 (glibc 2.38) and not on
+  15.5 (glibc 2.31); not yet tried on HPE Cray OS itself. Preflight records `os_release`, `glibc` and
+  `libssl_1_1` and stops with the fix when native cannot run.
 - **Chat-template alignment:** Granite 4.2 uses `qwen3_coder` tool calls and the `nemotron_v3` reasoning
   parser, chosen automatically by CLIO, and a pre-opened `<think>`. Check that the thinking selections
   and answer heat line up in the UI.
