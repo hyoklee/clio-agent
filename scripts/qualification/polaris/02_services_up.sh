@@ -1,7 +1,7 @@
 #!/bin/bash
 # Step 02: CLIO deploys its services on this node, in order, through its REST API.
 #   CLIO serve (loopback) -> storage locations -> model (hub snapshot or CLIO download)
-#   -> Flowcept (FLOWCEPT_VARIANT, native by default) -> vLLM native-cuda-attention on
+#   -> Flowcept (FLOWCEPT_VARIANT, managed = Apptainer databases by default) -> vLLM native-cuda-attention on
 #   Granite 4.2-30B with tensor parallel VLLM_TP -> Flowcept as the attention collector
 #   (verify + use + CLIO restart) -> "Use in Models" (bind the managed vLLM).
 # Resumable: every step reuses what is already running and matching.

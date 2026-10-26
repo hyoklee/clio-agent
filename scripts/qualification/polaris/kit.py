@@ -534,7 +534,7 @@ def step_model():
 
 
 def step_flowcept():
-    variant = env("FLOWCEPT_VARIANT", "native")
+    variant = env("FLOWCEPT_VARIANT", "managed")
     configuration = {"port": env("FLOWCEPT_PORT", "8008"),
                      "redis_port": env("FLOWCEPT_REDIS_PORT", "16379"),
                      "mongo_port": env("FLOWCEPT_MONGO_PORT", "37017")}

@@ -59,7 +59,7 @@ Paths: `ROOT=/eagle/$PBS_ACCOUNT/$USER/clio-polaris-2026-10`, `K=$ROOT/src/clio-
    Expected receipts and times:
    - `02-serve`: CLIO boots in 2-5 min on Lustre and waits for "agent ready".
    - `04-model`: 0 min if the hub snapshot is complete. A CLIO download of 58.5 GB through the proxy takes 20-60 min.
-   - `05-flowcept`: native, 5-15 min.
+   - `05-flowcept`: `managed` (Apptainer Redis/MongoDB), 5-15 min. The `native` variant refuses SLES 15: CLIO has no verified MongoDB build for it.
    - `06-vllm`: env install 10-20 min, then start 5-10 min (TP=4 load and CUDA graphs).
    - `07-provenance`: verify, use, CLIO restart, `active: true`.
    - `08-bind`: reachable, lists the model, `credential_ref` set.
@@ -87,7 +87,7 @@ Paths: `ROOT=/eagle/$PBS_ACCOUNT/$USER/clio-polaris-2026-10`, `K=$ROOT/src/clio-
 |---|---|
 | Preflight: low inodes/space | Inspect `inode-census.txt`. Uninstall old hosts' services through CLIO (UI or `action: uninstall`), prune `cache/`. Never touch other users' files. `FORCE=1` only after freeing space. |
 | Driver < 570 / "CUDA driver version is insufficient" in the vLLM op log | Set `CUDA_COMPAT_DIR` to a cuda-compat lib dir (A100 supports forward compatibility; look under `/soft/compilers/cudatoolkit*/*/compat`) and rerun `02`. Otherwise report it: attention is native-only. |
-| Op failed (`failed-*.json`, `ops/*-log.json`) | Read the CLIO op log first. Flowcept native fails: `FLOWCEPT_VARIANT=managed` (Apptainer via `POLARIS_MODULES`) is the labelled fallback. |
+| Op failed (`failed-*.json`, `ops/*-log.json`) | Read the CLIO op log first. Flowcept `managed` fails to load Apptainer: fix `POLARIS_MODULES` (`module avail apptainer`). `native` is not an option on SLES 15. |
 | `02-serve` degraded / boot > 10 min | Lustre-slow boot or the bundled SearXNG install holding the target lock (Aurora A08). Wait. If it repeats, set `CLIO_SEARCH_AUTO_INSTALL=0` and record it as a deviation. |
 | vLLM OOM / KV too small | Lower `VLLM_MAX_MODEL_LEN` and record the change. `VLLM_TP=4` is already the whole node. If TP=4 capture fails but TP=2 works, run TP=2 and expect context pressure (below). |
 | Smoke `available: false` | Record `attention_reason`. `attention_capture_partial`: keep `max_num_seqs=1`. Missing capture file: inspect `06-vllm.captures`, the Flowcept `decode_attention` task and the connector log in the vLLM op log. Check whether one or both ranks wrote it. A head count of 16/4 means a per-rank slice: a connector TP defect. Fix it in the connector (another org: commit locally, do not push). |
@@ -115,6 +115,7 @@ Paths: `ROOT=/eagle/$PBS_ACCOUNT/$USER/clio-polaris-2026-10`, `K=$ROOT/src/clio-
 
 ## Hard rules (DIRECTIVES, abridged)
 
+- **SPOTTER reads Flowcept:** `common.sh` exports `CLIO_PROVENANCE_QUERY_DEFAULT=flowcept` (the shipped default is the native journal).
 - **Deployment goes through CLIO's product interfaces (REST/UI).** Hand-rolled launches are labelled
   fallbacks only. Every service has native and container variants on the host's runtime (Apptainer here).
 - **Fix blockers in the owning repo, with tests.** Do not just report them. Do not merge, tag, release or
