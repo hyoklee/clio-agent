@@ -93,7 +93,23 @@ Paths: `ROOT=/eagle/$PBS_ACCOUNT/$USER/clio-polaris-2026-10`, `K=$ROOT/src/clio-
    through the tunnel if you can.
 9. **Teardown.** `bash $K/teardown.sh` (the batch job does this itself). Verify `14-teardown.json` and `CLEANUP.log`.
 
-## Failure table
+## Zoom demo (interactive job)
+
+The user shares their own screen; only their laptop connects to CLIO.
+
+1. In an interactive job (`qsub -I ...`), run steps 3-7 directly, not `submit.sh`. Leave CLIO, Flowcept
+   and vLLM running afterwards: do **not** run `teardown.sh` until the user says the demo is over, or
+   when less than 15 minutes of walltime remain (`qstat -f $PBS_JOBID`).
+2. Before handing over, have a finished OPAL session with captured attention: answer turns marked
+   available in `GET /v1/sessions/{sid}/attention/availability`. Report its session id and one good
+   answer to select (an `ANSWER:` line with two items, e.g. round 3 or 5 of the chain).
+3. Run `bash $K/tunnel.sh` and give the user the printed command.
+4. The user runs it on their laptop, keeps that terminal open, and opens `http://127.0.0.1:8100` in a
+   browser: CLIO serves the web UI built from this branch, with the Prompt heat map. A desktop app works
+   too if it was built from gact-tui `claude/epic-hopper-6s2vhn`: add an agent service at
+   `http://127.0.0.1:8100`.
+
+
 
 | Symptom | Do |
 |---|---|
