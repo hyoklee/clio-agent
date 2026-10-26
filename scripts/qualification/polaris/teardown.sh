@@ -54,6 +54,6 @@ if [ "$DRY_RUN" != 1 ]; then
     *) note "NOT removing $NODE_TMP (resolves to $real, outside $NODE_SCRATCH)" ;;
   esac
 fi
-mkdir -p "$JOB_EVIDENCE" 2>/dev/null || true
+[ "$DRY_RUN" = 1 ] || mkdir -p "$JOB_EVIDENCE" 2>/dev/null || true
 receipt 14-teardown ok "leftover_processes=${#left[@]}" "cleanup_log=\"$cleanup_log\"" \
   "kept=\"state, models, envs and evidence under $ROOT\""

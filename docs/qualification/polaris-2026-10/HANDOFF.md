@@ -22,7 +22,7 @@ History is the model's own answers (no teacher forcing).
 Everything is in `scripts/qualification/polaris/` on branch `claude/epic-hopper-6s2vhn`. Each
 step writes a JSON receipt to `$ROOT/evidence/job-<pbs id>/` (stage-up:
 `$ROOT/evidence/stage/`, OPAL: `$ROOT/evidence/opal/`). Every step is idempotent: rerun it to
-resume. `DRY_RUN=1` prints every command and REST call without doing anything.
+resume. `DRY_RUN=1` prints every install command and REST call instead of running it; `00_preflight.sh`'s read-only probes (nvidia-smi, df/lfs, curl to the proxy hosts) still run and write their facts.
 
 | Script | Does |
 |---|---|
@@ -42,16 +42,16 @@ resume. `DRY_RUN=1` prints every command and REST call without doing anything.
 
 Paths: `ROOT=/eagle/$PBS_ACCOUNT/$USER/clio-polaris-2026-10`, `K=$ROOT/src/clio-agent/scripts/qualification/polaris`.
 
-0. **Settings (login node).** `git clone -b claude/epic-hopper-6s2vhn https://github.com/iowarp/clio-agent.git /tmp/k`
-   if the kit is not on disk yet. Then `cp .../polaris.env.template ~/.clio-polaris.env` and set
+0. **Settings (login node).** On the first run the kit is not on Eagle yet: `git clone -b claude/epic-hopper-6s2vhn https://github.com/iowarp/clio-agent.git /tmp/k`,
+   `cp /tmp/k/scripts/qualification/polaris/polaris.env.template ~/.clio-polaris.env` and set
    `PBS_ACCOUNT`. Check the queues with `qstat -Q`. Use `capacity` (1-4 nodes, long walltime) or
    `preemptable`; use `debug` (1 h or less) only for the smoke.
 1. **Stage up (login node, direct internet, 15-30 min the first time, seconds afterwards).**
-   `bash $K/01_stage_up.sh`. Verify: `evidence/stage/01-stage.json` is `ok`, the submodule pins
+   First run: `bash /tmp/k/scripts/qualification/polaris/01_stage_up.sh` (it clones into `$ROOT/src`); later runs: `bash $K/01_stage_up.sh`. From here on always use `$K`: compute nodes cannot see a login node's `/tmp`. Verify: `evidence/stage/01-stage.json` is `ok`, the submodule pins
    match the branch tips (otherwise WARNING lines), `build/clio-web/index.html` exists, and
    `build/connector/CONNECTOR_SOURCE.txt` holds `file://.../vllm_attn_connector-0.1.0-py3-none-any.whl`.
 2. **Get a node.** Interactive: `qsub -I -A $PBS_ACCOUNT -q capacity -l select=1:system=polaris -l filesystems=home:eagle -l walltime=04:00:00`.
-   Unattended: `bash $K/submit.sh`; this runs steps 3-8 and holds the stack until the walltime
+   Unattended: `bash $K/submit.sh` (from `$K`, never `/tmp/k`: it passes its own directory to the job as `KIT_DIR`); this runs steps 3-8 and holds the stack until the walltime
    minus `TEARDOWN_MARGIN_S`. PBS gives no warning signal before the walltime kill.
 3. **Preflight (1-3 min).** `bash $K/00_preflight.sh`. It stops below `INODE_MIN` (400k) free project
    inodes or `SPACE_MIN_GB` (150 GB). Read `00-preflight.json`, `inode-census.txt` and `gpus.csv`.

@@ -201,16 +201,37 @@ def _owned_serve():
     return serve
 
 
+def _bind(port, reuse):
+    sock = socket.socket()
+    if reuse:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.bind(("127.0.0.1", port))
+        return sock.getsockname()[1]
+    except OSError:
+        return None
+    finally:
+        sock.close()
+
+
 def _free_port(preferred):
-    for port in (preferred, 0):
-        sock = socket.socket()
-        try:
-            sock.bind(("127.0.0.1", port))
-            return sock.getsockname()[1]
-        except OSError:
-            continue
-        finally:
-            sock.close()
+    """The preferred loopback port, else any free one.
+
+    SO_REUSEADDR (as uvicorn binds) lets the preferred port be taken while the
+    previous CLIO's connections sit in TIME_WAIT, so a restart keeps its port and
+    the drivers' receipts, which pin the endpoint, still resume. A port another
+    process really holds is retried for 90 s before falling back.
+    """
+    deadline = time.time() + (0 if DRY else 90)
+    while True:
+        if _bind(preferred, reuse=True) is not None:
+            return preferred
+        if time.time() >= deadline:
+            break
+        time.sleep(3)
+    port = _bind(0, reuse=False)
+    if port is not None:
+        return port
     raise KitError("no free loopback port")
 
 
@@ -704,8 +725,11 @@ def _settled(session_id, user_message_id, timeout):
         replies = [r for r in rows if turn and r.get("turn_id") == turn
                    and r.get("role") == "assistant"
                    and (r.get("stop_reason") or r.get("error_info"))]
+        if len(replies) > 1:
+            raise KitError("turn %s has %d completed assistant messages; inspect it in CLIO"
+                           % (turn, len(replies)))
         if replies:
-            return replies[-1]
+            return replies[0]
         state = call("GET", "/v1/sessions/" + session_id, dry={"status": "idle"})
         if state.get("status") in ("waiting_user", "waiting_permission", "error", "cancelled"):
             raise KitError("session %s is %s; open it in CLIO" % (session_id, state.get("status")))
@@ -803,8 +827,10 @@ def step_opal_setup():
     held = read_json(sessions_file, {}) or {}
     workspace = _workspace("opal-polaris", os.path.join(ROOT, "workspace-opal"))
     sources = call("GET", "/v1/workspaces/%s/sources" % workspace["id"], dry={"sources": []})
-    source = next((s for s in sources.get("sources", []) if s.get("root") == export
-                   or (s.get("source") or {}).get("root") == export), None)
+    # CLIO stores the resolved root, so compare resolved paths (Eagle paths hold symlinks).
+    real_export = os.path.realpath(export)
+    source = next((s for s in sources.get("sources", [])
+                   if real_export in (s.get("root"), (s.get("source") or {}).get("root"))), None)
     if source is None:
         source = call("POST", "/v1/workspaces/%s/sources" % workspace["id"],
                       {"provider": "local", "root": export, "mode": "read_only",

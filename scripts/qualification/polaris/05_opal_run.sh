@@ -26,6 +26,8 @@ deadline="${KIT_DEADLINE:-$(( $(date +%s) + 86400 ))}"
 left() { local s=$(( deadline - $(date +%s) )); [ "$s" -gt 60 ] && echo "$s" || echo 60; }
 [ "$DRY_RUN" = 1 ] || cd "$CLIO_SRC" || die "no $CLIO_SRC"
 rc_chain=skipped; rc_broad=skipped
+# Under DRY_RUN nothing is created, so the log only goes to the terminal.
+keep_log() { if [ "$DRY_RUN" = 1 ]; then cat; else tee -a "$1"; fi; }
 
 if [ "$RUN_OPAL_CHAIN" = 1 ]; then
   if [ -f scripts/qualification/opal_chain_run.py ] || [ "$DRY_RUN" = 1 ]; then
@@ -38,7 +40,7 @@ if [ "$RUN_OPAL_CHAIN" = 1 ]; then
       run timeout "$(left)" uv run --frozen --no-sync python -m scripts.qualification.opal_chain_run \
         --endpoint "$endpoint" --session "$sid" --chains "$OPAL_CHAINS_CSV" \
         --chain-id "$OPAL_CHAIN_ID" --condition "$cond" --out "$out" \
-        --timeout "$OPAL_TURN_TIMEOUT_S" 2>&1 | tee -a "$O/chain-$OPAL_CHAIN_ID-$cond.log"
+        --timeout "$OPAL_TURN_TIMEOUT_S" 2>&1 | keep_log "$O/chain-$OPAL_CHAIN_ID-$cond.log"
       rc=${PIPESTATUS[0]}; [ "$rc" = 0 ] || rc_chain=$rc
       "${KIT_PY[@]}" opal-report "chain_$cond" || true
       [ "$DRY_RUN" = 1 ] || ls -l "$out" > "$O/chain-$OPAL_CHAIN_ID-$cond.outputs.txt" 2>&1
@@ -53,7 +55,7 @@ if [ "$RUN_OPAL_BROAD" = 1 ]; then
   run timeout "$(left)" uv run --frozen --no-sync python scripts/qualification/beta3_opal_run.py \
     --endpoint "$endpoint" --session "$broad_sid" \
     --input docs/qualification/beta3/opal-live-inputs.json \
-    --receipt "$O/broad.json" --timeout "$OPAL_TURN_TIMEOUT_S" 2>&1 | tee -a "$O/broad.log"
+    --receipt "$O/broad.json" --timeout "$OPAL_TURN_TIMEOUT_S" 2>&1 | keep_log "$O/broad.log"
   rc_broad=${PIPESTATUS[0]}
   "${KIT_PY[@]}" opal-report broad || true
 fi

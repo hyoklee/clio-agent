@@ -87,7 +87,7 @@ fi
 
 # --- CLIO environment -------------------------------------------------------------------------
 stamp="$STAGE/uv-sync.sha256"
-if [ "$DRY_RUN" = 1 ] || ! sha256sum --status -c "$stamp" 2>/dev/null || [ ! -x "$CLIO_SRC/.venv/bin/clio-agent" ]; then
+if [ "$DRY_RUN" = 1 ] || ! (cd "$CLIO_SRC" 2>/dev/null && sha256sum --status -c "$stamp" 2>/dev/null) || [ ! -x "$CLIO_SRC/.venv/bin/clio-agent" ]; then
   log "uv sync (frozen, extras dev + flowcept)"
   run bash -c "cd '$CLIO_SRC' && uv sync --frozen --extra dev --extra flowcept"
   run bash -c "cd '$CLIO_SRC' && sha256sum pyproject.toml uv.lock > '$stamp'"
