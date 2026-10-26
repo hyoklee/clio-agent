@@ -42,7 +42,11 @@ MONGO_SHA = {
     "ubuntu2404": "9e6a8332ef0eddb52f7869d4363212b3ca379955fd70d80840d1b7fa6f5cb54b",
     "debian12": "c13e85583fc393e0b9f47911797f4e0f724cd6a563cd719ee3360aa592a96f16",
     "rhel8": "94a5f1bb0ec0bcf2d372e787b6bb39ed8662cc073f31271dc57a0c1c3f803dd2",
+    # SLES 15 / openSUSE Leap 15, e.g. HPE Cray OS on ALCF Polaris.
+    "suse15": "c18266c2566ab88bad100f1f42e8a2150e3669b70f46e032b0b0f77f9f3edd94",
 }
+#: os-release IDs of SUSE 15 systems that run MongoDB's ``suse15`` build.
+SUSE_IDS = frozenset({"sles", "sled", "sle_hpc", "opensuse-leap"})
 
 
 def private(root: Path, manifest: dict[str, Any]) -> dict[str, str]:
@@ -232,6 +236,8 @@ def mongo_platform(release: str) -> str:
     }.get((system, version))
     if system in {"rhel", "rocky", "almalinux", "centos"} and version.split(".")[0] == "8":
         selected = "rhel8"
+    if system in SUSE_IDS and version.split(".")[0] == "15":
+        selected = "suse15"
     if selected is None:
         raise RuntimeError(
             "No verified managed MongoDB binary for this Linux distribution; "

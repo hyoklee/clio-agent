@@ -227,6 +227,9 @@ def test_database_mode_switch_preserves_managed_passwords(tmp_path: Path) -> Non
         ('ID=ubuntu\nVERSION_ID="24.04"', "ubuntu2404"),
         ('ID=debian\nVERSION_ID="12"', "debian12"),
         ('ID=rocky\nVERSION_ID="8.10"', "rhel8"),
+        ('NAME="SLES"\nVERSION="15-SP5"\nID="sles"\nVERSION_ID="15.5"', "suse15"),
+        ('ID="sle_hpc"\nVERSION_ID="15.4"', "suse15"),
+        ('ID="opensuse-leap"\nVERSION_ID="15.6"', "suse15"),
     ],
 )
 def test_native_mongo_chooses_host_libc_build(release: str, platform: str) -> None:
@@ -236,6 +239,8 @@ def test_native_mongo_chooses_host_libc_build(release: str, platform: str) -> No
 def test_native_mongo_refuses_unknown_distribution() -> None:
     with pytest.raises(RuntimeError, match="site databases"):
         mongo_platform('ID=unknown\nVERSION_ID="99"')
+    with pytest.raises(RuntimeError, match="site databases"):
+        mongo_platform('ID="sles"\nVERSION_ID="12.5"')
 
 
 def test_native_llama_device_memory_and_source_mtimes(tmp_path: Path) -> None:
