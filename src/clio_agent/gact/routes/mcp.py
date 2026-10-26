@@ -513,7 +513,7 @@ def register_mcp_routes(app: FastAPI, deps: "GactDeps") -> None:
                 "tool": tool_name,
                 "args": tool_args,
                 "content": content,
-                "is_error": getattr(result, "isError", False),
+                "is_error": getattr(result, "is_error", False),
                 **({"session_id": requested_session_id} if requested_session_id else {}),
             }
 

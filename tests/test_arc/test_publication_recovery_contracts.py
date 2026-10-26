@@ -289,6 +289,7 @@ async def test_publication_retry_preserves_usage_after_lost_flush_and_never_repl
             trace_id="original-trace",
             error_info=None,
             selected_agent="main",
+            invocation_agent_id="",
             turn_tokens={"input": 11, "output": 7},
             turn_cost=0.2,
             turn_cost_known=True,
