@@ -443,6 +443,9 @@ class AssignmentDetails(TaskRecord):
     context_epoch_after: str | None = None
     last_output: CoreReference | None = None
     disposition: Literal["yield", "complete"] = "yield"
+    #: Declared at spawn: a standing assignment (SPOTTER's watcher) keeps its handle
+    #: across check segments; only cancellation or a failed check ends it.
+    standing: bool = False
     dependencies: tuple[str, ...] = ()
     return_when: Literal["any", "all"] = "all"
     workflow_id: str | None = None
