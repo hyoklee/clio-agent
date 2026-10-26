@@ -129,8 +129,8 @@ Creating suggested tasks timed out in this environment, so they are listed here 
   (`test_composer_fix_round` 1000 messages, `test_a2ui_load_bounds`).
 - **Other checks:** route-count guard updated (405 → 407); `check_file_size.py` and
   `check_no_class_in_function.py` pass; ruff passes.
-- **gact-tui:** lint and typecheck pass; 264 attention, lib and hook tests pass. The full web suite
-  result is below.
+- **gact-tui** `pnpm test`: core 57 files and 308 tests passed; web 575 files and 4044 tests passed.
+  `pnpm lint` and `pnpm typecheck` pass.
 
 ## E. What is pushed
 
