@@ -2,7 +2,7 @@
 
 CLIO no longer compiles Valkey, PostgreSQL, m4/bison/flex or llama.cpp on the host. Native
 installs fetch pinned upstream binaries; a host they cannot run on is refused and the container
-variant is the path there. Matrix and requirements: [docs/MANAGED_INFRASTRUCTURE.md](../../../MANAGED_INFRASTRUCTURE.md).
+variant is the path there. Matrix and requirements: [Managed infrastructure](https://clio.iowarp.ai/docs/managed-infrastructure/).
 
 ## CLIO's Flowcept install hook, run in official distribution images
 

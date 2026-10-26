@@ -1,47 +1,37 @@
-# Managed infrastructure
+---
+title: Managed infrastructure
+description: Which model servers and services CLIO can install on Linux, Windows and macOS, with or without a GPU, and what each computer needs.
+---
 
-CLIO can install, start, stop, verify and uninstall the services an agent needs:
-model servers, a model router, provenance capture, web search and remote CLIO itself.
-It does this on the machine running CLIO or on an SSH or HPC host. This page says what
-CLIO offers on each kind of host and what the host must already provide.
+import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+From the **Infrastructure** page, CLIO can install, start, stop, check and remove the services your work needs:
+
+- model servers: vLLM, llama.cpp and Ollama
+- a model router: LiteLLM Proxy
+- provenance capture: Flowcept and HPE CMF
+- web search: CLIO Web Search and SearXNG
+
+It installs them on the computer running CLIO or on a Linux server you reach over SSH, such as a cluster node. From the same page CLIO can also install CLIO itself on a Linux server over SSH, and the CLIO Relay tool on a cluster.
 
 ## How CLIO installs a service
 
-Each service has one or more **variants**. Every variant uses one of two methods.
+Each service offers one or more options. The Infrastructure page shows the ones that fit the computer you selected.
 
-- **Native.** CLIO creates a private environment with `uv`. It downloads upstream
-  **prebuilt** binaries and wheels, each pinned by version and SHA-256. No container
-  runtime and no root access are needed.
-- **Container.** CLIO runs upstream images pinned by digest with Docker or Podman, or
-  with Apptainer on Linux clusters. Flowcept and CMF also have a mixed variant: the
-  application runs natively and only its databases run in containers.
+- **Installs directly.** CLIO downloads the service's official release, a ready-to-run program pinned to an exact version and checked against a known checksum, into its own folder. Root access and a container runtime are not needed.
+- **Container.** CLIO runs the service's official image, pinned to an exact version, with Docker or Podman, or with Apptainer on Linux clusters. For Flowcept and HPE CMF, the application installs directly and only its databases run in containers.
 
-**CLIO never compiles anything on the host.** It does not build from source and does
-not need a C or C++ compiler, `make` or `cmake`. Before a native install finishes,
-CLIO runs each fetched binary once. If the binary cannot run on this host, because
-glibc is too old or a system library is missing, the install is refused. The message
-names the missing piece, and the container variant becomes the supported path on that
-host. A test (`test_no_native_installer_compiles_on_the_host`) keeps compile steps out
-of the native installers.
+CLIO does not build software from source, so you never need a compiler. Before a direct install finishes, CLIO starts the downloaded program once. If the program cannot run on that computer, for example because the operating system is too old, CLIO stops the install and names what is missing. Choose a container option instead.
 
-## What each host can run
+## What each computer can run
 
-The tables below are generated from CLIO's service catalog, the same code that decides
-what the Infrastructure page offers. A variant appears only where the catalog marks it
-compatible. "Without a container runtime" is what a host with only `uv` gets. The last
-column shows what Docker, Podman or Apptainer adds. Apptainer is Linux only and offers
-the same container variants as Docker there. Linux hosts are listed as SSH or HPC
-targets. Windows and macOS are listed as the machine running CLIO, which is where their
-native services install. Versions are in parentheses.
+Each table lists the options CLIO offers for one kind of computer, with the version it installs. "Installs directly" needs nothing beyond what the next section lists. The last column shows what a container runtime adds. Linux rows apply to the computer running CLIO and to servers you reach over SSH. On Windows and macOS, services install on the computer running CLIO.
 
-These tables state what CLIO offers, not that each variant has run on every
-distribution. For verified host requirements, see the next section.
-
-<!-- BEGIN GENERATED: support matrix (scripts/render_infrastructure_support.py) -->
+{/* BEGIN GENERATED: support tables (scripts/render_infrastructure_support.py) */}
 
 ### Linux x86-64 with an NVIDIA GPU
 
-| Service | Without a container runtime | Added by Docker, Podman or Apptainer |
+| Service | Installs directly | Also available with Docker, Podman or Apptainer |
 | --- | --- | --- |
 | vLLM | Native CUDA (0.28.0); Native CUDA + attention (0.27.0) | NVIDIA CUDA (0.28.0); CPU (0.28.0) |
 | Model router | LiteLLM Proxy (native) (1.102.1) | Nothing more |
@@ -51,12 +41,10 @@ distribution. For verified host requirements, see the next section.
 | HPE CMF | Native application + native/site databases (53d9c3e5) | Native application + container databases (53d9c3e5) |
 | CLIO Web Search | Native gateway + SearXNG (0.3.2) | Container (0.3.2) |
 | SearXNG | Native (uv) (2026.8.11+e8e710e42) | Nothing more |
-| CLIO Relay | Released uv tool (1.6.8) | Nothing more |
-| CLIO | Published release (0.9.5b8) | Nothing more |
 
 ### Linux x86-64 with an AMD GPU
 
-| Service | Without a container runtime | Added by Docker, Podman or Apptainer |
+| Service | Installs directly | Also available with Docker, Podman or Apptainer |
 | --- | --- | --- |
 | vLLM | Not available | AMD ROCm (0.28.0); CPU (0.28.0) |
 | Model router | LiteLLM Proxy (native) (1.102.1) | Nothing more |
@@ -66,12 +54,10 @@ distribution. For verified host requirements, see the next section.
 | HPE CMF | Native application + native/site databases (53d9c3e5) | Native application + container databases (53d9c3e5) |
 | CLIO Web Search | Native gateway + SearXNG (0.3.2) | Container (0.3.2) |
 | SearXNG | Native (uv) (2026.8.11+e8e710e42) | Nothing more |
-| CLIO Relay | Released uv tool (1.6.8) | Nothing more |
-| CLIO | Published release (0.9.5b8) | Nothing more |
 
 ### Linux x86-64 with an Intel GPU
 
-| Service | Without a container runtime | Added by Docker, Podman or Apptainer |
+| Service | Installs directly | Also available with Docker, Podman or Apptainer |
 | --- | --- | --- |
 | vLLM | Native Intel XPU (host); Native Intel XPU + attention (host) | CPU (0.28.0) |
 | Model router | LiteLLM Proxy (native) (1.102.1) | Nothing more |
@@ -81,12 +67,10 @@ distribution. For verified host requirements, see the next section.
 | HPE CMF | Native application + native/site databases (53d9c3e5) | Native application + container databases (53d9c3e5) |
 | CLIO Web Search | Native gateway + SearXNG (0.3.2) | Container (0.3.2) |
 | SearXNG | Native (uv) (2026.8.11+e8e710e42) | Nothing more |
-| CLIO Relay | Released uv tool (1.6.8) | Nothing more |
-| CLIO | Published release (0.9.5b8) | Nothing more |
 
-### Linux x86-64, CPU only
+### Linux x86-64 without a GPU
 
-| Service | Without a container runtime | Added by Docker, Podman or Apptainer |
+| Service | Installs directly | Also available with Docker, Podman or Apptainer |
 | --- | --- | --- |
 | vLLM | Not available | CPU (0.28.0) |
 | Model router | LiteLLM Proxy (native) (1.102.1) | Nothing more |
@@ -96,12 +80,10 @@ distribution. For verified host requirements, see the next section.
 | HPE CMF | Native application + native/site databases (53d9c3e5) | Native application + container databases (53d9c3e5) |
 | CLIO Web Search | Native gateway + SearXNG (0.3.2) | Container (0.3.2) |
 | SearXNG | Native (uv) (2026.8.11+e8e710e42) | Nothing more |
-| CLIO Relay | Released uv tool (1.6.8) | Nothing more |
-| CLIO | Published release (0.9.5b8) | Nothing more |
 
-### Linux arm64 with an NVIDIA GPU
+### Linux ARM64 with an NVIDIA GPU
 
-| Service | Without a container runtime | Added by Docker, Podman or Apptainer |
+| Service | Installs directly | Also available with Docker, Podman or Apptainer |
 | --- | --- | --- |
 | vLLM | Native CUDA (0.28.0); Native CUDA + attention (0.27.0) | NVIDIA CUDA (0.28.0) |
 | Model router | LiteLLM Proxy (native) (1.102.1) | Nothing more |
@@ -111,12 +93,10 @@ distribution. For verified host requirements, see the next section.
 | HPE CMF | Not available | Native application + container databases (53d9c3e5) |
 | CLIO Web Search | Native gateway + SearXNG (0.3.2) | Container (0.3.2) |
 | SearXNG | Native (uv) (2026.8.11+e8e710e42) | Nothing more |
-| CLIO Relay | Released uv tool (1.6.8) | Nothing more |
-| CLIO | Published release (0.9.5b8) | Nothing more |
 
-### Linux arm64, CPU only
+### Linux ARM64 without a GPU
 
-| Service | Without a container runtime | Added by Docker, Podman or Apptainer |
+| Service | Installs directly | Also available with Docker, Podman or Apptainer |
 | --- | --- | --- |
 | vLLM | Not available | Nothing more |
 | Model router | LiteLLM Proxy (native) (1.102.1) | Nothing more |
@@ -126,12 +106,10 @@ distribution. For verified host requirements, see the next section.
 | HPE CMF | Not available | Native application + container databases (53d9c3e5) |
 | CLIO Web Search | Native gateway + SearXNG (0.3.2) | Container (0.3.2) |
 | SearXNG | Native (uv) (2026.8.11+e8e710e42) | Nothing more |
-| CLIO Relay | Released uv tool (1.6.8) | Nothing more |
-| CLIO | Published release (0.9.5b8) | Nothing more |
 
-### Windows x86-64 with an NVIDIA GPU
+### Windows x64 with an NVIDIA GPU
 
-| Service | Without a container runtime | Added by Docker, Podman or Apptainer |
+| Service | Installs directly | Also available with Docker, Podman or Apptainer |
 | --- | --- | --- |
 | vLLM | Not available | CPU (0.28.0) |
 | Model router | Not available | Nothing more |
@@ -141,12 +119,10 @@ distribution. For verified host requirements, see the next section.
 | HPE CMF | Not available | Nothing more |
 | CLIO Web Search | Native gateway + SearXNG (0.3.2) | Container (0.3.2) |
 | SearXNG | Native (uv) (2026.8.11+e8e710e42) | Nothing more |
-| CLIO Relay | Released uv tool (1.6.8) | Nothing more |
-| CLIO | Not available | Nothing more |
 
-### Windows x86-64 with an AMD GPU
+### Windows x64 with an AMD GPU
 
-| Service | Without a container runtime | Added by Docker, Podman or Apptainer |
+| Service | Installs directly | Also available with Docker, Podman or Apptainer |
 | --- | --- | --- |
 | vLLM | Not available | CPU (0.28.0) |
 | Model router | Not available | Nothing more |
@@ -156,12 +132,10 @@ distribution. For verified host requirements, see the next section.
 | HPE CMF | Not available | Nothing more |
 | CLIO Web Search | Native gateway + SearXNG (0.3.2) | Container (0.3.2) |
 | SearXNG | Native (uv) (2026.8.11+e8e710e42) | Nothing more |
-| CLIO Relay | Released uv tool (1.6.8) | Nothing more |
-| CLIO | Not available | Nothing more |
 
-### Windows x86-64, CPU only
+### Windows x64 without a GPU
 
-| Service | Without a container runtime | Added by Docker, Podman or Apptainer |
+| Service | Installs directly | Also available with Docker, Podman or Apptainer |
 | --- | --- | --- |
 | vLLM | Not available | CPU (0.28.0) |
 | Model router | Not available | Nothing more |
@@ -171,12 +145,10 @@ distribution. For verified host requirements, see the next section.
 | HPE CMF | Not available | Nothing more |
 | CLIO Web Search | Native gateway + SearXNG (0.3.2) | Container (0.3.2) |
 | SearXNG | Native (uv) (2026.8.11+e8e710e42) | Nothing more |
-| CLIO Relay | Released uv tool (1.6.8) | Nothing more |
-| CLIO | Not available | Nothing more |
 
-### Windows arm64
+### Windows on ARM
 
-| Service | Without a container runtime | Added by Docker, Podman or Apptainer |
+| Service | Installs directly | Also available with Docker, Podman or Apptainer |
 | --- | --- | --- |
 | vLLM | Not available | Nothing more |
 | Model router | Not available | Nothing more |
@@ -186,12 +158,10 @@ distribution. For verified host requirements, see the next section.
 | HPE CMF | Not available | Nothing more |
 | CLIO Web Search | Not available | Container (0.3.2) |
 | SearXNG | Not available | Nothing more |
-| CLIO Relay | Released uv tool (1.6.8) | Nothing more |
-| CLIO | Not available | Nothing more |
 
 ### macOS on Apple silicon
 
-| Service | Without a container runtime | Added by Docker, Podman or Apptainer |
+| Service | Installs directly | Also available with Docker, Podman or Apptainer |
 | --- | --- | --- |
 | vLLM | Not available | Nothing more |
 | Model router | LiteLLM Proxy (native) (1.102.1) | Nothing more |
@@ -201,12 +171,10 @@ distribution. For verified host requirements, see the next section.
 | HPE CMF | Not available | Nothing more |
 | CLIO Web Search | Native gateway + SearXNG (0.3.2) | Container (0.3.2) |
 | SearXNG | Native (uv) (2026.8.11+e8e710e42) | Nothing more |
-| CLIO Relay | Released uv tool (1.6.8) | Nothing more |
-| CLIO | Not available | Nothing more |
 
 ### macOS on Intel
 
-| Service | Without a container runtime | Added by Docker, Podman or Apptainer |
+| Service | Installs directly | Also available with Docker, Podman or Apptainer |
 | --- | --- | --- |
 | vLLM | Not available | CPU (0.28.0) |
 | Model router | LiteLLM Proxy (native) (1.102.1) | Nothing more |
@@ -216,56 +184,55 @@ distribution. For verified host requirements, see the next section.
 | HPE CMF | Not available | Nothing more |
 | CLIO Web Search | Native gateway + SearXNG (0.3.2) | Container (0.3.2) |
 | SearXNG | Native (uv) (2026.8.11+e8e710e42) | Nothing more |
-| CLIO Relay | Released uv tool (1.6.8) | Nothing more |
-| CLIO | Not available | Nothing more |
 
-<!-- END GENERATED: support matrix -->
+{/* END GENERATED: support tables */}
 
-## Native host requirements (Linux)
+## What the computer needs
 
-Native services use upstream Linux binaries. Upstream builds them for current
-distributions, so the host's C library and system libraries decide whether they run.
+### Linux
 
-| Component | Upstream build | Needs on the host |
-| --- | --- | --- |
-| Valkey 8.1.3 (Flowcept's message queue) | Valkey's Ubuntu 22.04 build | glibc 2.34 or newer, `libssl.so.3`, `libsystemd.so.0` |
-| PostgreSQL 17.6 (CMF's database) | theseus-rs/postgresql-binaries | glibc 2.34 or newer, `libssl.so.3`, libxml2, Kerberos (`libgssapi_krb5`), lz4, zstd |
-| MongoDB 8.0.14 (Flowcept's store) | MongoDB's per-distribution builds | One of Ubuntu 20.04, 22.04 or 24.04, Debian 12, RHEL/Rocky/Alma 8, or SLES/openSUSE Leap 15. SUSE 15 also needs `libopenssl1_1`. |
-| llama.cpp b11206 | llama.cpp's Ubuntu builds: CPU (x86-64, arm64), Vulkan (x86-64, arm64), CUDA 12.8 (x86-64) | glibc 2.34 or newer, libstdc++ from GCC 12 or newer (`GLIBCXX_3.4.30`), `libgomp.so.1`. CUDA also needs an NVIDIA driver; CLIO supplies the CUDA 12.8 runtime and cuBLAS from NVIDIA's wheels. |
+Direct installs on Linux use the official Linux releases. These are built for current distributions, so they need a C library (glibc) of version 2.34 or newer and a few common system libraries.
 
-llama.cpp publishes no Linux ROCm build. On AMD GPUs use the native Vulkan build or a
-container variant.
+| Service part | Needs |
+|---|---|
+| Valkey, Flowcept's message queue | glibc 2.34 or newer, OpenSSL 3 (`libssl.so.3`), `libsystemd.so.0` |
+| MongoDB, Flowcept's database | Ubuntu 20.04, 22.04 or 24.04, Debian 12, RHEL, Rocky or AlmaLinux 8, or SLES or openSUSE Leap 15. SLES and Leap also need the `libopenssl1_1` package. |
+| PostgreSQL, HPE CMF's database | glibc 2.34 or newer, OpenSSL 3, libxml2, Kerberos (`libgssapi_krb5`), lz4 and zstd |
+| llama.cpp | glibc 2.34 or newer, the C++ library from GCC 12 or newer, and the OpenMP runtime (`libgomp.so.1`). The NVIDIA CUDA option also needs the NVIDIA driver; CLIO downloads the CUDA 12.8 runtime it uses. |
 
-### Checked distributions
+llama.cpp publishes no Linux build for AMD ROCm. On AMD GPUs, use the Vulkan option or a container.
 
-Checked on 2026-10-26 by running each pinned binary's `--version` in the distribution's
-official container image, after installing the system libraries listed above:
+These distributions were checked by starting each program in the distribution's official image, after installing the libraries above:
 
-| Distribution | glibc | Valkey | PostgreSQL | llama.cpp (CPU) |
-| --- | --- | --- | --- | --- |
-| Ubuntu 24.04 | 2.39 | runs | runs | runs |
-| Ubuntu 22.04 | 2.35 | runs | runs | runs |
-| openSUSE Leap 15.6 / SLES 15 SP6 | 2.38 | runs | runs | runs |
-| Rocky Linux 9 / RHEL 9 | 2.34 | runs | runs | does not run: libstdc++ is GCC 11 |
-| openSUSE Leap 15.5 / SLES 15 SP5 | 2.31 | does not run: glibc | does not run: glibc | does not run: glibc |
-| Rocky Linux 8 / RHEL 8 | 2.28 | does not run: glibc, no OpenSSL 3 | does not run | does not run |
+| Distribution | glibc | Valkey | PostgreSQL | llama.cpp |
+|---|---|---|---|---|
+| Ubuntu 24.04 | 2.39 | Runs | Runs | Runs |
+| Ubuntu 22.04 | 2.35 | Runs | Runs | Runs |
+| openSUSE Leap 15.6, SLES 15 SP6 | 2.38 | Runs | Runs | Runs |
+| Rocky Linux 9, RHEL 9 | 2.34 | Runs | Runs | Does not run: its C++ library is too old |
+| openSUSE Leap 15.5, SLES 15 SP5 | 2.31 | Does not run | Does not run | Does not run |
+| Rocky Linux 8, RHEL 8 | 2.28 | Does not run | Does not run | Does not run |
 
-On a host whose binaries do not run, such as SLES 15 SP5 or RHEL 8 (common on HPC
-systems), use the container variants: Flowcept and CMF with container databases, and
-the container model servers. On clusters that is usually Apptainer.
+<Aside type="tip" title="On older clusters">
+Many HPC systems run SLES 15 SP5 or RHEL 8, where these programs cannot run. Use the container options there: Flowcept and HPE CMF with container databases, and the container model servers. On a cluster that is usually Apptainer.
+</Aside>
 
-The llama.cpp Vulkan and CUDA builds have not been checked on a GPU host yet.
+### Windows
 
-## Updating this page
+Direct installs run on the Windows computer running CLIO. To use a Windows server, run CLIO on it.
 
-The support tables are generated from the catalog:
+- llama.cpp needs the Microsoft Visual C++ 2015–2022 Redistributable (x64), which most Windows computers already have. If it is missing, CLIO stops the install and says so.
+- The llama.cpp NVIDIA CUDA option needs the NVIDIA driver. CLIO downloads the CUDA 12.4 runtime and cuBLAS that llama.cpp publishes with it.
+- Flowcept and HPE CMF do not run on Windows. Install them on a Linux server.
 
-```sh
-uv run python scripts/render_infrastructure_support.py          # rewrite the tables
-uv run python scripts/render_infrastructure_support.py --check  # fail when out of date
-```
+### macOS
 
-`tests/test_scripts/test_render_infrastructure_support.py` runs the check, so a catalog
-change that alters support fails CI until this page is regenerated. The requirements
-and the checked-distribution table above are maintained by hand. Re-check them whenever
-a pinned binary changes.
+- The CLIO desktop app and Ollama need macOS 14 or newer. llama.cpp needs macOS 13.3 or newer.
+- On Apple silicon, llama.cpp and Ollama install directly and use the GPU through Metal. On Intel Macs they run on the CPU.
+- vLLM does not install directly on macOS. On an Intel Mac with Docker or Podman, its CPU container is available.
+- Flowcept and HPE CMF do not run on macOS. Install them on a Linux server.
+
+<CardGrid>
+	<LinkCard title="Choose a model" href="/docs/connect-a-model/" description="Connect CLIO to a model server you installed." />
+	<LinkCard title="Server and terminal setup" href="/docs/server-setup/" description="Install CLIO on a server or cluster." />
+</CardGrid>

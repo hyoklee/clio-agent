@@ -9,7 +9,7 @@ def test_published_support_tables_match_the_service_catalog() -> None:
     """A catalog change that alters what a host can run must regenerate the page."""
     current = DOC.read_text(encoding="utf-8")
     assert splice(current) == current, (
-        "docs/MANAGED_INFRASTRUCTURE.md is out of date: "
+        "site/src/content/docs/docs/managed-infrastructure.mdx is out of date: "
         "run uv run python scripts/render_infrastructure_support.py"
     )
 

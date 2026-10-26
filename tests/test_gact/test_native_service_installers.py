@@ -179,6 +179,17 @@ def test_no_native_installer_compiles_on_the_host() -> None:
             assert tool not in text, f"{module.__name__} invokes {tool}"
 
 
+def test_a_windows_binary_missing_its_runtime_dll_names_the_redistributable() -> None:
+    import subprocess
+
+    from clio_agent.gact.infrastructure.native_model_hook import refusal_detail
+
+    silent = subprocess.CalledProcessError(0xC0000135, ["llama-server.exe"], "", "")
+    assert "Visual C++ 2015-2022 Redistributable" in refusal_detail(silent)
+    loader = subprocess.CalledProcessError(127, ["llama-server"], "", "libgomp.so.1: not found")
+    assert refusal_detail(loader) == "libgomp.so.1: not found"
+
+
 def test_a_prebuilt_database_that_cannot_run_is_refused_toward_containers(tmp_path: Path) -> None:
     from clio_agent.gact.infrastructure.native_monitoring_hook import check_runs
 

@@ -1,6 +1,6 @@
 """Render the managed-infrastructure support matrix from CLIO's own service catalog.
 
-The tables in ``docs/MANAGED_INFRASTRUCTURE.md`` between the generated markers come from
+The tables on the website's managed-infrastructure page, between the generated markers, come from
 ``service_definitions`` evaluated for each host profile below, so the document cannot
 claim support the catalog does not offer. ``tests/test_scripts`` fails when they drift.
 
@@ -15,9 +15,9 @@ from pathlib import Path
 from clio_agent.gact.infrastructure.drivers import service_definitions
 from clio_agent.gact.infrastructure.models import ContainerRuntimeFact, TargetFacts
 
-DOC = Path(__file__).resolve().parents[1] / "docs" / "MANAGED_INFRASTRUCTURE.md"
-BEGIN = "<!-- BEGIN GENERATED: support matrix (scripts/render_infrastructure_support.py) -->"
-END = "<!-- END GENERATED: support matrix -->"
+DOC = Path(__file__).resolve().parents[1] / "site/src/content/docs/docs/managed-infrastructure.mdx"
+BEGIN = "{/* BEGIN GENERATED: support tables (scripts/render_infrastructure_support.py) */}"
+END = "{/* END GENERATED: support tables */}"
 
 #: (heading, os, arch, accelerator). Linux hosts are SSH/HPC targets; Windows and macOS
 #: are the machine running CLIO, which is where their native services install.
@@ -25,13 +25,13 @@ PROFILES = (
     ("Linux x86-64 with an NVIDIA GPU", "linux", "x86_64", "nvidia"),
     ("Linux x86-64 with an AMD GPU", "linux", "x86_64", "amd"),
     ("Linux x86-64 with an Intel GPU", "linux", "x86_64", "intel"),
-    ("Linux x86-64, CPU only", "linux", "x86_64", "none"),
-    ("Linux arm64 with an NVIDIA GPU", "linux", "aarch64", "nvidia"),
-    ("Linux arm64, CPU only", "linux", "aarch64", "none"),
-    ("Windows x86-64 with an NVIDIA GPU", "windows", "x86_64", "nvidia"),
-    ("Windows x86-64 with an AMD GPU", "windows", "x86_64", "amd"),
-    ("Windows x86-64, CPU only", "windows", "x86_64", "none"),
-    ("Windows arm64", "windows", "aarch64", "none"),
+    ("Linux x86-64 without a GPU", "linux", "x86_64", "none"),
+    ("Linux ARM64 with an NVIDIA GPU", "linux", "aarch64", "nvidia"),
+    ("Linux ARM64 without a GPU", "linux", "aarch64", "none"),
+    ("Windows x64 with an NVIDIA GPU", "windows", "x86_64", "nvidia"),
+    ("Windows x64 with an AMD GPU", "windows", "x86_64", "amd"),
+    ("Windows x64 without a GPU", "windows", "x86_64", "none"),
+    ("Windows on ARM", "windows", "aarch64", "none"),
     ("macOS on Apple silicon", "macos", "aarch64", "none"),
     ("macOS on Intel", "macos", "x86_64", "none"),
 )
@@ -61,6 +61,9 @@ def _offered(facts: TargetFacts) -> dict[str, tuple[str, list[str]]]:
     return {
         row.id: (row.label, [f"{v.label} ({v.version})" for v in row.variants if v.compatible])
         for row in service_definitions(facts)
+        # Remote access installs CLIO itself on another server; the page says so in prose,
+        # since a per-computer row would read as "CLIO is not available here".
+        if row.category != "remote_access"
     }
 
 
@@ -73,7 +76,7 @@ def render() -> str:
         lines += [
             f"### {heading}",
             "",
-            "| Service | Without a container runtime | Added by Docker, Podman or Apptainer |",
+            "| Service | Installs directly | Also available with Docker, Podman or Apptainer |",
             "| --- | --- | --- |",
         ]
         for service, (label, without) in native.items():

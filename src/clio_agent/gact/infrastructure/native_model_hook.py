@@ -13,6 +13,9 @@ from typing import Any
 from urllib.error import HTTPError
 from urllib.request import ProxyHandler, Request, build_opener
 
+#: STATUS_DLL_NOT_FOUND (0xC0000135) as Python reports a Windows process's exit status.
+WINDOWS_DLL_NOT_FOUND = (0xC0000135, 0xC0000135 - (1 << 32))
+
 
 def install(root: Path, manifest: dict[str, Any]) -> None:
     """Install verified upstream prebuilt binaries; nothing is compiled on the host."""
@@ -55,11 +58,9 @@ def install(root: Path, manifest: dict[str, Any]) -> None:
             timeout=60,
         )
     except (OSError, subprocess.CalledProcessError) as error:
-        output = getattr(error, "stderr", None) or getattr(error, "stdout", None) or str(error)
-        detail = output.strip()[:400]
         raise RuntimeError(
             f"The prebuilt {spec['engine']} {spec['backend']} build does not run on this host: "
-            f"{detail}. CLIO does not compile it; use the container variant."
+            f"{refusal_detail(error)}. CLIO does not compile it; use the container variant."
         ) from error
     print((version.stdout + version.stderr).strip(), flush=True)
     if spec["engine"] == "llama_cpp" and spec["backend"] != "cpu":
@@ -80,6 +81,18 @@ def install(root: Path, manifest: dict[str, Any]) -> None:
     (root / "native-binary.json").write_text(
         json.dumps({"executable": str(executable.relative_to(root))}), encoding="utf-8"
     )
+
+
+def refusal_detail(error: OSError | subprocess.CalledProcessError) -> str:
+    """Say why a fetched binary could not start, including Windows' silent DLL failure."""
+    if getattr(error, "returncode", None) in WINDOWS_DLL_NOT_FOUND:
+        # Windows reports a missing DLL only through this status, with no output.
+        return (
+            "a required DLL is missing; install the Microsoft Visual C++ 2015-2022 "
+            "Redistributable (x64)"
+        )
+    output = getattr(error, "stderr", None) or getattr(error, "stdout", None) or str(error)
+    return output.strip()[:400]
 
 
 def binary_environment(root: Path, executable: Path) -> dict[str, str]:

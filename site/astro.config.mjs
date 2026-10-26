@@ -161,6 +161,7 @@ export default defineConfig({
 					collapsed: true,
 					items: [
 						{ label: 'Server and terminal setup', slug: 'docs/server-setup' },
+						{ label: 'Managed infrastructure', slug: 'docs/managed-infrastructure' },
 						{ label: 'Command line', slug: 'docs/cli' },
 						{ label: 'Configuration', slug: 'docs/configuration' },
 						{ label: 'Hooks and automation', slug: 'docs/hooks' },

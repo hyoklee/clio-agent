@@ -11,7 +11,7 @@ On one Polaris node (4 x A100-40GB), CLIO itself deploys Flowcept, then vLLM
 run the prebuilt binaries: Valkey's needs glibc 2.34 or newer (SLES 15 SP6 yes, SP5 no), and MongoDB's
 verified `suse15` build needs `libopenssl1_1`. CLIO never compiles anything; otherwise use
 `FLOWCEPT_VARIANT=managed` (Apptainer databases). Preflight checks both and says which. See
-[docs/MANAGED_INFRASTRUCTURE.md](../../MANAGED_INFRASTRUCTURE.md). Two model stages:
+[Managed infrastructure](https://clio.iowarp.ai/docs/managed-infrastructure/). Two model stages:
 
 - **Stage 1 (default, `MODEL_STAGE=1`): IBM Granite 4.2-8B** (`ibm-granite/granite-4.2-8b` @
   `a7042144125c`, bf16, 17.6 GB) on **one** A100. No tensor parallelism, so the attention capture never
