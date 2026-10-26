@@ -94,6 +94,9 @@ KEY_NOTES: dict[str, str] = {
     "agent_tasks.max_forks_per_task": (
         "Most forks one task or conversation may start; 0 means unlimited. A fork past the "
         "limit is refused with fork_limit_reached and nothing is created."
+    "agent_tasks.obligation_concurrency": (
+        "Conversations resumed at once after startup to finish work left open at the last "
+        "stop (pending mail, interrupted turns); raise it to drain a backlog faster."
     ),
     "agent_tasks.max_depth": (
         "Maximum nesting level for new subagents (first child is level 1); 0 means unlimited. "
