@@ -205,7 +205,9 @@ from clio_agent.gact.app import build_app
 # 385 -> 405: long-term memory (routes/memory_documents.py, memory_transfer.py,
 # memory_switches.py) adds 20; transcript recall moved to /v1/session-recall/* with no
 # change in count.
-EXPECTED_ROUTE_METHOD_PAIRS = 405
+# 405 -> 407: SPOTTER per-item attention view + its CSV export, POST
+# /v1/sessions/{sid}/messages/{mid}/attention/items[/export], owned by gact/attention/routes.py.
+EXPECTED_ROUTE_METHOD_PAIRS = 407
 
 # app.py is build_app + lifecycle + re-export shims only. The ceiling is
 # the current size (~2892 lines) plus ~300 lines of headroom so ordinary
