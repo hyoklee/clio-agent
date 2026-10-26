@@ -21,6 +21,7 @@ from clio_agent.arc.task_types import (
     TaskSnapshot,
     argument_digest,
 )
+from clio_agent.gact.assignment_response import assignment_outputs
 from clio_agent.gact.fleet.child_model import warm_model_catalog
 from clio_agent.gact.fleet.guard import guard_spending
 from clio_agent.gact.native_work import now
@@ -281,29 +282,6 @@ def _new_assignment(
             initial_details.execution_deadline if initial_details else None,
         )
     return task
-
-
-def assignment_outputs(history: Any, details: AssignmentDetails, outputs: Any) -> Any:
-    """A turn's outputs, retaining earlier tool calls and public response parts.
-
-    An assignment can span turns: a child that yields on a question resumes once it is
-    answered. An editor's proposals and authored evidence from before that yield
-    still reach the caller. The final value remains the completing turn's answer.
-    """
-
-    if not details.last_output or not isinstance(outputs, dict):
-        return outputs
-    earlier = history.read_content(details.last_output)
-    if not isinstance(earlier, dict):
-        return outputs
-    merged = dict(outputs)
-    if calls := earlier.get("tools_called"):
-        merged["tools_called"] = [*calls, *(outputs.get("tools_called") or [])]
-    if parts := earlier.get("response_parts"):
-        from clio_agent.gact.assignment_response import merge_response_parts
-
-        merged["response_parts"] = merge_response_parts(parts, outputs.get("response_parts") or [])
-    return merged if merged != outputs else outputs
 
 
 def _finish_segment(

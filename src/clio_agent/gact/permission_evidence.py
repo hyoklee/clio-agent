@@ -69,11 +69,10 @@ def emit_permission_resolution(app: Any, row: Mapping[str, Any]) -> None:
             subject={"permission_id": payload["permission_id"], "action": payload["action"]},
             payload=payload,
         )
-    except Exception as exc:  # noqa: BLE001 - recording cannot alter the decision
-        logger.warning(
-            "permission receipt unavailable permission_id=%s error=%r",
+    except Exception:  # noqa: BLE001 - recording cannot alter the decision
+        logger.exception(
+            "permission receipt unavailable reason=permission_receipt_unrecorded permission_id=%s",
             payload["permission_id"],
-            exc,
         )
 
 

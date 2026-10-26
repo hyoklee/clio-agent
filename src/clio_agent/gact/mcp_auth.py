@@ -26,6 +26,16 @@ MAX_PENDING = 8
 logger = logging.getLogger(__name__)
 
 
+class McpSignInFailed(Exception):
+    """A sign-in ended failed; its message is the classified, credential-free reason."""
+
+
+def _retire_outcome(task: asyncio.Task[Any]) -> None:
+    """Consume a finished attempt's typed failure: it is already on the flow's record."""
+    if not task.cancelled():
+        task.exception()
+
+
 def _sign_in_error(error: BaseException) -> str:
     """Classify SDK failures without echoing URLs, authorization codes or tokens."""
     from mcp.client.auth.exceptions import OAuthFlowError, OAuthRegistrationError, OAuthTokenError
@@ -153,6 +163,7 @@ class McpSignIns:
             self._run(flow, spec, client_id, client_secret, client_metadata_url),
             name=f"mcp-sign-in:{name}",
         )
+        flow.task.add_done_callback(_retire_outcome)
         try:
             await asyncio.wait_for(flow.ready.wait(), timeout=20)
         except TimeoutError:
@@ -307,12 +318,12 @@ class McpSignIns:
         except asyncio.CancelledError:
             flow.state = "cancelled"
             raise
-        except Exception as exc:  # noqa: BLE001 - SDK/transport failures must not disclose credentials
+        except Exception as exc:
+            # SDK/transport failures must not disclose credentials: the flow records a
+            # classified reason and the log names only the phase and the exception type.
             logger.warning("MCP sign-in failed phase=%s kind=%s", flow.state, type(exc).__name__)
-            flow.state, flow.error = (
-                "failed",
-                _sign_in_error(exc),
-            )
+            flow.state, flow.error = "failed", _sign_in_error(exc)
+            raise McpSignInFailed(flow.error) from exc
         finally:
             flow.authorization_url = "" if flow.state != "authorizing" else flow.authorization_url
             flow.ready.set()
