@@ -179,7 +179,7 @@ def install(root: Path, manifest: dict[str, Any]) -> None:
                 MONGO_SHA[platform],
             )
             shutil.copy2(source / "bin/mongod", binaries / "mongod")
-            subprocess.run([str(binaries / "mongod"), "--version"], check=True)
+            check_mongod(binaries / "mongod", platform)
             flowcept_settings(root, credentials)
         else:
             environment = build_tools(root)
@@ -221,6 +221,23 @@ def build_tools(root: Path) -> dict[str, str]:
         subprocess.run(["make", "-j2"], cwd=source, env=environment, check=True)
         subprocess.run(["make", "install"], cwd=source, env=environment, check=True)
     return environment
+
+
+def check_mongod(mongod: Path, platform: str) -> None:
+    """Run the fetched ``mongod`` once; name what the host lacks when it cannot start."""
+    result = subprocess.run([str(mongod), "--version"], capture_output=True, text=True, check=False)
+    if result.returncode == 0:
+        return
+    detail = (result.stderr or result.stdout).strip()[:400]
+    hint = (
+        " On SUSE 15 the OpenSSL 1.1 library comes from the libopenssl1_1 package."
+        if platform == "suse15" and "libssl.so.1.1" in detail
+        else ""
+    )
+    raise RuntimeError(
+        f"MongoDB's verified {platform} build does not run on this host: {detail}.{hint} "
+        "Install the missing system library or choose site databases."
+    )
 
 
 def mongo_platform(release: str) -> str:
