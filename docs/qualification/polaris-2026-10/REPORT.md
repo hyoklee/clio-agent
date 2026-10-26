@@ -116,6 +116,22 @@ Creating suggested tasks timed out in this environment, so they are listed here 
 4. **clio-agent: SPOTTER's `session_search` cannot read the session it watches**, so it cannot confirm
    that the person asked for a write.
 
+## Test evidence (cloud container, 4 CPU)
+
+- **clio-agent** `tests/test_gact tests/test_scripts tests/test_arc -m "not integration" -n 3`:
+  **9077 passed, 2 failed, 46 skipped** (58 min). Neither failure comes from this branch:
+  - `test_artifact_raster_query[nc]`: the container lacks a NetCDF backend (`netCDF4`/`scipy`
+    extras are not installed).
+  - `test_child_startup_contracts::test_cancelling_startup_settles_its_worker_before_terminal_publication`:
+    a 10-second wait timed out under load. It passes alone and 3 times in a row together with the new
+    standing-assignment tests.
+- **An earlier run under heavier load** also tripped the 180-second limit on two load tests
+  (`test_composer_fix_round` 1000 messages, `test_a2ui_load_bounds`).
+- **Other checks:** route-count guard updated (405 → 407); `check_file_size.py` and
+  `check_no_class_in_function.py` pass; ruff passes.
+- **gact-tui:** lint and typecheck pass; 264 attention, lib and hook tests pass. The full web suite
+  result is below.
+
 ## E. What is pushed
 
 All on `claude/epic-hopper-6s2vhn`:
