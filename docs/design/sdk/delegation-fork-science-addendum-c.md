@@ -39,6 +39,7 @@ It does five things:
   - A size budget per export (`artifacts.dashboard_export_max_bytes`, in config) refuses an export that would exceed it, with a typed reason naming the total. Files over the budget are not dropped silently.
 - **Small fix.** `artifacts/export.py` reads a CAS blob before checking its size; check first.
 - **The criterion.** The reproduction no longer kills the server, and peak memory grows with the largest file, not with the sum of all files.
+- **Measured (2026-10-27).** 48 random-geometry STL meshes of 4 MB (192 MB) in one dashboard. The old export held 1.03 GB beyond its 256 MB request, about 6.7 times the files, so the issue's tens-of-MB meshes need about 10 GB. The streamed export peaks at 9.9 MB for any number of files. Registering the 48 meshes one by one also met the 8-per-turn `create_artifact` limit; dashboards now register workspace mesh paths at publish instead.
 
 ### 2. Content that follows the selection
 
