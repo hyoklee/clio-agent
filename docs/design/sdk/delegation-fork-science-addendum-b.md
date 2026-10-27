@@ -52,7 +52,8 @@ Everything else in the plan and in Addendum A stands. The rules, verification an
 ## Design: plugins
 
 - **What goes.** Plugins no longer declare charts. The Wordle `BoardWall` tally spec and the bench `Readings` spec and shadow layer are deleted, and so are the client's plugin-view surfaces (`plugin-view-model.ts`, `use-plugin-views.ts`, `PluginViewList`) and the Views canvas tab outside a study.
-- **What stays.** Plugins keep sending records in `ui_event`, which become the `records` source. A plugin may still offer catalog components. Wordle keeps a tile-board component that the agent can place over `study://<id>/records/board`.
+- **What stays.** Plugins keep sending records in `ui_event` (`{view, key, group, rows}`), which become the `records` source: Wordle's `board` (every game's tiles) and the bench's `readings`.
+- **No tile-board component.** A surface uses one catalog, and a plugin catalog holds only its own components, so a Wordle board component could not sit in the same dashboard as the agent's charts. The agent draws boards with `clio.chart.v1` over `study://<id>/records/board`; the records carry turn, position, letter and state per tile.
 
 ## Design: guidance
 
@@ -76,7 +77,7 @@ Everything else in the plan and in Addendum A stands. The rules, verification an
 | --- | --- |
 | Who edits a view | The session that made the surface; only it |
 | Who attaches overview views | The study's root conversation; branches may attach drill-down views |
-| Refresh | On every merged entry of the study; records sources poll every 4 s while a branch runs |
+| Refresh | On every merged entry of the study; records sources poll every 4 s while shown |
 | Empty source | Accepted, reported as `study_source_empty` |
 | Export | Views and the sources they read, captured at export time |
 
@@ -94,7 +95,6 @@ Everything else in the plan and in Addendum A stands. The rules, verification an
 5. In the marketplace:
    - delete the plugin chart specs;
    - keep the records;
-   - keep Wordle's tile board as a placeable component;
    - add the guidance.
 6. Tests at every layer, then the scenarios below.
 

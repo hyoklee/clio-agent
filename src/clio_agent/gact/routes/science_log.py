@@ -1,6 +1,7 @@
 """``GET /v1/sessions/{sid}/science-log``: the study a session belongs to, for the
 Science log tab: its branches (the sessions holding its entries, with how each relates
-to the others) and every entry with its current status and links.
+to the others), every entry with its current status and links, and the study's views
+(Addendum B): each attached dashboard with its owner's current surface.
 
 A session that is in no study gets ``{"in_study": false}``, and the tab stays hidden.
 """
@@ -62,6 +63,7 @@ def science_log_view(app: Any, sid: str) -> dict[str, Any]:
     """The Science log tab's data for session ``sid`` (off the loop)."""
 
     from clio_agent.gact.science_log.store import science_log  # noqa: PLC0415
+    from clio_agent.gact.science_log.views import study_views  # noqa: PLC0415
 
     log = science_log(app)
     study = log.study_of(sid)
@@ -80,11 +82,16 @@ def science_log_view(app: Any, sid: str) -> dict[str, Any]:
         "root_session_id": root,
         "branches": [_branch(app, branch, root) for branch in branch_ids],
         "entries": entries,
+        "views": study_views(app, entries, root),
     }
 
 
 def register_science_log_routes(app: FastAPI) -> None:
-    """Register the read route the Science log tab uses."""
+    """Register the read routes the Science log tab and its views use."""
+
+    from clio_agent.gact.routes.study_sources import register_study_source_routes  # noqa: PLC0415
+
+    register_study_source_routes(app)
 
     @app.get("/v1/sessions/{sid}/science-log")
     async def get_science_log(sid: str) -> dict[str, Any]:

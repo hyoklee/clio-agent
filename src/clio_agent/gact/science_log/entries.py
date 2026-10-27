@@ -22,6 +22,7 @@ EntryType = Literal[
     "reframe",
     "conclusion",
     "conflict",
+    "view",
 ]
 ENTRY_TYPES: tuple[str, ...] = (
     "question",
@@ -32,6 +33,7 @@ ENTRY_TYPES: tuple[str, ...] = (
     "reframe",
     "conclusion",
     "conflict",
+    "view",
 )
 #: Entries that record a change to another entry rather than a finding.
 META_TYPES: tuple[str, ...] = ("status", "link")
@@ -46,6 +48,7 @@ DEFAULT_STATUS: dict[str, str] = {
     "reframe": "recorded",
     "conclusion": "recorded",
     "conflict": "open",
+    "view": "recorded",
 }
 STATUSES: dict[str, frozenset[str]] = {
     "question": frozenset({"open", "answered", "superseded"}),
@@ -56,6 +59,7 @@ STATUSES: dict[str, frozenset[str]] = {
     "reframe": frozenset({"recorded", "superseded", "withdrawn"}),
     "conclusion": frozenset({"recorded", "superseded", "withdrawn"}),
     "conflict": frozenset({"open", "resolved"}),
+    "view": frozenset({"recorded", "superseded", "withdrawn"}),
 }
 
 
@@ -148,6 +152,14 @@ class ConflictFields(_Fields):
     description: str = Field(min_length=1)
 
 
+class ViewFields(_Fields):
+    """A dashboard of the writing session attached to the study (Addendum B)."""
+
+    surface_id: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    purpose: str = Field(min_length=1)
+
+
 FIELDS: dict[str, type[_Fields]] = {
     "question": QuestionFields,
     "hypothesis": HypothesisFields,
@@ -157,6 +169,7 @@ FIELDS: dict[str, type[_Fields]] = {
     "reframe": ReframeFields,
     "conclusion": ConclusionFields,
     "conflict": ConflictFields,
+    "view": ViewFields,
 }
 
 #: ``type -> relation -> (target types, least, most)``; most ``None`` is unbounded.
@@ -180,6 +193,7 @@ LINKS: dict[str, dict[str, tuple[frozenset[str], int, int | None]]] = {
         "merges": (frozenset({"conclusion"}), 0, None),
     },
     "conflict": {"between": (frozenset(ENTRY_TYPES), 2, None)},
+    "view": {"serves": (frozenset({"question", "hypothesis"}), 1, None)},
 }
 
 

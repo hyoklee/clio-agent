@@ -186,6 +186,8 @@ class ScienceLog:
             if entry_type == "observation":
                 clean = observation_sources(self.app, session_id, clean)
                 self._charge(study, visible, clean)
+            if entry_type == "view":
+                self._check_view_surface(session_id, clean["surface_id"])
             entry = {
                 "id": identity,
                 "study": study,
@@ -235,6 +237,19 @@ class ScienceLog:
         )
 
     # ------------------------------------------------------------- internals
+    def _check_view_surface(self, session_id: str, surface_id: str) -> None:
+        """A view attaches a surface of the writing session: only its owner edits it."""
+
+        store = getattr(getattr(self.app, "state", None), "a2ui_store", None)
+        record = store.get(session_id, surface_id) if store is not None else None
+        if record is None or getattr(record, "state", "") == "deleted":
+            raise EntryRejected(
+                "view_surface_missing",
+                f"this session has no surface {surface_id!r}: create it with "
+                "create_a2ui_surface first; a view attaches a surface of the session "
+                "that writes it",
+            )
+
     def _meta(
         self,
         session_id: str,

@@ -193,7 +193,10 @@ def build_log_entry_tool() -> Any:
             "unit?, conditions?}} (source.field is a path into the call's result, such as "
             "readings.0.value); a conclusion claim is {{text, cites, analysis_call?}}. An Observation "
             "cites the recorded calls behind it in from_calls (the call: reference each tool "
-            "result carries); a Conclusion's claims each cite entries. Returns the entry id; "
+            "result carries); a Conclusion's claims each cite entries. A view attaches a surface "
+            "this conversation made (surface_id) to the study as one of its dashboards; its "
+            "charts and tables can read study://<study>/measurements, /entries or "
+            "/records/<name>, which stay current as entries arrive. Returns the entry id; "
             "a refusal names its reason."
         ),
         args={

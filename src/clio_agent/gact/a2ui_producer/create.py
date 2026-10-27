@@ -64,7 +64,10 @@ def build_create_a2ui_surface_tool() -> Any:
             return exported
         components, export_report = exported
 
-        data_reference_error = _data_reference.validate_component_data_references(app, components)
+        source_notes: list[dict[str, str]] = []
+        data_reference_error = _data_reference.validate_component_data_references(
+            app, components, source_notes
+        )
         if data_reference_error is not None:
             return data_reference_error
 
@@ -157,6 +160,10 @@ def build_create_a2ui_surface_tool() -> Any:
             "state": surface.state,
         }
         result.update(export_report)
+        if source_notes:
+            # Live study sources with no rows yet: their field names wait for the
+            # first entries (Addendum B), so the agent knows they were not checked.
+            result["study_sources_unchecked"] = source_notes
         result.update(_common.surface_registry_fields(outcome))
         result.update(definition)
         return result
