@@ -210,7 +210,7 @@ def build_spawn_runtime_tools(
                 "strategy": strategy_schema,
                 "model": model_schema,
             },
-            "Delegate the original assignment and immediately receive a Subagent handle. Optional strategy selects best_of_n/refine with n, rubric, threshold and lm/user judge. Continue work, observe_tasks, or wait_tasks. Child results wake eligible idle parents. Pause holds only the child model; cancel_tasks includes its descendant work.",
+            "Delegate a task, written self-contained, to a child agent and immediately receive its Subagent handle; the child reports back. Optional strategy selects best_of_n/refine with n, rubric, threshold and lm/user judge. Continue work, observe_tasks, or wait_tasks. Child results wake eligible idle parents. Pause holds only the child model; cancel_tasks includes its descendant work.",
         )
     ]
     tools.append(
