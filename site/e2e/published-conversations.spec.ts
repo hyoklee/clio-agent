@@ -56,7 +56,7 @@ for (const [path, title, messages] of [
     const response = await page.goto(path);
     expect(response?.status()).toBe(200);
     expect(response?.headers()['content-type']).toContain('text/html');
-    await expect(page.getByRole('heading', { level: 1, name: title }).filter({ visible: true })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('heading', { level: 1, name: title, exact: true }).filter({ visible: true })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText(new RegExp(`Transcript.*${messages} messages`)).filter({ visible: true })).toBeVisible();
     expect(errors).toEqual([]);
     expect(externalRequests).toEqual([]);
