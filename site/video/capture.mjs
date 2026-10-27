@@ -6,9 +6,10 @@ import {installPointerGuide} from './pointer-guide.mjs';
 // Records the browser continuously. Screenshots are review evidence only.
 const takeDir = resolve('public/takes');
 await mkdir(takeDir, {recursive: true});
-const commandDir = resolve('.capture-commands');
+// CAPTURE_COMMANDS / CAPTURE_PROFILE let two recorders run side by side.
+const commandDir = resolve(process.env.CAPTURE_COMMANDS || '.capture-commands');
 await mkdir(commandDir, {recursive: true});
-const browser = await puppeteer.launch({headless: true, executablePath:process.env.DEMO_CHROME_PATH || undefined, userDataDir:resolve('.capture-profile'), defaultViewport: {width: 1280, height: 870, deviceScaleFactor: 1}});
+const browser = await puppeteer.launch({headless: true, executablePath:process.env.DEMO_CHROME_PATH || undefined, userDataDir:resolve(process.env.CAPTURE_PROFILE || '.capture-profile'), defaultViewport: {width: 1280, height: 870, deviceScaleFactor: 1}});
 const page = await browser.newPage();
 const diagnostics=[];
 page.on('pageerror',error=>diagnostics.push(String(error)));

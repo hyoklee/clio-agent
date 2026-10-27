@@ -7,13 +7,17 @@
 # session in the web UI, starts a take, types the kickoff into the composer as a
 # person would, and keeps recording until the session settles (status idle and no
 # running task) or MAX_HOURS pass. It opens the Science log tab once the study exists.
-# The take lands in site/video/public/takes/TAKE.mp4 with its marks in TAKE.json.
+# The take lands in site/video/public/takes/TAKE.mp4 with its marks in TAKE.json, and a
+# still every three minutes in TAKE-NNN.png.
 # DEMO_CHROME_PATH must name a Chrome 153+ (as root, a wrapper adding --no-sandbox).
 set -euo pipefail
 TAKE="$1"; WS="$2"; SID="$3"; PROMPT="$4"; HOURS="${5:-6}"
 API="${CLIO_URL:-http://127.0.0.1:8787}"; UI="${CLIO_UI_URL:-http://127.0.0.1:5173}"
 VIDEO="$(cd "$(dirname "$0")/../../site/video" && pwd)"
 cd "$VIDEO"
+# Each take has its own command folder and browser profile, so takes can record at once.
+export CAPTURE_COMMANDS=".capture-commands-$TAKE" CAPTURE_PROFILE=".capture-profile-$TAKE"
+rm -rf "$CAPTURE_COMMANDS"
 cmd() { node command.mjs "$1"; }
 node capture.mjs > "/tmp/record-$TAKE.log" 2>&1 &
 REC=$!
@@ -35,7 +39,7 @@ python3 -c 'import json,sys; print(json.dumps({"op":"type","text":sys.argv[1],"d
 cmd "$(cat "/tmp/record-$TAKE.type.json")"
 cmd '{"op":"key","key":"Enter"}'
 cmd '{"op":"mark","label":"kickoff sent"}'
-deadline=$(( $(date +%s) + HOURS * 3600 )); opened=0
+deadline=$(( $(date +%s) + HOURS * 3600 )); opened=0; shots=0; last_shot=0
 status() { curl -s "$API/v1/sessions/$SID" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))'; }
 busy_branches() { curl -s "$API/v1/sessions/$SID/science-log" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(sum(b.get("task_status") in ("accepted","running","active","queued") for b in d.get("branches") or []))'; }
 in_study() { curl -s "$API/v1/sessions/$SID/science-log" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("in_study", False))'; }
@@ -44,6 +48,11 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   if [ $opened = 0 ] && [ "$(in_study)" = True ]; then
     cmd '{"op":"click","selector":"::-p-text(Science log)"}' >/dev/null 2>&1 && opened=1
     cmd '{"op":"mark","label":"science log opened"}' >/dev/null
+  fi
+  # A still every few minutes, read during the run as review evidence.
+  if [ $(( $(date +%s) - last_shot )) -ge 180 ]; then
+    shots=$((shots + 1)); last_shot=$(date +%s)
+    cmd "{\"op\":\"shot\",\"name\":\"$TAKE-$(printf %03d $shots)\"}" >/dev/null 2>&1 || true
   fi
   if [ "$(status)" = idle ] && [ "$(busy_branches)" = 0 ]; then
     sleep 120; [ "$(status)" = idle ] && [ "$(busy_branches)" = 0 ] && break

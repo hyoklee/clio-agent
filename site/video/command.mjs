@@ -4,7 +4,7 @@ import {randomUUID} from 'node:crypto';
 const command = JSON.parse(process.argv[2] ?? '{}');
 if (!command.op) throw new Error('Supply a JSON command with an op');
 const id = Date.now().toString() + '-' + randomUUID();
-const base = resolve('.capture-commands', id);
+const base = resolve(process.env.CAPTURE_COMMANDS || '.capture-commands', id);
 await writeFile(base+'.pending', JSON.stringify(command));
 await rename(base+'.pending', base+'.command.json');
 for (let attempt=0; attempt<240; attempt++) {
