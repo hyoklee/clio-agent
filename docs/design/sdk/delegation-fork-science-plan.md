@@ -513,7 +513,7 @@ If Phase 3 is already done, this phase runs before the UI and qualification phas
 | F8 | A workflow step forks mid-run, with `approve_edits` | Mechanism | The approval Question appears; after approval the fork is drawn beside its step, the dependent waits on both, and its input lists both answers |
 | F9 | Restart the server after the fork in F8 | Mechanism | No duplicate fork; the run resumes on the same handles |
 | F10 | Forks beyond **Forks per task** | Mechanism | `fork_limit_reached` is returned and nothing is created |
-| F11 | A small study in a third domain, asked as a plain question | Judgement | Entries of every type appear in the tree; every claim cites entries; a citation of a missing entry is a typed error; every Observation cites calls, and every quantitative claim cites an analysis over an exported file |
+| F11 | A small study in a third domain, asked as a plain question | Judgement | Entries of every type the study needed appear in the tree (a Reframe or Conflict only where the evidence called for one, FD35); every claim cites entries; a citation of a missing entry is a typed error; every Observation cites calls, and every quantitative claim cites an analysis over an exported file |
 | F12 | A study that runs out of budget | Mechanism | The next Observation is rejected with `budget_exhausted`, and the branch concludes with what it has |
 | F13 | The Wordle study, unbounded, on a Sonnet-class model | Judgement | The audit is clean, the independent check passes every Wordle criterion below, and the recording exists |
 | F14 | Restart during a Wordle run | Kickoff prompt | Steps and forks resume on the same handles, games resume through `game_state`, and the log has no duplicate entries |
@@ -532,7 +532,7 @@ If Phase 3 is already done, this phase runs before the UI and qualification phas
 **Wordle criteria (F13):**
 
 - at least three hypotheses proposed without being given any, run as workflow steps;
-- at least one fork from evidence, a new hypothesis or a reframe, that the merge waited on;
+- where a branch finds something no hypothesis offered, or the premise proves doubtful, it is pursued (a fork, a reframe or a further step) and the merge waits on it; a study whose results raise neither needs no fork or reframe (FD35);
 - every claim in the merged Conclusion cites log entries;
 - the merged ranking agrees with the reference solver on the same seeds, or the log explains the disagreement by sample size;
 - strategy comparisons are paired over shared seeds in the agent's own analysis, cited in the merged Conclusion;
@@ -545,7 +545,7 @@ If Phase 3 is already done, this phase runs before the UI and qualification phas
 
 - one branch per candidate input, without being told which inputs matter;
 - the decoy input concluded to have no effect, citing the evidence, with the decoy conclusion citing an analysis that shows no effect within its uncertainty;
-- the regime change found by a branch and pursued through a fork or reframe that the merge waited on, with the regime claim citing Observations on both sides of the threshold;
+- the regime change found and pursued (a fork, a reframe or a further step, which the merge waited on, when a branch first finds it), with the regime claim citing Observations on both sides of the threshold (FD35);
 - the merged law predicts the held-out settings within twice the stated noise on both sides of the threshold, and beats the textbook baseline;
 - every claim cites log entries, and the reported threshold is within 10 percent of the true one;
 - screenshots read during the run show the shadow drifting while a law is wrong and settling once the merged law holds, and the held-out replay shows real and shadow together;
