@@ -16,7 +16,7 @@ API="${CLIO_URL:-http://127.0.0.1:8787}"; UI="${CLIO_UI_URL:-http://127.0.0.1:51
 VIDEO="$(cd "$(dirname "$0")/../../site/video" && pwd)"
 cd "$VIDEO"
 # Each take has its own command folder and browser profile, so takes can record at once.
-export CAPTURE_COMMANDS=".capture-commands-$TAKE" CAPTURE_PROFILE=".capture-profile-$TAKE"
+export CAPTURE_COMMANDS=".capture-commands-$TAKE" CAPTURE_PROFILE=".capture-profile-$TAKE" CAPTURE_WAIT_S=180
 rm -rf "$CAPTURE_COMMANDS"
 cmd() { node command.mjs "$1"; }
 node capture.mjs > "/tmp/record-$TAKE.log" 2>&1 &
