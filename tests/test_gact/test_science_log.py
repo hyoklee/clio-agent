@@ -340,3 +340,11 @@ def test_measurements_export_with_a_manifest_that_matches_the_file(tmp_path: Pat
 
     table = pq.read_table(tmp_path / "m.parquet").to_pydict()
     assert table["value"] == [1.0, 2.5, 4.0] and table["condition.setting"] == [0, 1, 2]
+
+
+def test_every_science_log_tool_builds_with_a_declared_presentation() -> None:
+    from clio_agent.gact.science_log.tools import BUILDERS, SCIENCE_LOG_TOOLS
+
+    built = {name: BUILDERS[name]() for name in SCIENCE_LOG_TOOLS}
+    assert set(built) == set(SCIENCE_LOG_TOOLS)
+    assert all(getattr(tool, "name", name) == name for name, tool in built.items())

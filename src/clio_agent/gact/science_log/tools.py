@@ -34,11 +34,15 @@ def _context() -> tuple[Any, str, str]:
     return app, session_id, TASK_CALL.get().invocation_id or uuid4().hex
 
 
-def _native(func: Any, *, read_only: bool = False, **declaration: Any) -> Any:
+def _native(func: Any, fields: str, *, read_only: bool = False, **declaration: Any) -> Any:
     from clio_agent.gact.agents.tool_instrumentation import native_tool  # noqa: PLC0415
 
     return native_tool(
-        func, presentation="row", domain="science", read_only=read_only, **declaration
+        func,
+        presentation=f"fields:{fields}",
+        domain="science",
+        read_only=read_only,
+        **declaration,
     )
 
 
@@ -176,6 +180,7 @@ _TYPES = ", ".join(ENTRY_TYPES)
 def build_log_entry_tool() -> Any:
     return _native(
         log_entry,
+        "type,id,status,reason",
         name="log_entry",
         title="Log entry",
         desc=(
@@ -199,6 +204,7 @@ def build_log_entry_tool() -> Any:
 def build_link_tool() -> Any:
     return _native(
         link,
+        "id,type,reason",
         name="link",
         title="Link entries",
         desc="Add a relation between two entries of the study, such as evidence that "
@@ -225,6 +231,7 @@ def build_link_tool() -> Any:
 def build_set_status_tool() -> Any:
     return _native(
         set_status,
+        "id,status,reason",
         name="set_status",
         title="Set entry status",
         desc="Record a status change of an entry (for a hypothesis: supported, refuted or "
@@ -240,6 +247,7 @@ def build_set_status_tool() -> Any:
 def build_query_log_tool() -> Any:
     return _native(
         query_log,
+        "study,branch",
         name="query_log",
         title="Query study log",
         desc=(
@@ -255,6 +263,7 @@ def build_query_log_tool() -> Any:
 def build_export_measurements_tool() -> Any:
     return _native(
         export_measurements,
+        "output_path,saved_path,reason",
         name="export_measurements",
         title="Export measurements",
         desc=(
