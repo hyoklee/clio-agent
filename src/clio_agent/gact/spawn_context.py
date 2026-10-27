@@ -223,9 +223,24 @@ def prepare_child_session(
         if source is not None:
             # The fork starts where its source is: its conversation through the last
             # finished tool result, before the assignment (the fork's note) arrives.
-            from clio_agent.gact.conversation_copy import copy_conversation  # noqa: PLC0415
+            from clio_agent.gact.conversation_copy import (
+                copy_conversation,  # noqa: PLC0415
+                fork_side_result,  # noqa: PLC0415
+            )
 
-            copy_conversation(app, source.id, created.id, open_turn=True)
+            call = dict(inherited.get("fork_call") or {})
+            copy_conversation(
+                app,
+                source.id,
+                created.id,
+                open_turn=True,
+                fork_call={
+                    "call_id": call.get("call_id", ""),
+                    "result": fork_side_result(source.id, call.get("note")),
+                }
+                if call.get("call_id")
+                else None,
+            )
         return created
 
     # The spending guard reads the choice before the child is created.

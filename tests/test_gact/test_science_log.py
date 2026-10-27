@@ -348,3 +348,44 @@ def test_every_science_log_tool_builds_with_a_declared_presentation() -> None:
     built = {name: BUILDERS[name]() for name in SCIENCE_LOG_TOOLS}
     assert set(built) == set(SCIENCE_LOG_TOOLS)
     assert all(getattr(tool, "name", name) == name for name, tool in built.items())
+
+
+def test_a_call_is_read_from_its_structured_result_not_its_text_preview(
+    tmp_path: Path,
+) -> None:
+    from types import SimpleNamespace
+
+    from clio_agent.gact.science_log.lineage import _field, find_call
+
+    structured = {"readings": [{"seconds": 14.86}]}
+    message = Message(
+        id="msg_live",
+        session_id="sess_a",
+        role="assistant",
+        created_at="2026-10-27T00:00:00+00:00",
+        updated_at="2026-10-27T00:00:01+00:00",
+        parts=[
+            Part(type="tool_call", call_id="call_m", tool_name="measure", input={}),
+            Part(
+                type="tool_result",
+                call_id="call_m",
+                tool_name="measure",
+                structured_content=structured,
+                # The live turn's text and the stored preview differ; neither is read.
+                content=[Part(type="text", text="Tool measure completed.")],
+            ),
+        ],
+    )
+    app = SimpleNamespace(state=SimpleNamespace(messages={"sess_a": [message]}))
+    import clio_agent.gact.tool_observer as observer
+
+    original = observer._session_turn_transcript
+    observer._session_turn_transcript = lambda *_: None
+    try:
+        call = find_call(app, "sess_a", "call_m")
+    finally:
+        observer._session_turn_transcript = original
+    canonical = json.dumps(structured, sort_keys=True, separators=(",", ":"))
+    assert call["result_sha256"] == hashlib.sha256(canonical.encode()).hexdigest()
+    parsed = json.loads(call["result_text"])
+    assert _field(parsed, "readings[0].seconds") == _field(parsed, "readings.0.seconds") == 14.86

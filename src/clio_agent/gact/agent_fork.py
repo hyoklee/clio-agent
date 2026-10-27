@@ -129,7 +129,11 @@ async def _fork_task(
             return _refused(NOT_APPROVED, "the person did not approve this fork")
     parent_caller = await history.io.run(conversations.caller, plan["parent_session"])
     label = plan["label"] if plan.get("step") else (title or plan["label"])
-    metadata: dict[str, Any] = {"subagent_name": label}
+    # The fork's copy answers this call as the fork sees it (conversation_copy.py).
+    metadata: dict[str, Any] = {
+        "subagent_name": label,
+        "fork_call": {"call_id": invocation, "note": note},
+    }
     if plan.get("step"):
         metadata["workflow_step_of"] = {"run": plan["run"], "step": plan["step"]}
     accepted = await conversations.spawn(

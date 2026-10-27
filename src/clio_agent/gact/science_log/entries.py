@@ -213,7 +213,7 @@ class EntryRejected(ValueError):
         self.reason = reason
 
     def to_dict(self) -> dict[str, Any]:
-        return {"accepted": False, "reason": self.reason, "error": str(self)}
+        return {"accepted": False, "reason": self.reason, "error": f"{self.reason}: {self}"}
 
 
 def validate_fields(entry_type: str, fields: Any) -> dict[str, Any]:

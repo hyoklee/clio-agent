@@ -75,6 +75,11 @@ def find_call(app: Any, session_id: str, call_id: str) -> dict[str, Any] | None:
                 )
                 for block in (getattr(part, "content", None) or [])
             ) or str(getattr(part, "text", "") or "")
+            # The structured result is the same in the live turn and the stored
+            # transcript (its text preview is not), so it is what is read and hashed.
+            structured = getattr(part, "structured_content", None)
+            if structured is not None:
+                text = json.dumps(structured, sort_keys=True, separators=(",", ":"), default=str)
             call.update(
                 completed_at=str((part.metadata or {}).get("completed_at") or ""),
                 result_text=text,
@@ -97,13 +102,17 @@ def _subtree_sessions(app: Any, session_id: str) -> set[str]:
     return sessions
 
 
-def _artifacts(app: Any, call_id: str) -> list[dict[str, Any]]:
+def _transform(app: Any, call_id: str) -> Any:
     try:
         from clio_agent.gact.artifacts.registry import get_registry  # noqa: PLC0415
 
-        record = get_registry(app).get_transform(call_id)
+        return get_registry(app).get_transform(call_id)
     except (AttributeError, RuntimeError):
-        return []
+        return None
+
+
+def _artifacts(app: Any, call_id: str) -> list[dict[str, Any]]:
+    record = _transform(app, call_id)
     if record is None:
         return []
     rows = []
@@ -123,6 +132,8 @@ def _field(value: Any, path: str) -> Any:
     """``a.b.0.c`` (or a JSON pointer ``/a/b/0/c``) inside a parsed result."""
 
     current = value
+    # ``a.b.0.c``, ``/a/b/0/c`` and ``a.b[0].c`` all name the same field.
+    path = path.replace("[", ".").replace("]", "")
     for key in [k for k in path.replace("/", ".").split(".") if k]:
         if isinstance(current, dict) and key in current:
             current = current[key]
@@ -167,12 +178,16 @@ def observation_sources(app: Any, author: str, fields: dict[str, Any]) -> dict[s
                 ),
             )
         owner = app.state.sessions.get(named)
+        record = _transform(app, call_id)
+        recorded = getattr(getattr(record, "environment", None), "model_id", "") or ""
         calls[call_id] = {
             **found,
             "reference": call_reference(named, call_id),
             "session": named,
             "agent": str((getattr(owner, "agent", None) or {}).get("id") or agent),
-            "model": "/".join(
+            # The model that ran the call, as recorded with it; else the session's pin.
+            "model": str(recorded)
+            or "/".join(
                 str((getattr(owner, "model", None) or model).get(key) or "")
                 for key in ("provider_id", "model_id")
             ).strip("/"),
