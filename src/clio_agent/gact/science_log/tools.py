@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import uuid4
 
-from clio_agent.gact.science_log.entries import ENTRY_TYPES, EntryRejected
+from clio_agent.gact.science_log.entries import ENTRY_TYPES, EntryRejected, type_signatures
 
 #: Every tool name the ``science-log`` plugin may claim.
 SCIENCE_LOG_TOOLS: tuple[str, ...] = (
@@ -185,7 +185,9 @@ def build_log_entry_tool() -> Any:
         title="Log entry",
         desc=(
             f"Write one entry of the study log: one of {_TYPES}. fields hold the type's "
-            "fields; links name the entries it relates to ({relation: id}). An Observation "
+            "fields; links name the entries it relates to ({relation: id}). Per type: "
+            f"{type_signatures()}. A measurement is {{metric, value?, source?: {{call, field}}, "
+            "unit?, conditions?}}; a conclusion claim is {{text, cites, analysis_call?}}. An Observation "
             "cites the recorded calls behind it in from_calls (the call: reference each tool "
             "result carries); a Conclusion's claims each cite entries. Returns the entry id; "
             "a refusal names its reason."

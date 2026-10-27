@@ -181,6 +181,24 @@ LINKS: dict[str, dict[str, tuple[frozenset[str], int, int | None]]] = {
     },
     "conflict": {"between": (frozenset(ENTRY_TYPES), 2, None)},
 }
+
+
+def type_signatures() -> str:
+    """One line per entry type: its fields (``?`` optional) and its links, from the models."""
+
+    lines = []
+    for name, model in FIELDS.items():
+        fields = ", ".join(
+            key + ("" if info.is_required() else "?") for key, info in model.model_fields.items()
+        )
+        links = ", ".join(
+            f"{rel}: {'|'.join(sorted(targets))}{'' if least else '?'}{'[]' if most != 1 else ''}"
+            for rel, (targets, least, most) in LINKS[name].items()
+        )
+        lines.append(f"{name} {{{fields}}}" + (f" links {{{links}}}" if links else ""))
+    return "; ".join(lines)
+
+
 #: Relations ``link`` may add later between any two visible entries.
 LATER_RELATIONS = frozenset(
     {"supports", "refutes", "relates_to", "cites", "derived_from", "answers", "merges"}
