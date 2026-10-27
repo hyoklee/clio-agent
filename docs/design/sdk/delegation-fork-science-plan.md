@@ -21,6 +21,7 @@ This plan is the contract for the six workstreams. The SDK design documents stil
 | Document | Governs |
 | --- | --- |
 | This plan | Default delegation, fork, the science log, both studies, their publication |
+| [delegation-fork-science-addendum-a.md](delegation-fork-science-addendum-a.md) | Sources, data access and isolated workspaces; folded into this plan when implemented |
 | [plugins-and-composition.md](plugins-and-composition.md) | Plugins, packs, resolution, composed prompt, trust |
 | [agent-sdk.md](agent-sdk.md) | `Agent`, `Subagent`, `Plugin`, `plugin check` |
 | [orchestration-semantics.md](orchestration-semantics.md) | Flows, `ctx`, the task layer, workflows |
