@@ -8,6 +8,7 @@ import Capture from '../../../components/overview/Capture';
 import { captureImage } from '../../../lib/captures';
 import council from '../../../assets/captures/docs-flow-council.png';
 import workflow from '../../../assets/captures/docs-flow-workflow.png';
+import workflowFork from '../../../assets/captures/docs-flow-fork.png';
 
 A flow decides how an agent's work is organized. In an ordinary conversation the agent runs the default flow: it answers, calls tools, and chooses its next step from what it sees. Other flows coordinate several agent runs, for example several independent answers followed by one synthesis.
 
@@ -46,6 +47,13 @@ step if a claim needs checking, and ask me before any added step runs.
 
 A workflow can name **editors**, usually a critic. An editor may propose new steps, or cancel steps that have not started. When the workflow asks for approval, each proposed step reaches you as a question in the conversation, for example "Add workflow step 'verify_lustre_stripe_default' (researcher) after draft, review, proposed by review?". A step that was added waits on the step that proposed it.
 
+An editor acts at two moments:
+
+- when it runs as one of the workflow's steps, usually placed after the steps it should check;
+- when a step fails; it may then add a step that repairs the failure.
+
+An editor that is named but has no step of its own acts only when a step fails.
+
 How far a workflow may grow has no built-in limit. The agent may set one when it starts the workflow. To cap every workflow, open Settings, choose **Execution & history**, and set the **Workflows** limits:
 
 | Setting | What it caps |
@@ -55,12 +63,30 @@ How far a workflow may grow has no built-in limit. The agent may set one when it
 
 Zero means unlimited. When both you and the agent set a limit, the smaller one applies. The limits in force are recorded when the run starts.
 
+### Fork a step
+
+A running step can fork itself to try another direction, such as a competing hypothesis, without being an editor. The fork is a copy of the step's agent. It carries the step's conversation so far, followed by a note that says what the fork should do differently. It runs beside its step, named after it in fork order: `b~1`, then `b~2`.
+
+- **It is drawn beside its step.** The diagram shows the fork under its step with a dotted outline, labeled as a fork of that step, from the same inputs to the same next step.
+- **The steps that waited on the step also wait on the fork.** They start once both have finished, and they read both answers, each labeled with its name, such as `[b]` and `[b~1]`.
+- **Approval applies.** When the workflow asks for approval, the fork first asks you, for example "Fork step 'b' as 'b~1': Give the strongest counterargument in one line. Allow?". If you answer no, the fork is not made and the step carries on.
+- **Growth limits apply.** A fork counts as an added step against **Steps editors may add**. Past the limit, the fork is refused and the step carries on.
+- **A failed fork is a failed step.** It is offered to the editors, who may add a step that repairs it.
+
+<Capture client:visible image={await captureImage(workflowFork)}
+  alt="A workflow run in full screen: under Changes while it ran, the added signoff step and two answered questions, Fork step 'b' as 'b~1' and Add workflow step 'signoff'; the diagram shows a, then b with b~1 fork of b drawn below it, and a council C, all joining at merge, then edit and signoff"
+  caption="A workflow from a directed check of these features: step b forked b~1 after its question was answered, and the editor step edit added signoff. Both questions and your answers are listed under Changes while it ran."
+/>
+
+Outside workflows, **Forks per task** under Settings → **Execution & history** → **Subagents** limits how many forks one task, or one conversation, may have. Zero means unlimited.
+
 ## Follow a run
 
 A flow appears as a card in the conversation, with its name, its state, and a count of its steps. The diagram reads left to right:
 
 - steps that run at the same time are drawn side by side, labeled with how many run in parallel;
 - a flow that runs inside another is drawn as a box with its name;
+- a fork is drawn with a dotted outline beside the step it was forked from;
 - each step's color shows its state, and the legend under the diagram names the states in words.
 
 <Capture client:visible image={await captureImage(council)}
