@@ -34,7 +34,7 @@ async function run(action) {
     if(!Number.isInteger(action.width) || !Number.isInteger(action.height) || action.width<640 || action.height<480) throw new Error('Supply a viewport at least 640 x 480');
     await page.setViewport({width:action.width,height:action.height,deviceScaleFactor:action.scale??1});
   }
-  if (action.op === 'goto') {await page.goto(action.url, {waitUntil:'networkidle2', timeout:60000}); await pointer();}
+  if (action.op === 'goto') {await page.goto(action.url, {waitUntil:'networkidle2', timeout:Number(process.env.CAPTURE_GOTO_MS || 60000)}); await pointer();}
   if (action.op === 'downloads') {
     if(recorder) throw new Error('Set the download directory before recording');
     const downloadPath=resolve(action.path);
