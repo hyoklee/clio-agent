@@ -283,6 +283,12 @@ KEY_NOTES: dict[str, str] = {
         "Per-file byte ceiling for CAS ingestion; larger files stay workspace-referenced only, not "
         "copied. Raise to CAS-ingest bigger deliverables."
     ),
+    "artifacts.dashboard_export_max_bytes": (
+        "Largest offline dashboard page (bytes) an export may write, its files included; past "
+        "it the export is refused with dashboard_export_too_large, naming the total. 0 means "
+        "unlimited. Files are streamed into the page, so this bounds the download a browser "
+        "must open, not server memory."
+    ),
     "artifacts.export_license": (
         "SPDX license string stamped on an RO-Crate export's root Dataset (default NOASSERTION = "
         "none declared); set to your org's license."

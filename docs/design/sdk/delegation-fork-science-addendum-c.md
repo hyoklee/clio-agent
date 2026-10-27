@@ -36,7 +36,7 @@ It does five things:
   - The snapshot carries each artifact once, identified by hash.
   - The server writes the HTML in a stream: a file artifact's bytes are copied from the CAS or the workspace in chunks, never built into one string, and never base64'd twice.
   - The client uploads the snapshot in parts rather than one base64 body.
-  - A size budget per export (`exports.dashboard_max_bytes`, in config) refuses an export that would exceed it, with a typed reason naming the total. Files over the budget are not dropped silently.
+  - A size budget per export (`artifacts.dashboard_export_max_bytes`, in config) refuses an export that would exceed it, with a typed reason naming the total. Files over the budget are not dropped silently.
 - **Small fix.** `artifacts/export.py` reads a CAS blob before checking its size; check first.
 - **The criterion.** The reproduction no longer kills the server, and peak memory grows with the largest file, not with the sum of all files.
 
@@ -74,7 +74,7 @@ Delete `MAX_A2UI_COMPONENTS`, both checks, `A2UIComponentLimitExceededError`, th
 
 | Question | Default |
 | --- | --- |
-| Dashboard export budget | 2 GiB per export (`exports.dashboard_max_bytes`) |
+| Dashboard export budget | 2 GiB per export (`artifacts.dashboard_export_max_bytes`) |
 | Viewer mount distance | One viewport height |
 | Selection-bound file not an artifact | A worded error in the viewer; nothing loads |
 

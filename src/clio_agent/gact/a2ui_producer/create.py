@@ -6,6 +6,7 @@ from typing import Any, Optional
 
 from clio_agent.gact.a2ui_capability_selection import select_catalog
 from clio_agent.gact.a2ui_producer import (
+    _bound_files,
     _chart_spec,
     _common,
     _data_reference,
@@ -63,6 +64,22 @@ def build_create_a2ui_surface_tool() -> Any:
         if isinstance(exported, dict):
             return exported
         components, export_report = exported
+        bound = _bound_files.export_selection_rows(app, session_id, components)
+        if isinstance(bound, dict):
+            return bound
+        if data_model is not None:
+            modelled = _bound_files.export_bound_values(
+                app, session_id, components, "/", data_model
+            )
+            if isinstance(modelled, dict):
+                return modelled
+            data_model, more = modelled
+            bound = [*bound, *more]
+        if bound:
+            export_report["exported_artifacts"] = [
+                *export_report.get("exported_artifacts", []),
+                *bound,
+            ]
 
         source_notes: list[dict[str, str]] = []
         data_reference_error = _data_reference.validate_component_data_references(

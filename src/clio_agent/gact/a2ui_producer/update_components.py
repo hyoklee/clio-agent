@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from clio_agent.gact.a2ui_producer import (
+    _bound_files,
     _chart_spec,
     _common,
     _data_reference,
@@ -57,6 +58,14 @@ def build_update_a2ui_components_tool() -> Any:
         if isinstance(exported, dict):
             return exported
         components, export_report = exported
+        bound = _bound_files.export_selection_rows(app, session_id, components)
+        if isinstance(bound, dict):
+            return bound
+        if bound:
+            export_report["exported_artifacts"] = [
+                *export_report.get("exported_artifacts", []),
+                *bound,
+            ]
 
         source_notes: list[dict[str, str]] = []
         data_reference_error = _data_reference.validate_component_data_references(

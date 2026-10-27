@@ -100,6 +100,7 @@ These resolve through `clio_agent.conf`: a value under the dotted key in `config
 | `CLIO_CONTEXT_REFERENCE_SUMMARY_MESSAGES` | `gact.context_references.summary_messages` | int | `5` | `src/clio_agent/gact/context_references.py` |
 | `CLIO_CORE_PORT` | `arc.core_port` | str | `str(_DEFAULT_CTE_CORE_PORT)` _(computed)_ | `src/clio_agent/arc/clio_core_config.py` |
 | `CLIO_CTX_MAX_BYTES` | `limits.context_inline_bytes` | int | `32768` | `src/clio_agent/gact/runtime/constants.py` |
+| `CLIO_DASHBOARD_EXPORT_MAX_BYTES` | `artifacts.dashboard_export_max_bytes` | int | `2147483648` | `src/clio_agent/gact/dashboard_export.py` |
 | `CLIO_DEBUG` | `debug.level` | str | `low` | `src/clio_agent/runtime/trace.py` |
 | `CLIO_DEBUG_MEMPROF` | `debug.memprof` | bool | `false` | `src/clio_agent/gact/diagnostics.py` |
 | `CLIO_DEBUG_MEMPROF_FRAMES` | `debug.memprof_frames` | int | `20` | `src/clio_agent/gact/diagnostics.py` |

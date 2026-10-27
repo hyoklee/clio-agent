@@ -98,7 +98,9 @@ _FORBIDDEN_KEYS = frozenset(
     }
 )
 #: Property names whose string literals are URLs (checked case-insensitively).
-A2UI_URL_KEYS = frozenset({"url", "uri", "datauri"})
+A2UI_URL_KEYS = frozenset(
+    {"url", "uri", "datauri", "meshuri", "materialuri", "rasteruri", "geojsonuri"}
+)
 
 
 def _most_specific_error(errors: list[ValidationError]) -> ValidationError:
