@@ -53,12 +53,19 @@ def test_a_tool_names_the_call_it_runs_in_from_the_agent_loops_slot() -> None:
         current_call_id,
         report_observer_call,
     )
+    from clio_agent.gact.tool_observer import _OBSERVER_CALL_IDS
 
-    assert current_call_id() == ""
-    token = MODEL_CALL_SLOT.set({})
+    # The observer's own id outlives its call in this context; clear it, as a fresh
+    # turn's context would be.
+    observer = _OBSERVER_CALL_IDS.set(None)
     try:
-        report_observer_call("call_abc123def456")
-        report_observer_call("call_inner_tool")  # a tool's own inner calls keep its id
-        assert current_call_id() == "call_abc123def456"
+        assert current_call_id() == ""
+        token = MODEL_CALL_SLOT.set({})
+        try:
+            report_observer_call("call_abc123def456")
+            report_observer_call("call_inner_tool")  # a tool's own inner calls keep its id
+            assert current_call_id() == "call_abc123def456"
+        finally:
+            MODEL_CALL_SLOT.reset(token)
     finally:
-        MODEL_CALL_SLOT.reset(token)
+        _OBSERVER_CALL_IDS.reset(observer)
