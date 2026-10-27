@@ -355,8 +355,10 @@ class ScienceLog:
         if bus is not None:
             from clio_agent.gact.events import Event  # noqa: PLC0415
 
-            # The writer's stream and its tree root's, where the person reads the study.
-            for member in dict.fromkeys((session_id, index.session_root(session_id))):
+            # The writer's stream, its tree root's (where the person reads the study) and
+            # every branch's that holds entries, so a tab open on any branch stays live.
+            root = index.session_root(session_id)
+            for member in dict.fromkeys((session_id, root, *members)):
                 bus.publish(Event(type="science.entry", session_id=member, payload=entry))
 
 
