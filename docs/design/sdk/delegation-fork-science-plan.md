@@ -290,7 +290,7 @@ A study is only worth publishing if its export shows how it ran. Today's export 
 
 | Page | What it covers |
 | --- | --- |
-| `docs/science-log.mdx` (new, in the sidebar) | Asking CLIO to study a question; what the log records; reading the study tree and the log panel; following a citation; budgets; asking to approve forks and new steps; exporting a study; links to the published F11 study |
+| `docs/science-log.mdx` (new, in the sidebar) | Asking CLIO to study a question; what the log records; the Science log tab, reading its study tree and log panel; following a citation; budgets; asking to approve forks and new steps; exporting a study; links to the published F11 study |
 | `docs/tasks/subagents.mdx` | Delegating without naming an agent; the explore, planner and review roles; what a child keeps and what it does not see |
 | `docs/tasks/recorded-conversations.mdx` | The published F17 and F18 sessions and the fork session, each with the plain request that started it |
 | `docs/flows.mdx` | Fork inside a workflow: what it adds to the diagram, who waits on it, how approval and limits apply |
@@ -324,7 +324,7 @@ These rules decide when anything counts as done. They apply to every phase, not 
 
 **The ledger.** `docs/design/sdk/science-ledger.md` uses the columns of the existing ledgers (ID, required behavior, evidence, status). Decisions are `FD1` onward; scenarios are `F1` onward. Status is `pending`, `passed`, `failed` or `blocked`.
 
-**UI checks.** After every UI change, not only at the end: run `bash scripts/cloud/stack.sh restart`, then `node scripts/cloud/ui_check.mjs` with a `--steps` script for the flow you changed, at 1440 by 900 and again at 390 by 844. Read every screenshot it prints. `consoleErrors` and `failedRequests` must be empty. Show status as icons with detail on hover, not text boxes.
+**UI checks.** After every UI change, not only at the end: run `bash scripts/cloud/stack.sh restart`, then `node scripts/cloud/ui_check.mjs` with a `--steps` script for the flow you changed, at 1440 by 900 and again at 390 by 844. Read every screenshot it prints. `consoleErrors` and `failedRequests` must be empty. Show status as icons with detail on hover, not text boxes. A change a person sees in the app (the Science log tab, the railroad's forks, the left panel's agent forks, the board wall, the bench) is also checked in the native Tauri desktop app on Linux under Xvfb with the `verifier-clio` skill's `native.sh` (`deps` and `build` once per container, then `run` with a step file), attached to the same stack through `CLIO_GACT_URL`, and its screenshots are read.
 
 **Live scenarios.** Run each against a freshly restarted stack with the `claude_code` provider. Drive them through the real UI or the real API, never by calling internals.
 
@@ -344,7 +344,7 @@ These rules decide when anything counts as done. They apply to every phase, not 
 
 **Regression.** Run focused tests while working: `uv run --frozen --no-sync python -B scripts/run_tests.py tests/<area> -m "not integration"`. Before finishing, run the full suite the same way on `tests/`, then `uv run ruff check`, `uv run ruff format --check`, `scripts/check_file_size.py` and `scripts/check_no_class_in_function.py`. For gact-tui, run its test suite. For the site, run `pnpm test`, `pnpm check`, `pnpm build` and the Playwright specs you touched.
 
-**Blocked rows.** The cloud session cannot qualify the Tauri desktop, Windows-only paths or SSH to HPC systems; only those rows may be `blocked`. A failing scenario is fixed, not deferred.
+**Blocked rows.** The cloud session qualifies the Tauri desktop on Linux under Xvfb, so desktop rows are not blocked. It cannot qualify the desktop on Windows or macOS, Windows-only paths or SSH to HPC systems; only those rows may be `blocked`. A failing scenario is fixed, not deferred.
 
 ## Phase 0: inventory and decisions
 
@@ -385,12 +385,13 @@ No production code changes in this phase.
 
 1. **Fork in the railroad.** A fork step sits beside its original with a fork mark, and its tooltip names the note. Dependents show the extra wait.
 2. **Forks in the left panel.** An agent's fork of a conversation appears under its origin with the agent as author.
-3. **Study tree.** A live tree of questions, hypotheses and branches with status on each node (running, supported, refuted, superseded). Reframes and forks are drawn differently from steps. Nodes link to their task rows and open their entries.
-4. **Log panel.** A branch's entries in order, with links followable both ways.
-5. **Chart.** The kernel's generic chart serves both studies (distributions, scatter, fit against data, residuals). If the kernel lacks one of these, add it there, never in a plugin.
-6. **Board wall.** The `wordle-demo` catalog: the wall of live boards grouped by branch, tiles flipping as feedback lands, per-branch tallies, finished games collapsing into their Observation's thumbnail.
-7. **Bench.** The `hidden-law-bench` catalog: the real oscillator and the shadow of the current law, the phase-error strip, and the held-out replay for exports.
-8. **Export viewer.** Add whatever Phase 0 found missing.
+3. **Science log tab.** The right-hand panel gains a **Science log** tab beside Work, Artifacts, Context, Files and Activity. It appears only when the session belongs to a study (it or an ancestor in its task tree wrote a root Question) and is absent otherwise. The study tree sits at the top of the tab and the selected branch's log panel below it. Selecting a node in the tree opens that branch's entries; it does not navigate away from the session.
+4. **Study tree.** A live tree of questions, hypotheses and branches with status on each node (running, supported, refuted, superseded). Reframes and forks are drawn differently from steps. Nodes link to their task rows and open their entries.
+5. **Log panel.** A branch's entries in order, with links followable both ways. Selecting a citation jumps to the cited entry, opening its branch in the tab if it is another branch's, or to the transcript turn that wrote it.
+6. **Chart.** The kernel's generic chart serves both studies (distributions, scatter, fit against data, residuals). If the kernel lacks one of these, add it there, never in a plugin.
+7. **Board wall.** The `wordle-demo` catalog: the wall of live boards grouped by branch, tiles flipping as feedback lands, per-branch tallies, finished games collapsing into their Observation's thumbnail.
+8. **Bench.** The `hidden-law-bench` catalog: the real oscillator and the shadow of the current law, the phase-error strip, and the held-out replay for exports.
+9. **Export viewer.** Add whatever Phase 0 found missing.
 
 ## Phase 5: export of flows and subagents
 
@@ -431,6 +432,7 @@ No production code changes in this phase.
 | F18 | A plain request whose separable parts would flood one context | Judgement | The agent spawns children with no `agent` named or a role, writes each a self-contained task, and merges their reports |
 | F19 | Export a session that ran a council, an arena and a workflow with an editor, an approval, a nested flow and a fork | Mechanism | Offline, each run's railroad matches the live one, every step opens its transcript and answer, and the proposals, approvals and fork appear where they happened |
 | F20 | Export a session with a subagent tree three levels deep that includes a role, a fork and a model override | Mechanism | Offline, every descendant is reachable from its spawn and back, with its agent, model, assignment and result |
+| F21 | Open the F11 study, and a session that is not in a study, in the web UI and in the native desktop app under Xvfb | No prompt | The Science log tab appears only for the study; the tree sits above the selected branch's entries; selecting a node opens that branch's entries; a citation jumps to the cited entry and to the transcript turn that wrote it; screenshots at 1440 by 900 and 390 by 844 in the web UI and from the desktop app are read |
 
 **Wordle criteria (F13):**
 
@@ -465,7 +467,7 @@ No production code changes in this phase.
 
 1. Every phase is implemented; the deleted subagents, the prose dossier and the NDP-specific site module and route are gone; the domain grep and hidden-material tests pass.
 2. The full test suite, ruff, the file-size and nested-class guards, the gact-tui suite and the site checks pass, each run shown in the transcript.
-3. Scenarios F1 to F20 pass against a freshly restarted stack with the evidence the Verification section requires.
+3. Scenarios F1 to F21 pass against a freshly restarted stack with the evidence the Verification section requires.
 4. The science ledger has every row passed, apart from the platform rows named above.
 5. The branches are pushed in clio-agent, gact-tui and clio-agent-marketplace, the submodule pins point at the pushed commits, and the draft PRs carry a summary and the evidence.
 6. Every live scenario's export is in its `.cloud-run/<row>/` folder. Every passed plain-request session is published on the site branch, committed or pinned as a release asset, or, if the release could not be created, its asset and sum are in `.cloud-run/publish/` with the row blocked on release rights. The workflow JSONs, audit and scorer outputs and independent verdicts are in `.cloud-run/f13/` and `.cloud-run/f15/`.
