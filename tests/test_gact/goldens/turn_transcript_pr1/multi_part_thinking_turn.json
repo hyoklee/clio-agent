@@ -213,7 +213,7 @@
           "agent_runtime": {
             "agent_id": "standard",
             "agent_resolution": {
-              "digest": "b22a995bd8b3fc7f5563ecae02438b6f2183f7b5c143a7f28a59041c340f20b0",
+              "digest": "5360d49f9141733836f557f91fd1bf295a19a9f799e2f525527d3573e5822752",
               "flow": {
                 "id": "react",
                 "options": {}
@@ -320,6 +320,7 @@
               "publish_dashboard_report",
               "spawn_agent_task",
               "spawn_agents_parallel",
+              "fork",
               "prepare_document_runtime",
               "prepare_document",
               "list_models",

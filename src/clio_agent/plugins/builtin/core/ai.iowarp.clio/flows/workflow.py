@@ -19,6 +19,11 @@ A running step may ``fork`` itself (``gact/agent_fork.py``): the fork runs besid
 ``<step>~<n>``, counts as an added step, and the step's wait covers it, so its
 dependents wait on both and ``$<step>`` reads every answer of the family, labelled. A
 failed fork is offered to the editors like a failed step.
+
+With ``isolate`` the run gets ``<workspace>/runs/<run-id>/`` and each step its own
+folder in it, which is the only place that step's session may write
+(``gact/node_folders.py``); a fork starts with a copy of its step's folder. A run
+whose OS fence cannot narrow writes stalls at start (``isolation_unconfined``).
 """
 
 from __future__ import annotations
@@ -102,6 +107,14 @@ def _fork_labels(step_id: str, labelled: Any) -> list[str]:
     return sorted(found, key=lambda k: int(k[len(prefix) :]))
 
 
+def _isolate(workspace_root: str, run_id: str) -> dict[str, Any]:
+    from clio_agent.gact.node_folders import isolation_refusal, run_folder  # noqa: PLC0415
+
+    if not workspace_root:
+        return {"accepted": False, "reason": "no_workspace", "error": "no workspace folder"}
+    return isolation_refusal() or {"folder": str(run_folder(workspace_root, run_id))}
+
+
 def _bounds(asked_added: int | None, asked_rounds: int | None) -> dict[str, int | None]:
     """The growth bounds in force: the caller's, capped by the person's settings."""
 
@@ -146,6 +159,9 @@ class _WorkflowRun:
         allowed = spec.get("allowed_targets")
         self.allowed = {str(t) for t in allowed} if allowed is not None else None
         self.approve = bool(spec.get("approve_edits", False))
+        self.isolate = bool(spec.get("isolate", False))
+        #: The run's folder when isolated: ``<workspace>/runs/<run-id>/``.
+        self.folder = ""
         self.status: dict[str, str] = dict.fromkeys(self.steps, "pending")
         self.results: dict[str, Any] = {}
         self.errors: dict[str, dict[str, Any]] = {}
@@ -241,6 +257,7 @@ class _WorkflowRun:
                 "max_added_steps": self.max_added_steps,
                 "max_edit_rounds": self.max_edit_rounds,
                 "approve_edits": self.approve,
+                **({"folder": self.folder} if self.folder else {}),
             }
         )
 
@@ -252,6 +269,12 @@ class _WorkflowRun:
             bounds["max_added_steps"],
             bounds["max_edit_rounds"],
         )
+        if self.isolate:
+            root = self.ctx.workspace.root
+            isolated = await self.ctx.step(_isolate, str(root or ""), self.ctx.run_id)
+            if "folder" not in isolated:
+                raise FlowStall(isolated["reason"], isolated["error"], observed=isolated)
+            self.folder = isolated["folder"]
         await self._publish()
         while True:
             while blocked := self._blocked():
@@ -342,6 +365,10 @@ class _WorkflowRun:
         call = self.ctx.call(target, payload, key=f"step:{step.id}", model=step.model)
         call.label = step.id
         call.workflow_step = {"run": self.ctx.run_id, "step": step.id}
+        if self.folder:
+            from clio_agent.gact.node_folders import step_folder  # noqa: PLC0415
+
+            call.workflow_step["folder"] = step_folder(self.folder, step.id)
         if step.target in self.editors:
             call.editor = {"run": self.ctx.run_id, "step": step.id}
         self.invocations[step.id] = call.invocation

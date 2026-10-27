@@ -49,6 +49,7 @@ def _branch(app: Any, session_id: str, root: str) -> dict[str, Any]:
         else str(origin.get("session_id") or getattr(session, "parent_session_id", "") or ""),
         "fork_of_session_id": forked.owner.session_id if forked is not None else "",
         "workflow_step": str(step.get("step") or ""),
+        "node_folder": str(metadata.get("node_folder") or ""),
         "handle": task.handle if task is not None else "",
         "task_status": task.status if task is not None else "",
         "note": str(

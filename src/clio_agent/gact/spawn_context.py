@@ -190,6 +190,15 @@ def prepare_child_session(
         if limit and depth > limit:
             raise ValueError("Subagent spawn depth exceeds the configured safety boundary")
         inherited = {**launch["metadata"], **(target_scope or {}), **initial_metadata, **pin}
+        # An isolated run's node folder: a step's own, a fork's copy of its source's,
+        # or nested under a node that delegates.
+        from clio_agent.gact.node_folders import child_node_metadata  # noqa: PLC0415
+
+        inherited.update(
+            child_node_metadata(
+                current.metadata, inherited, source.metadata if source else None, title
+            )
+        )
         if read_only:
             from clio_agent.gact.side_sessions import READ_ONLY_SIDE_PROFILE  # noqa: PLC0415
 

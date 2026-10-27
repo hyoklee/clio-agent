@@ -1,5 +1,7 @@
 # Addendum A to the delegation, fork and science log plan: sources, data access and isolated workspaces
 
+Folded into delegation-fork-science-plan.md on 2026-10-27; this file records the decisions.
+
 This addendum changes [delegation-fork-science-plan.md](delegation-fork-science-plan.md) while it is being built. It does four things:
 
 1. **Sources.** Every Observation points at the recorded tool calls that produced it, and the log fills in the command, parameters and artifact versions from those records. The model cites; the record supplies the facts.

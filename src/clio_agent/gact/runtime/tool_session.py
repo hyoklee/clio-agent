@@ -21,6 +21,19 @@ def _tool_workspace_root(sid: str) -> str:
     return str(getattr(workspace, "root_path", "") or "")
 
 
+def _tree_root(app: Any, sid: str) -> str:
+    """The session at the root of ``sid``'s task tree (``sid`` itself for a root)."""
+
+    history = getattr(getattr(app, "state", None), "task_history", None)
+    task = history.latest_assignment(sid) if history is not None and sid else None
+    while task is not None and task.owner.parent_handle:
+        parent = history.task_snapshot(task.owner.parent_handle)
+        if parent is None:
+            break
+        task = parent
+    return task.owner.session_id if task is not None else sid
+
+
 async def _finish_fleet_lease_change(change: asyncio.Task[Any]) -> bool:
     """Join an off-loop lease change even when cancellation arrives during it."""
     cancelled = False
@@ -77,13 +90,19 @@ def _tool_session_context(sid: str, *, lease_fleet: bool = True) -> Iterator[Non
     installed plugin's servers and never at boot.
     """
     from clio_agent.gact.agents.resolution import session_server_set  # noqa: PLC0415
+    from clio_agent.gact.node_folders import session_node_folder  # noqa: PLC0415
     from clio_agent.tools.execution import (  # noqa: PLC0415
         tool_server_set_context,
         tool_workspace_context,
     )
+    from clio_agent.tools.write_scope import tool_write_root_context  # noqa: PLC0415
 
     workspace_root = _tool_workspace_root(sid)
     app = _ctx.active_app()
+    node_folder = session_node_folder(app, sid)
+    from clio_agent.tools.caller_scope import tool_caller_context  # noqa: PLC0415
+
+    caller = tool_caller_context(sid, _tree_root(app, sid))
     app_state = getattr(app, "state", None) if app is not None else None
     server_set = session_server_set(app, sid) if app is not None else ""
     token = _ctx.set_tool_session_id(sid)
@@ -98,6 +117,8 @@ def _tool_session_context(sid: str, *, lease_fleet: bool = True) -> Iterator[Non
             with (
                 lease(workspace_root),
                 tool_workspace_context(workspace_root),
+                tool_write_root_context(node_folder),
+                caller,
                 tool_server_set_context(server_set),
             ):
                 yield
@@ -113,6 +134,8 @@ def _tool_session_context(sid: str, *, lease_fleet: bool = True) -> Iterator[Non
                 )
             with (
                 tool_workspace_context(workspace_root),
+                tool_write_root_context(node_folder),
+                caller,
                 tool_server_set_context(server_set),
             ):
                 yield

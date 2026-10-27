@@ -201,6 +201,7 @@ class ForkedWorkflow(Flow):
             "task": task,
             "max_added_steps": 0 if "bounded" in task else None,
             "approve_edits": "approve" in task,
+            "isolate": "isolated" in task,
         }
         result = await ctx.call("workflow", spec)
         return {"answer": result.answer, "workflow": result.outputs.get("workflow")}
@@ -365,12 +366,17 @@ def default_program(question: str = "", **_: Any) -> Any:
         # The step forks itself, as the model would call ``fork``, then answers.
         import asyncio
         import json
+        from pathlib import Path
 
         from clio_agent.gact import context
         from clio_agent.gact.agent_fork import fork_caller
+        from clio_agent.gact.node_folders import session_node_folder
 
         app = context.active_app()
         sid = context.active_session_id()
+        if folder := session_node_folder(app, sid):
+            # An isolated step's work so far, which its fork starts with.
+            (Path(folder) / "notes.txt").write_text("first half", encoding="utf-8")
         caller = app.state.conversations.caller(sid)
         forked = asyncio.run_coroutine_threadsafe(
             fork_caller(app, caller, "Pursue the other branch", None, "fork-call"),

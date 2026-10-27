@@ -144,3 +144,55 @@ def test_an_agent_forks_a_root_conversation_into_a_new_branch(flow_app: TestClie
     stored = flow_app.app.state.messages.get(branch.id, [])
     assert any(m.role == "user" and "FORKME" in str(m.parts) for m in stored)
     assert any(m.role == "user" and "Try the second idea" in str(m.parts) for m in stored)
+
+
+def test_an_isolated_run_gives_each_step_and_fork_its_own_folder(
+    flow_app: TestClient, monkeypatch: Any
+) -> None:
+    from pathlib import Path
+
+    from clio_agent.gact import node_folders
+
+    # The OS fence is qualified live; here it is reported as able to narrow.
+    monkeypatch.setattr(node_folders, "isolation_refusal", lambda: None)
+    sid = new_session(flow_app, "clio/forker")
+    post(flow_app, sid, "isolated map")
+    _done(flow_app, sid)
+    _handle, run = _workflow(flow_app, sid)
+    assert run["status"] == "completed"
+    sessions = flow_app.app.state.sessions
+    history = flow_app.app.state.task_history
+    folders = {
+        row["id"]: sessions.get(history.task_snapshot(row["handle"]).owner.session_id).metadata[
+            "node_folder"
+        ]
+        for row in [*run["view"]["steps"], *run["view"]["forks"]]
+    }
+    draft, fork, merge = (Path(folders[name]) for name in ("draft", "draft~1", "merge"))
+    assert draft.parent == merge.parent == fork.parent
+    assert draft.parent.parent.name == "runs" and draft.name == "draft"
+    assert fork.name == "draft~1"
+    # The fork started with a copy of its step's folder, made a recorded way.
+    assert (fork / "notes.txt").read_text(encoding="utf-8") == "first half"
+    assert (draft / "notes.txt").stat().st_ino != (fork / "notes.txt").stat().st_ino
+    [forked] = flow_app.app.state.fork_results
+    record = sessions.get(forked["session_id"]).metadata["folder_copy"]
+    assert record["method"] in {"clone", "copy"} and record["from"] == str(draft)
+    assert record["cloned"] + record["copied"] == 1
+
+
+def test_an_isolated_run_without_a_fence_stalls_at_start(
+    flow_app: TestClient, monkeypatch: Any
+) -> None:
+    from clio_agent.gact.node_folders import ISOLATION_UNCONFINED
+    from clio_agent.runtime import sandbox
+
+    monkeypatch.setattr(sandbox, "current_state", lambda: None)
+
+    sid = new_session(flow_app, "clio/forker")
+    post(flow_app, sid, "isolated map")
+    _done(flow_app, sid)
+    _handle, run = _workflow(flow_app, sid)
+    assert run["status"] == "flow_stall" and ISOLATION_UNCONFINED in str(run)
+    assert not run.get("calls")
+    assert not getattr(flow_app.app.state, "fork_results", None)
