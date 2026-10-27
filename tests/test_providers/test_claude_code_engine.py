@@ -565,3 +565,25 @@ def test_an_unhandled_sdk_message_is_audited_not_dropped(
 
     [row] = [r for r in audit if r["stage"] == "provider.message_unhandled"]
     assert row["message_type"] == "SomethingNew"
+
+
+def test_a_released_entry_is_retried_once_on_the_sessions_fresh_entry(pool: FakePool) -> None:
+    """A dead pooled entry before anything was sent takes the session's fresh entry once.
+
+    Live, a workflow step failed with "claude agent sdk entry released during a queued
+    connect": its entry was released between ``entry_for`` and the connect, and the
+    error, typed as retryable, was never retried.
+    """
+    from clio_agent.providers.claude_code_lifecycle import DEAD_ENTRY_MARKER
+
+    pool.turns = [RuntimeError(DEAD_ENTRY_MARKER), [_text("fine"), _result()]]
+    response = _run(_request(HEAD))
+    assert [p.text for p in response.message.parts if isinstance(p, TextPart)] == ["fine"]
+    assert len(pool.sends) == 2
+    # A second release in a row, or any other error, is not retried.
+    pool.turns = [RuntimeError(DEAD_ENTRY_MARKER), RuntimeError(DEAD_ENTRY_MARKER)]
+    with pytest.raises(Exception, match="released during a queued connect"):
+        _run(_request(HEAD))
+    pool.turns = [RuntimeError("something else"), [_text("never"), _result()]]
+    with pytest.raises(Exception, match="something else"):
+        _run(_request(HEAD))
