@@ -313,17 +313,19 @@ def _atom_boot(app: "FastAPI") -> None:
     from clio_agent.gact.session_store import (  # noqa: PLC0415 - import cycle
         _reconcile_restart_interrupted_sessions,
     )
-    from clio_agent.gact.store_migrations import ensure_at_boot  # noqa: PLC0415
+    from clio_agent.gact.task_event_lane import ensure_task_event_lane
     from clio_agent.gact.task_history import TaskHistory
+    from clio_agent.gact.transcript_migration import migrate_transcripts
 
     if getattr(app.state, "task_history", None) is None:
         with boot_timing.step(app, "task_history_restore"):
             history = TaskHistory(app.state.arc)
             history.restore()
+        with boot_timing.step(app, "task_event_lane"):
+            ensure_task_event_lane(history)  # before any tree loads; owed to the upgrade step
         app.state.task_history = history
-    # Legacy content is captured before any reconciliation/cache update; normally
-    # `clio-agent migrate` already did, and this is one marker read.
-    ensure_at_boot(app, "transcript_legacy_import")
+    with boot_timing.step(app, "transcript_migration"):
+        migrate_transcripts(app)  # Capture legacy content before any reconciliation/cache update.
     with boot_timing.step(app, "interrupted_sessions"):
         _reconcile_restart_interrupted_sessions(app)
     with boot_timing.step(app, "interaction_times"):
@@ -441,7 +443,7 @@ def boot_transcript_store(app: "FastAPI", root: Path) -> None:
 
     from clio_agent.gact.messages import MessageStore  # noqa: PLC0415
     from clio_agent.gact.metrics_counters import MetricsCounters  # noqa: PLC0415
-    from clio_agent.gact.resident_ledgers import attach_arc_residency, build_resident_ledger_set
+    from clio_agent.gact.resident_ledgers import build_resident_ledger_set
     from clio_agent.gact.runtime.retention import init_retention_state
     from clio_agent.gact.transcript_projection import canonical_log_arc
 
@@ -457,7 +459,6 @@ def boot_transcript_store(app: "FastAPI", root: Path) -> None:
     init_retention_state(app)
     app.state.metrics_counters = MetricsCounters()
     app.state.messages = build_resident_ledger_set(app)
-    attach_arc_residency(app, getattr(app.state, "arc", None))
     if canonical_log_arc(app) is not None:
         on_process_arc_bound(app)
 
