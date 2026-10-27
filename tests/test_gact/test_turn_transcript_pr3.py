@@ -581,7 +581,8 @@ class _RollupAgent:
                 )
             return _Pred(answer="child made two plots", selected_expert="")
 
-        from clio_agent.gact.task_declarations import build_spawn_runtime_tools, build_task_tools
+        from clio_agent.gact.spawn_tools import build_spawn_runtime_tools
+        from clio_agent.gact.task_declarations import build_task_tools
 
         spawn = build_spawn_runtime_tools(self, type("Definition", (), {"fanout": {}})())[0]
         receipt = asyncio.run(

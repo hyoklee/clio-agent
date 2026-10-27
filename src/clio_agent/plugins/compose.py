@@ -28,6 +28,8 @@ from typing import Any
 from clio_agent.plugins.records import FragmentRecord
 
 SECTIONS = ("identity", "guidelines", "rendering", "capabilities", "domain")
+#: Who a fragment reaches: a root session (a person reads it), a delegated one, or both.
+SESSIONS = ("root", "delegated")
 FRAGMENT_TOKEN_BUDGET = 150
 _TEMPLATE_RE = re.compile(r"\{\{\s*(agent\.(?:id|name|role)|env\.[A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 
@@ -41,6 +43,7 @@ class ComposedFragment:
     tokens: int
     path: str = ""
     when_tools: tuple[str, ...] = ()
+    session: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         row: dict[str, Any] = {
@@ -53,6 +56,8 @@ class ComposedFragment:
         }
         if self.when_tools:
             row["when_tools"] = list(self.when_tools)
+        if self.session:
+            row["session"] = self.session
         return row
 
 
@@ -84,15 +89,24 @@ class ComposedPrompt:
         }
 
 
-def prompt_text_without(text: str, prompt: Mapping[str, Any], withheld: set[str]) -> str:
-    """``text`` (a prompt composed from ``prompt``) without the fragments whose
-    ``when.tools`` name a tool the session was not given: a tool withheld at build
-    time takes its guidance along. Fragments are joined by a blank line.
+def prompt_text_without(
+    text: str, prompt: Mapping[str, Any], withheld: set[str], *, delegated: bool = False
+) -> str:
+    """``text`` (a prompt composed from ``prompt``) without the fragments this session
+    does not get: those whose ``when.tools`` name a tool the session was not given (a
+    tool withheld at build time takes its guidance along), and those whose
+    ``when.session`` scope excludes it (``root`` guidance is for a session a person
+    reads; ``delegated`` guidance for one another agent started). Fragments are
+    joined by a blank line.
     """
+    excluded = "root" if delegated else "delegated"
     for section in prompt.get("sections", []):
         for fragment in section.get("fragments", []):
             body = str(fragment.get("text") or "")
-            if body and withheld & set(fragment.get("when_tools") or ()):
+            if body and (
+                withheld & set(fragment.get("when_tools") or ())
+                or fragment.get("session") == excluded
+            ):
                 parts = text.split("\n\n")
                 text = "\n\n".join(part for part in parts if part != body)
                 if body in text:  # a multi-paragraph fragment
@@ -183,6 +197,7 @@ def compose(
                 tokens=(len(text) + 3) // 4,
                 path=fragment.path,
                 when_tools=tuple(fragment.when_tools),
+                session=fragment.when_session,
             )
         )
     for section in SECTIONS[1:]:

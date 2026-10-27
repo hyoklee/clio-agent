@@ -11,7 +11,7 @@ import pytest
 
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.gact import context
-from clio_agent.gact.task_declarations import build_spawn_runtime_tools
+from clio_agent.gact.spawn_tools import build_spawn_runtime_tools
 from tests.test_arc.test_conversation_owner_contracts import create_environment
 
 
@@ -63,11 +63,14 @@ async def test_single_and_batch_spawn_share_child_preparation_and_preserve_names
         assert len(batch["spawned"]) == 4
         assert batch["spawned"] == batch["outcomes"]
         assert batch["outcomes"][1]["index"] == 1 and "error" in batch["outcomes"][1]
-        assert batch["outcomes"][2]["index"] == 2
-        assert "agent must name" in batch["outcomes"][2]["error"]
+        # An empty target delegates to a copy of the caller, running react (D14).
+        assert batch["outcomes"][2]["accepted"] is True
+        copy = app.state.sessions.get(batch["outcomes"][2]["session_id"])
+        assert copy.metadata["spawn_target"] == "self"
+        assert copy.metadata["agent_flow"] == {"id": "react", "options": {}}
         assert batch["outcomes"][3]["accepted"] is True
-        # Invalid evidence and an empty target fail before any child is prepared.
-        assert prepared == ["writer", "critic", "writer"]
+        # Invalid evidence fails before any child is prepared.
+        assert prepared == ["writer", "critic", "self", "writer"]
         children = {
             row["session_id"]: app.state.sessions.get(row["session_id"]).agent["id"]
             for row in (single, batch["outcomes"][0], batch["outcomes"][3])

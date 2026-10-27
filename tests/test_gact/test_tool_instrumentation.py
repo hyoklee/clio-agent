@@ -1031,11 +1031,8 @@ def test_core_tools_carry_their_declared_presentation() -> None:
 @pytest.mark.usefixtures("builtin_tool_context")
 def test_shared_task_tools_declare_rows_without_legacy_default_controls() -> None:
     """Actual declarations expose every mixed control with a readable operation row."""
-    from clio_agent.gact.task_declarations import (
-        TASK_COMPATIBILITY_ALIASES,
-        build_spawn_runtime_tools,
-        build_task_tools,
-    )
+    from clio_agent.gact.spawn_tools import build_spawn_runtime_tools
+    from clio_agent.gact.task_declarations import TASK_COMPATIBILITY_ALIASES, build_task_tools
 
     tools = build_spawn_runtime_tools(None, SimpleNamespace(fanout={})) + build_task_tools()
     instrument_tools(tools)
@@ -1134,11 +1131,8 @@ def test_no_registered_native_title_contains_a_paren() -> None:
         build_native_tools,
     )
     from clio_agent.gact.agents.skill_runtime import SkillRuntime, build_load_skill_tool
-    from clio_agent.gact.task_declarations import (
-        build_ask_user_tool,
-        build_spawn_runtime_tools,
-        build_task_tools,
-    )
+    from clio_agent.gact.spawn_tools import build_spawn_runtime_tools
+    from clio_agent.gact.task_declarations import build_ask_user_tool, build_task_tools
     from clio_agent.gact.types import AgentDef
     from clio_agent.plugins.service import PluginService
 

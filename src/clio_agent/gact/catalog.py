@@ -180,7 +180,7 @@ def _builtin_tool_declarations() -> list[tuple[str, str, str, Any]]:
         NATIVE_TOOL_NAMES,
         build_native_tools,
     )
-    from clio_agent.gact.task_declarations import build_spawn_runtime_tools  # noqa: PLC0415
+    from clio_agent.gact.spawn_tools import build_spawn_runtime_tools  # noqa: PLC0415
 
     seen: dict[str, tuple[str, str, str, Any]] = {}
     describer = AgentDef(id="catalog", title="Tool catalog", tools=sorted(NATIVE_TOOL_NAMES))

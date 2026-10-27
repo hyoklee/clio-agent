@@ -60,7 +60,7 @@ from clio_agent.gact.runtime.type_parsing import (
     _parse_field_annotation,
     _structured_output_enabled,
 )
-from clio_agent.gact.task_declarations import build_spawn_runtime_tools
+from clio_agent.gact.spawn_tools import build_spawn_runtime_tools
 from clio_agent.lm.session_clients import session_model
 from clio_agent.runtime import trace
 

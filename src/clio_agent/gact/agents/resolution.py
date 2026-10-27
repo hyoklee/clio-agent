@@ -259,20 +259,32 @@ def session_withheld_tools(app: Any, session_id: str, names: Iterable[str]) -> d
     return {name: reason for name, reason in out.items() if reason}
 
 
+def session_is_delegated(app: Any, session_id: str) -> bool:
+    """Whether another agent started this session (FD10): spawned work, a flow member
+    or a workflow step. Conversations, branches and side sessions are root sessions,
+    because a person reads them."""
+    from clio_agent.gact.session_kind import session_kind  # noqa: PLC0415
+
+    session = app.state.sessions.get(session_id)
+    return session is not None and session_kind(session) == "agent"
+
+
 def withhold_session_tools(
     app: Any, session_id: str, agent_def: AgentDef, *resolutions: Resolution
 ) -> AgentDef:
     """``agent_def`` without the memory tools this session may not have, and their
-    prompt fragments (memory ledger MD8). ``resolutions`` composed its prompt.
+    prompt fragments (memory ledger MD8), and without the fragments scoped to the
+    other kind of session (``when.session``). ``resolutions`` composed its prompt.
     """
     from clio_agent.plugins.compose import prompt_text_without  # noqa: PLC0415
 
     withheld = set(session_withheld_tools(app, session_id, agent_def.tools))
-    if not withheld:
-        return agent_def
+    delegated = session_is_delegated(app, session_id)
     prompt = agent_def.system_prompt
     for resolution in resolutions:
-        prompt = prompt_text_without(prompt, resolution.prompt, withheld)
+        prompt = prompt_text_without(prompt, resolution.prompt, withheld, delegated=delegated)
+    if not withheld and prompt == agent_def.system_prompt:
+        return agent_def
     tools = [name for name in agent_def.tools if name not in withheld]
     return agent_def.model_copy(update={"system_prompt": prompt, "tools": tools})
 

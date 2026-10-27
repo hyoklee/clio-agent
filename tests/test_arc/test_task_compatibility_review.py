@@ -16,8 +16,8 @@ from clio_agent.gact import context
 from clio_agent.gact.agents import clio_react_record
 from clio_agent.gact.assignment_evidence import select_assignment_evidence
 from clio_agent.gact.builtin_boundary import BuiltinBoundary
+from clio_agent.gact.spawn_tools import build_spawn_runtime_tools
 from clio_agent.gact.task_access import TaskCaller
-from clio_agent.gact.task_declarations import build_spawn_runtime_tools
 from clio_agent.gact.task_operations import TaskOperations
 from tests.test_arc.test_assignment_evidence_contracts import evidence_children
 from tests.test_arc.test_conversation_owner_contracts import create_environment
@@ -243,8 +243,10 @@ async def test_public_fastmcp_fanout_keeps_failed_positions(
         child = app.state.sessions.get(result["spawned"][0]["session_id"])
         assert child is not None and child.agent["id"] == "writer"
         assert result["spawned"][1]["index"] == 1 and "error" in result["spawned"][1]
-        assert result["spawned"][2]["index"] == 2
-        assert "agent must name" in result["spawned"][2]["error"]
+        # No target agent: a copy of the caller.
+        assert result["spawned"][2]["accepted"] is True
+        copy = app.state.sessions.get(result["spawned"][2]["session_id"])
+        assert copy is not None and copy.metadata["spawn_target"] == "self"
     finally:
         context.reset(sid)
         context.reset(token)

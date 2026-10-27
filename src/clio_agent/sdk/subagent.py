@@ -11,7 +11,11 @@ plugins it is given, the same way the main prompt is, plus its own prompt::
     )
 
 General subagents, launched at runtime with only a task prompt, come from the
-``delegation`` plugin and need no definition.
+``delegation`` plugin and need no definition. A role such as ``explore`` derives
+its plugins from whoever delegates to it instead of naming them::
+
+    explore = Subagent("explore", prompt=PromptFile("prompt/explore.md"),
+                       derive="caller", effects="read")
 """
 
 from __future__ import annotations
@@ -35,7 +39,10 @@ class Subagent:
     """A subagent defined by a plugin.
 
     ``tools`` is an optional allowlist; every name must be provided by the
-    subagent's plugins. ``description`` tells the delegating agent when to use it.
+    subagent's plugins. ``derive="caller"`` makes its plugins the delegating
+    agent's resolution (``plugins`` must then be empty). ``effects="read"`` runs it
+    under the read-only profile side sessions use: tools that declare no side effects
+    run, every other tool is denied with a typed reason. ``description`` tells the delegating agent when to use it.
     ``internal`` marks a subagent the plugin's own server code starts (the memory
     curator): it resolves like any other, but no agent is offered it or may delegate
     to it.
@@ -51,6 +58,8 @@ class Subagent:
     max_iters: int = 0
     structured_outputs: dict[str, Any] = field(default_factory=dict)
     internal: bool = False
+    derive: str = ""
+    effects: str = ""
 
     def describe(self) -> dict[str, Any]:
         """The declaration as data, read by the loader."""
@@ -71,4 +80,6 @@ class Subagent:
             "max_iters": int(self.max_iters or 0),
             "structured_outputs": dict(self.structured_outputs or {}),
             "internal": bool(self.internal),
+            "derive": str(self.derive or ""),
+            "effects": str(self.effects or ""),
         }

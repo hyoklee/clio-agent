@@ -136,6 +136,9 @@ def prepare_child_session(
     choice = choose_child_model(app, parent, child, explicit=model, same_agent=agent_id == "self")
     pin = {**pin, "spawn_target": agent_id, MODEL_CHOICE_KEY: choice.to_dict()}
     title = str(child.agent.get("name") or child.agent["id"])
+    # A role declared ``effects="read"`` runs under the side sessions' read-only
+    # profile: the same gate, the same typed deny reason, no spawn or workflow tools.
+    read_only = child.agent.get("effects") == "read"
 
     def create(
         creation_id: str,
@@ -155,6 +158,10 @@ def prepare_child_session(
         if limit and depth > limit:
             raise ValueError("Subagent spawn depth exceeds the configured safety boundary")
         inherited = {**launch["metadata"], **(target_scope or {}), **initial_metadata, **pin}
+        if read_only:
+            from clio_agent.gact.side_sessions import READ_ONLY_SIDE_PROFILE  # noqa: PLC0415
+
+            approval_profile = READ_ONLY_SIDE_PROFILE
         return store.create(
             workspace_id=parent.workspace_id,
             title=str(inherited.get("subagent_name") or title),

@@ -335,3 +335,118 @@ def test_a_subagent_may_allow_only_tools_its_plugins_provide(tmp_path: Path) -> 
         resolve_subagent(catalog, parent, "checker")
     assert caught.value.diagnostics[0].code == "subagent_tool_unavailable"
     assert "'fs_write_file'" in str(caught.value)
+
+
+def _roles(root: Path, body: str) -> Path:
+    return plugin(
+        root,
+        "delegation",
+        files={
+            "ai.iowarp.clio/tools/t.py": tools_module("shell_bash"),
+            "ai.iowarp.clio/subagents/roles.py": "from clio_agent.sdk import Subagent\n\n" + body,
+        },
+    )
+
+
+def test_a_role_derives_the_callers_plugins_and_runs_read_only(tmp_path: Path) -> None:
+    """A ``derive="caller"`` role resolves to exactly the delegating agent's plugins,
+    pinned to the versions it runs, without re-adding a pack member the caller removed;
+    ``effects`` rides the role's resolution."""
+
+    from clio_agent.plugins.resolve import resolve_subagent
+
+    documents = plugin(tmp_path, "documents", ext={"kind": "pack", "members": ["pdf", "xlsx"]})
+    pdf = plugin(tmp_path, "pdf", files={"ai.iowarp.clio/tools/t.py": tools_module("view_pdf")})
+    xlsx = plugin(
+        tmp_path, "xlsx", files={"ai.iowarp.clio/tools/t.py": tools_module("fs_read_file")}
+    )
+    roles = _roles(
+        tmp_path,
+        "explore = Subagent('explore', prompt='Explore.', derive='caller', effects='read')\n",
+    )
+    catalog = _catalog(tmp_path, documents, pdf, xlsx, roles)
+    parent = resolve_agent(
+        catalog,
+        _spec("documents", "delegation"),
+        marketplace="test",
+        delta=Delta(remove=["xlsx"]),
+    )
+    child = resolve_subagent(catalog, parent, "explore")
+    assert sorted(child.plugin_ids) == sorted(p for p in parent.plugin_ids if p != "documents")
+    assert "xlsx" not in child.plugin_ids
+    assert {row["name"] for row in child.tools} >= {"view_pdf", "shell_bash"}
+    assert child.agent["effects"] == "read" and child.agent["derive"] == "caller"
+    versions = {row["id"]: row["version"] for row in child.plugins}
+    assert versions == {
+        row["id"]: row["version"] for row in parent.plugins if row["id"] in versions
+    }
+
+
+def test_derive_and_effects_are_validated_at_load(tmp_path: Path) -> None:
+    """A role that both derives and names plugins, or names an unknown derive or effects
+    value, is a typed load error, so ``plugin check`` fails in the editor."""
+
+    roles = _roles(
+        tmp_path,
+        "a = Subagent('a', prompt='A.', derive='caller', plugins=['pdf'])\n"
+        "b = Subagent('b', prompt='B.', derive='parent')\n"
+        "c = Subagent('c', prompt='C.', effects='write')\n",
+    )
+    record = load_plugin(roles, marketplace="test", trusted=True)
+    codes = sorted(row.code for row in record.diagnostics)
+    assert codes == [
+        "subagent_derive_conflict",
+        "subagent_derive_invalid",
+        "subagent_effects_invalid",
+    ]
+    assert record.subagents == ()
+
+
+def test_a_fragment_scoped_to_root_or_delegated_sessions_reaches_only_those(
+    tmp_path: Path,
+) -> None:
+    """FD10: ``when.session`` is recorded on the composed fragment and applied when a
+    session's prompt is built, so one resolution serves a root session and a delegated
+    copy of it with different guidance; an unknown scope is a load error."""
+
+    from clio_agent.plugins.compose import prompt_text_without
+
+    team = plugin(
+        tmp_path,
+        "team",
+        files={
+            "ai.iowarp.clio/prompt/person.md": fragment(
+                "team", "person", "capabilities", "Draw views for the person.", "{session: root}"
+            ),
+            "ai.iowarp.clio/prompt/child.md": fragment(
+                "team", "child", "capabilities", "Report to your delegator.", "{session: delegated}"
+            ),
+            "ai.iowarp.clio/prompt/both.md": fragment(
+                "team", "both", "capabilities", "Cite sources."
+            ),
+        },
+    )
+    resolution = resolve_agent(_catalog(tmp_path, team), _spec("team"), marketplace="test")
+    scopes = {
+        row["id"]: row.get("session", "")
+        for section in resolution.prompt["sections"]
+        for row in section["fragments"]
+    }
+    assert scopes["team.person"] == "root" and scopes["team.child"] == "delegated"
+    root = prompt_text_without(resolution.prompt_text, resolution.prompt, set())
+    child = prompt_text_without(resolution.prompt_text, resolution.prompt, set(), delegated=True)
+    assert "Draw views" in root and "Report to your delegator" not in root
+    assert "Report to your delegator" in child and "Draw views" not in child
+    assert "Cite sources." in root and "Cite sources." in child
+
+    bad = plugin(
+        tmp_path / "bad",
+        "bad",
+        files={
+            "ai.iowarp.clio/prompt/x.md": fragment(
+                "bad", "x", "capabilities", "X.", "{session: everyone}"
+            )
+        },
+    )
+    record = load_plugin(bad, marketplace="test", trusted=True)
+    assert [row.code for row in record.diagnostics] == ["fragment_invalid"]

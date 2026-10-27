@@ -9,9 +9,9 @@ from mcp.types import Tool, ToolExecution
 
 from clio_agent.gact.agents.builders import _gateway_and_namespace_tools
 from clio_agent.gact.agents.skill_runtime import SkillRuntime, build_spawn_skill_task_tool
+from clio_agent.gact.spawn_tools import build_spawn_runtime_tools
 from clio_agent.gact.storage.connect_tool import build_connected_data_connect_tool
 from clio_agent.gact.storage.download_tool import build_connected_data_download_tool
-from clio_agent.gact.task_declarations import build_spawn_runtime_tools
 from clio_agent.gact.types import AgentDef
 from clio_agent.tools.execution import _make_dspy_tool
 from clio_agent.tools.gateway import _list_tools_sync

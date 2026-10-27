@@ -631,6 +631,7 @@ def build_load_skill_tool(agent_def: "AgentDef", runtime: SkillRuntime) -> Any:
     return native_tool(
         load_skill,
         name="load_skill",
+        read_only=True,
         presentation=present_skill,
         presentation_start=starting_skill,
         domain="skills",

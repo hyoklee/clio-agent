@@ -31,6 +31,7 @@ from clio_agent.gact.agents.resolution import (
     pin_session_agent,
     plugin_service,
     session_delta,
+    session_is_delegated,
     session_resolution,
     session_withheld_tools,
 )
@@ -387,10 +388,13 @@ def register_plugin_routes(app: FastAPI, deps: "GactDeps") -> None:
         view = resolution_view(resolution)
         # The tools this session runs with: memory policy withholds some, each with a reason.
         withheld = session_withheld_tools(app, sid, view["tool_names"])
-        if withheld:
-            view["tool_names"] = [name for name in view["tool_names"] if name not in withheld]
-            text = prompt_text_without(view["prompt"]["text"], resolution.prompt, set(withheld))
-            view["prompt"] = {**view["prompt"], "text": text}
+        view["tool_names"] = [name for name in view["tool_names"] if name not in withheld]
+        delegated = session_is_delegated(app, sid)
+        text = prompt_text_without(
+            view["prompt"]["text"], resolution.prompt, set(withheld), delegated=delegated
+        )
+        view["prompt"] = {**view["prompt"], "text": text}
+        view["session_scope"] = "delegated" if delegated else "root"
         return {
             "session_id": sid,
             "delta": session_delta(app, sid).to_dict(),
