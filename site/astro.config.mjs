@@ -146,6 +146,20 @@ export default defineConfig({
 					],
 				},
 				{
+					label: 'Build with the SDK',
+					collapsed: true,
+					items: [
+						{ label: 'How agents and plugins are built', slug: 'docs/sdk' },
+						{ label: 'Build your first plugin', slug: 'docs/sdk/build-a-plugin' },
+						{ label: 'Write a flow', slug: 'docs/sdk/flows' },
+						{ label: 'Workflows as data', slug: 'docs/sdk/workflows' },
+						{ label: "What's available", slug: 'docs/sdk/available' },
+						{ label: 'Plugin reference', slug: 'docs/sdk/plugins' },
+						{ label: 'Agent reference', slug: 'docs/sdk/agents' },
+						{ label: 'SDK reference', slug: 'docs/sdk/reference' },
+					],
+				},
+				{
 					label: 'Help and privacy',
 					collapsed: true,
 					items: [

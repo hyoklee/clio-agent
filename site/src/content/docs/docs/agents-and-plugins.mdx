@@ -181,11 +181,14 @@ The same view is under **Preview** on the Agents settings page. From a terminal 
 
 ## Where agents come from
 
-Agents and plugins are installed from marketplaces. The `clio` marketplace ships with CLIO and holds the standard agent, the shared plugins, and domain agents such as `earthscope`, `factorio`, `deep-researcher`, and `clio-data`. The `core` and `orchestration` plugins are part of CLIO itself.
+Agents and plugins are installed from marketplaces. The `clio` marketplace ships with CLIO and holds the standard agent, the shared plugins, and domain agents such as `earthscope`, `factorio`, `deep-researcher`, and `clio-data`. The `core`, `memory`, `fleet` and `orchestration` plugins are part of CLIO itself.
+
+To write your own plugins and agents in Python, see [Build agents, plugins and flows](/docs/sdk/).
 
 You can add other marketplaces, including Claude Code plugin marketplaces. A Claude Code marketplace brings plugins rather than agents: add them to a conversation with the + menu, then save the result as your own agent.
 
 <CardGrid>
   <LinkCard title="Plugin marketplaces" href="/docs/marketplaces/" description="What a marketplace holds, the shipped clio marketplace, and Claude Code marketplaces." />
   <LinkCard title="Add and manage marketplaces" href="/docs/marketplaces/manage/" description="Add a marketplace, trust it, update it, remove it, and check plugins." />
+  <LinkCard title="Build your first plugin" href="/docs/sdk/build-a-plugin/" description="Write a plugin with a tool, a skill, a subagent and a flow, and an agent that carries it." />
 </CardGrid>

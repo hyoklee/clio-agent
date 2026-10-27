@@ -57,6 +57,7 @@ The `extensions["ai.iowarp.clio"]` object accepts:
 | `prefers` | Model preferences (`model`, `provider`, `effort`) |
 | `workflow_state` | The typed `workflow_state` vocabulary (validated against `WorkflowStateSchema`) |
 | `catalogs` | Ids of built-in A2UI catalogs the plugin brings (`core` lists `clio-workspace`) |
+| `connections` | Saved MCP connections the plugin uses: tool namespace to connection name (`{"home": "home-assistant"}`) |
 
 Any other field in the namespace fails the load.
 
@@ -148,6 +149,11 @@ Events map one to one onto CLIO hook events:
 | `prompt_submit` | `UserPromptSubmit` | `pre_compact` | `PreCompact` |
 | `stop` | `Stop` | `before_model` | `BeforeModel` |
 | `session_start` | `SessionStart` | `after_model` | `AfterModel` |
+| `answer` | `Answer` | | |
+
+An `answer` hook sees the settled answer in `ev.answer` and may return `note`,
+`check` (`{"passed": bool, "text": str}`) and `answer` (a revision shown with
+`reason`; the original is kept). A hook times out after 30 seconds.
 
 A hook's id is `<plugin>.<id or function name>`; `before`/`after` names without
 a dot are qualified with the same plugin. `tools` is an anchored regular
@@ -256,18 +262,18 @@ class StandardAgent(Agent):
     plugins = Agent.plugins + ["workspace", "shell", "documents", "delegation"]
     requires = Requires(tool_calling=True)
 
-class Factorio(StandardAgent):
-    id = "factorio"
-    role = "a manufacturing and topology optimization agent"
-    plugins = StandardAgent.plugins + ["manufacturing@^1"]
-    flow = Flow("campaign", max_cycles=5)
+class Researcher(StandardAgent):
+    id = "researcher"
+    role = "a research agent that verifies its sources"
+    plugins = StandardAgent.plugins + ["deep-research@^0.3"]
+    flow = Flow("deep-research", max_rounds=3)
 ```
 
 | Attribute | Meaning |
 | --- | --- |
-| `id`, `version`, `name`, `description` | Identity; `name` defaults to `id` |
+| `id`, `version`, `name`, `description` | Identity; `name` defaults to `id`, `description` to the docstring |
 | `role` | Fills the identity section of the composed prompt |
-| `plugins` | Plugin references; `Agent.plugins` is `["core"]` |
+| `plugins` | Plugin references; `Agent.plugins` is `["core", "memory"]` (`memory` may be dropped) |
 | `flow` | A flow id, a `Flow` class, or `Flow("id", **options)`; default `react` |
 | `requires` | `Requires(tool_calling, vision, context_tokens, output_tokens)` |
 | `prefers` | `Prefers(model, provider, effort)`; never blocks a session |
@@ -358,7 +364,7 @@ agent specs, trust), `snapshots/` (immutable copies records point into),
 `sources/` (git fetch cache keyed by URL and commit), `data/<plugin>/`
 (`PLUGIN_DATA`), `user-agents/` and `resolved/`.
 
-`core` and `orchestration` ship inside clio-agent
+`core`, `memory`, `fleet` and `orchestration` ship inside clio-agent
 (`src/clio_agent/plugins/builtin/`, marketplace `clio-builtin`). The default
 marketplace `clio` is installed or refreshed on first use from
 `plugins.default_marketplace` / `CLIO_DEFAULT_MARKETPLACE`, else the
@@ -371,8 +377,10 @@ as `default_marketplace_unavailable` (`GET /v1/plugins` returns it as
 
 | Plugin | Contents |
 | --- | --- |
-| `core` | Carried by every agent, never removable. Fragments `core.guidelines`, `core.rendering` (generated from the UI catalogs) and `core.tasks` (the task lifecycle); task controls (`query_tasks`, `observe_tasks`, `wait_tasks`, `cancel_tasks`, `get_task_result`), agent controls, `ask_user`, planning, artifacts, goals, loops and schedules, workspace resources; the `react` and `plan` flows; the `planning` and `update-models` skills; the `clio-workspace` catalog |
-| `orchestration` | Requires `delegation`. The `run_flow` and `run_plan` tools, the `council` and `arena` flows and the `orchestration.flows` fragment |
+| `core` | Carried by every agent, never removable; requires `fleet`. Fragments `core.guidelines`, `core.rendering` (generated from the UI catalogs) and `core.tasks` (the task lifecycle); task controls (`query_tasks`, `observe_tasks`, `wait_tasks`, `cancel_tasks`, `get_task_result`), agent controls, `ask_user`, planning, artifacts, goals, loops and schedules, workspace resources; the `react` and `workflow` flows; the `planning` skill; the `clio-workspace` catalog |
+| `memory` | Carried by `Agent`, removable. Long-term memory tools (`memory_search`, `memory_read`, `create_memory`, `update_memory`, `forget_memory`, `propose_memory_change`), session recall (`session_search`, `session_read_summary`, `session_read_context_frame`), the `memory.use` fragment and the internal `curator` subagent |
+| `fleet` | `list_models`, `usage` and `refresh_provider_models`; the `fleet.models` fragment and the `update-models` skill |
+| `orchestration` | Requires `delegation`. The `run_flow`, `run_workflow` and `make_plugin` tools, the `council` and `arena` flows, the `orchestration.flows` fragment and the `author-a-flow` skill |
 
 ## Trust
 
@@ -509,16 +517,18 @@ run has no task kind of its own: it is checkpoints under its owning assignment.
 
 | Primitive | Does | Built on |
 | --- | --- | --- |
-| `ctx.call(target, input=None, *, evidence=None, key="")` | Runs a target and returns its `CallResult`; awaitable | `Conversations.spawn`; a tool call for a tool |
+| `ctx.call(target, input=None, *, evidence=None, key="", model="", label="")` | Runs a target and returns its `CallResult`; awaitable. `model` picks the child's model (else `Flow.model`, the child's preference, the run's model); `label` names the child in the UI | `Conversations.spawn`; a tool call for a tool |
 | `ctx.start(target, input=None, ...)` | The same, returning the handle at acceptance (not for tools) | `Conversations.spawn` |
 | `ctx.gather(calls, *, limit=None, return_when="all", return_exceptions=False)` | Runs calls concurrently, at most `limit` at once | `TaskOperations.wait` |
-| `ctx.as_completed(calls, *, limit=None)` | Yields each result (or outcome) as it settles, with `index` set | `TaskOperations.wait` |
-| `ctx.ask(question, schema=str, *, options=None, reason="", key="")` | Asks the human; `schema=bool` returns a bool, `options` a choice | A Question task |
+| `ctx.as_completed(calls, *, limit=None)` | Yields each result (or outcome) as it settles, with `index` set (`details["index"]` on an outcome) | `TaskOperations.wait` |
+| `ctx.ask(question, schema=str, *, options=None, reason="", key="")` | Asks the human; `schema=bool` returns a bool, `options` the chosen option's value, which is the option text lowercased | A Question task |
 | `ctx.step(fn, *args, **kwargs)` | Runs a side effect once and records its result | A checkpoint entry |
-| `ctx.workspace` | The session workspace (`read`, `write`, `append`); run writes through `ctx.step` | The existing workspace |
-| `ctx.depth` | How many flows this run is nested in | Flow metadata |
+| `ctx.workspace` | The session workspace (`read`, `write`, `append`, `root`); run writes through `ctx.step` | The existing workspace |
+| `ctx.depth`, `ctx.run_id` | How many flows this run is nested in; the run id | Flow metadata |
 | `ctx.react(task)` | The agent's own ReAct program inside this assignment | `ClioReAct` |
 | `ctx.publish(view)`, `ctx.record_event(event)` | The run's live view and events, for the flow run view | The checkpoint |
+| `ctx.permission_receipts(*, refresh=False)` | A pinned snapshot of attributable tool-permission history for the run and its confirmed children | ARC semantic events |
+| `ctx.tool_results(handle)` | Terminal tool results in a confirmed child subtree, read without starting work | Task history |
 
 Call targets resolve in this order: a `Flow` object or class, `self`, a defined
 subagent, a resolved flow id, one of the agent's tools, an installed agent
@@ -530,8 +540,15 @@ flow's helpers never re-enter the flow; a flow recurses only by calling a flow.
 assignment text plus only the evidence the flow passes explicitly
 (`evidence=[handles]`, pinned as `input_task_refs`). A tool target takes a
 mapping of arguments; a task-capable tool that returns an accepted handle is
-waited on. A `CallResult` reads as a mapping or by attribute (`answer`,
-`workflow_state`, `handle`). `gather` merges successful results'
+waited on. A `CallResult` reads as a mapping (its outputs) or by attribute:
+`answer` (empty for a tool), `value` (a tool's returned value), `response_text`
+(the public response with addenda), `handle`, `model`, `index`,
+`workflow_state`, then any output or `workflow_state` section by name.
+
+The child's assignment text is `render_input(input)`: text as is, a single
+`CallResult` as its `response_text`, anything else as JSON. `CallResult`s
+nested in a list or mapping do not convert (the child sees their `repr`), so
+pass `[r.value for r in ...]` or `[r.answer for r in ...]`. `gather` merges successful results'
 `workflow_state` in call order and records a key two members set differently
 in `ctx.conflicts` and as a `workflow_state_conflict` event.
 
@@ -541,7 +558,7 @@ Each primitive's invocation id is
 `<run id>:<kind>:<call site>:<digest of target and input>:<occurrence>`, computed
 in program order when the call is made. The call site is the file and line in
 the flow's code; `key=` replaces it when calls start in an order a replay may
-not repeat (the plan flow keys each node's call by node id). The id is passed to
+not repeat (the workflow flow keys each step's call by step id). The id is passed to
 `spawn` as the invocation id, so the task handle is deterministic.
 
 The run's journal (calls with their handles and statuses, step results, events,
@@ -564,10 +581,10 @@ top of the runtime's inference capacity; `0` means no flow-level limit:
 
 | Limit | Default | Enforced on |
 | --- | --- | --- |
-| `max_depth` | 4 | Calling a flow deeper than this |
-| `max_concurrency` | 4 | Concurrent `ctx` calls in the run |
+| `max_depth` | 0 | Calling a flow deeper than this |
+| `max_concurrency` | 0 | Concurrent `ctx` calls in the run |
 | `max_model_calls` | 0 | Agent, subagent, flow and `react` calls |
-| `budget_tokens` | 0 | Input plus output tokens of settled children |
+| `budget_tokens` | 0 | Input plus output tokens of admitted children's session trees, checked before each new call |
 
 One run records at most 10,000 checkpoint entries; past that it ends with
 `flow_checkpoint_limit`.
@@ -581,11 +598,14 @@ and one gather member failing never cancels the others.
 | Outcome | Reason |
 | --- | --- |
 | `CallFailed` | `call_failed`: the task failed or its result is unavailable |
+| `CallAwaitingInput` | `call_awaiting_input`: the child yielded waiting for input (a `CallFailed`; `answer` is its last answer) |
+| `CallStopped` | `call_stopped`: the child's turn stopped (a `CallFailed`) |
 | `CallCancelled` | `call_cancelled` |
 | `CallInterrupted` | `call_interrupted`: interrupted or never started |
 | `TaskStateUncertain` | `task_state_uncertain` |
 | `CallRefused` | `call_refused`: the task layer did not accept the call |
 | `FlowTargetUnknown` | `flow_target_unknown` |
+| `FlowNotTrusted` | `flow_not_trusted`: the flow's plugin is installed but not trusted |
 | `FlowLimitExceeded` | `flow_limit_exceeded`, with the `limit` |
 | `FlowCheckpointLimit` | `flow_checkpoint_limit` |
 | `FlowReplayMismatch` | `flow_replay_mismatch` |
@@ -602,62 +622,76 @@ to the session's exact resolution; the model keeps working and the result
 arrives through the mailbox. Stop ends only the model's wait; `cancel_tasks` on
 the handle cancels the flow and its subtree.
 
-- `run_flow(flow, input=None, options=None)` starts any resolved flow (refused
-  as `flow_not_resolved` otherwise).
-- `run_plan(plan, task="", editors=None, max_added=6, max_rounds=3,
-  allowed_targets=None, approve_edits=False)` validates the plan (`plan_invalid`)
-  and starts the `plan` flow.
+- `run_flow(flow, input=None, options=None, model="")` starts a resolved flow,
+  or a flow of an installed, trusted plugin the agent does not carry yet (which
+  adds that plugin to the conversation). A flow of an untrusted plugin asks the
+  person first. The flow's `task` is `input` as given (JSON stays JSON).
+- `run_workflow(workflow, task="", editors=None, max_added_steps=None,
+  max_edit_rounds=None, allowed_targets=None, approve_edits=False, model="")`
+  validates the workflow (`workflow_invalid`) and starts the `workflow` flow.
+- `make_plugin` writes a flow plugin under `<store>/authored/<name>`, installed
+  untrusted; its first run asks the person.
 
-### The plan flow
+### The workflow flow
 
-A plan is workflows as data: nodes with an `id`, a `target` (a subagent, an
-installed agent, a flow or a tool), an optional `input`, the nodes it waits on
-(`after`) and a `description`.
+A workflow is steps as data: each has an `id`, a `target` (a subagent, an
+installed agent, a flow, a tool or `self`), an optional `input`, the steps it
+waits on (`after`), a `description`, `options` (for a flow target only) and a
+`model`.
 
 ```python
-from clio_agent.sdk import Node, Plan
+from clio_agent.sdk import Step, Workflow
 
-plan = Plan(nodes=[
-    Node("survey", "literature-search", input="$task"),
-    Node("design", "setup-tosca", after=["survey"]),
-    Node("review", "process-reviewer", after=["design"]),
+workflow = Workflow(steps=[
+    Step("survey", "evidence_researcher", input="$task"),
+    Step("relate", "data_analysis_expert", after=["survey"]),
+    Step("review", "independent_reviewer", after=["relate"]),
 ])
-await ctx.call("plan", {"plan": plan.to_dict(), "task": task,
-                        "editors": ["process-reviewer"], "approve_edits": True})
+await ctx.call("workflow", {"workflow": workflow.to_dict(), "task": task,
+                            "editors": ["independent_reviewer"], "approve_edits": True})
 ```
 
-Node ids are lowercase letters, digits, `-` and `_`; `task` is reserved;
-dependencies must exist and form no cycle (`PlanError`). In an input, `"$task"`
-is the plan's task and `"$<node>"` a finished node's result. A node with no input
-receives the task, its `description` as instructions and its dependencies'
-answers and `workflow_state`.
+Step ids are lowercase letters, digits, `-` and `_` (up to 64); `task` is
+reserved; dependencies must exist and form no cycle (`WorkflowError`). In an
+input, `"$task"` is the workflow's task and `"$<step>"` a finished step's
+`answer`: a whole-string reference keeps the value, a reference inside text
+becomes its text. A step with no input receives `{"task", "instructions"
+(its description), "inputs" (its dependencies' answers)}`, or just the task
+when it has neither a description nor dependencies. A tool step's `answer` is
+empty unless the tool returns a mapping with `answer`, so `$<tool step>` and
+`inputs` pass empty text for other tool results.
 
-Every node whose dependencies completed starts at once, with no barrier between
-nodes. A node that waits on a failed or cancelled node is skipped. A node whose
-target is a named editor runs with `plan_add_node` and `plan_cancel_node`; these
-tools only propose, and the plan reads the proposals from the editor's settled
-result, so a replay applies exactly the same edits. Edits are bounded by
-`max_added` nodes, `max_rounds` editing rounds and `allowed_targets`; a rejected
-proposal is recorded with its reason. With `approve_edits`, each proposed node
-waits on a yes/no Question and shows as awaiting approval in the run view. Only
-named editors may edit; the human cancels nodes through the task controls.
+Every step whose dependencies completed starts at once, with no barrier. A
+step that waits on a failed or cancelled step is skipped. A step whose target
+is a named editor runs with `workflow_add_step(step_id, target, input, after,
+reason, options)` and `workflow_cancel_step(step_id, reason)`; these only
+propose, and the workflow reads the proposals from the editor's settled result,
+so a replay applies exactly the same edits. An added step waits on the
+editor's step. Edits are bounded by `max_added_steps`, `max_edit_rounds` and
+`allowed_targets` (the tighter of the caller's bound and the
+`workflows.max_added_steps` / `workflows.max_edit_rounds` settings applies); a
+rejected proposal is recorded with its reason. With `approve_edits`, each
+proposed step waits on a yes/no Question. Only named editors may edit; the
+human cancels steps through the task controls.
 
-A failed node is first offered to each editor as a typed stall; a repair node
-an editor adds replaces the failed node for its dependents. If no editor repairs
-it, the plan ends with `FlowStall("node_failed")`. A completed plan returns the
-answers of its final nodes, every node's result, the plan summary and the merged
-`workflow_state`.
+A failed step is first offered to each editor as a typed stall; a repair step
+an editor adds replaces the failed step for its dependents. If none repairs it,
+the workflow ends with `FlowStall("step_failed")`. A cancelled step ends the run
+cancelled. A completed workflow returns the answers of its final steps (then
+the earlier ones), `results` (each step's answer), `workflow` (steps with
+status and handle) and the merged `workflow_state`.
 
 ### council and arena
 
 - `council`: each member answers the same question independently from its own
   perspective, then one synthesis. Options: `members` (default three `self`
-  workers), `perspectives` (cycled across members) and `synthesizer` (a target;
-  empty synthesizes inside the flow as a recorded step). Returns the answer and
-  the member handles.
+  workers), `perspectives` (cycled across members), `models` (one per member),
+  `synthesizer` (a target; empty synthesizes inside the flow as a recorded
+  step) and `synthesizer_model`. Returns the answer, the member handles and
+  each member's model.
 - `arena`: contestants attempt the same task (at most three at once) and a judge
-  inside the flow picks the winner. Option: `contestants` (default three `self`
-  workers). The verdict is a recorded step and the votes are appended to
+  inside the flow picks the winner. Options: `contestants` (default three `self`
+  workers) and `models` (one per contestant). The verdict is a recorded step and the votes are appended to
   `arena/votes.jsonl` in the workspace (a `votes_not_recorded` event without a
   workspace). A winner index out of range is `FlowStall("judge_invalid_winner")`.
 
@@ -665,7 +699,7 @@ answers of its final nodes, every node's result, the plan summary and the merged
 
 `GET /v1/sessions/{sid}/tasks/{handle}/flow` returns the run checkpointed under
 the task: `run_id`, `flow`, `status`, `depth`, `root_handle`, `entries`, the
-published `view` (for a plan, its nodes with each node's handle and task status,
+published `view` (for a workflow, its steps with each step's handle and task status,
 proposals awaiting approval, editors and bounds), every recorded call, open
 questions, events, and either `result` or the typed `outcome`. The UI draws the
-live plan from it.
+live workflow from it.
