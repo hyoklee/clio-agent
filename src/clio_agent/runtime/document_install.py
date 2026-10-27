@@ -114,6 +114,24 @@ def install_document_runtime(
     return result
 
 
+def prune_after_install() -> dict[str, Any]:
+    """Bound the MCP spawn cache at the end of an install or upgrade (B4).
+
+    Pruning is maintenance, never server start. A skip or a failure is reported with
+    a typed reason and never fails the install; ``clio-agent doctor --gc`` reclaims
+    the same cache on demand.
+    """
+    from clio_agent.tools.mcp_cache import prune_owned_mcp_cache  # noqa: PLC0415
+
+    try:
+        pruned = prune_owned_mcp_cache()
+    except OSError as error:
+        return {"status": "failed", "reason": "mcp_cache_prune_failed", "error": str(error)}
+    if pruned is None:
+        return {"status": "skipped", "reason": "mcp_cache_prune_skipped_live"}
+    return {"status": "pruned", "freed_bytes": pruned.bytes_freed, "evicted": pruned.count}
+
+
 def main() -> None:
     """Run the shared installer step; an incomplete setup exits unsuccessfully."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -128,11 +146,6 @@ def main() -> None:
         action="store_true",
         help="Request one-time Windows sandbox setup with administrator approval if needed.",
     )
-    parser.add_argument(
-        "--skip-store-migrations",
-        action="store_true",
-        help="Do not run `clio-agent migrate` here (the caller runs it as its own step).",
-    )
     args = parser.parse_args()
     # This standalone installer owns its workspace. Never widen a running agent's policy.
     os.environ["CLIO_ALLOWED_ROOTS"] = str(args.workspace.resolve())
@@ -142,36 +155,15 @@ def main() -> None:
         setup_protected_execution=args.setup_protected_execution,
         reuse_installed=args.reuse_installed,
     )
-    # The install-time prepare (not the per-start reuse check) also upgrades the store,
-    # so the desktop's first start after an install or upgrade only checks the markers.
-    migrations = _run_store_migrations(args)
-    print(
-        json.dumps(
-            {
-                "status": result["status"],
-                "runtime_id": result["runtime_id"],
-                "office": result["native_tools"]["soffice"],
-                "store_migrations": migrations,
-            }
-        ),
-        flush=True,
-    )
-
-
-def _run_store_migrations(args: argparse.Namespace) -> dict[str, Any]:
-    """``clio-agent migrate`` as this installer's last step, reported typed.
-
-    A refusal or failure does not fail the package install: the server's next boot runs
-    an owed migration once and its ``store_migrations`` health row reports the outcome.
-    """
-    if args.reuse_installed or args.skip_store_migrations:
-        reason = "reuse_installed" if args.reuse_installed else "skipped_by_caller"
-        return {"status": "skipped", "reason": reason}
-    from clio_agent.gact.store_migrate_command import run_migrations  # noqa: PLC0415
-
-    print("Upgrading the CLIO store (clio-agent migrate)...", flush=True)
-    _code, payload = run_migrations(lambda line: print(line, flush=True))
-    return {key: payload[key] for key in ("status", "reason", "seconds") if key in payload}
+    summary = {
+        "status": result["status"],
+        "runtime_id": result["runtime_id"],
+        "office": result["native_tools"]["soffice"],
+    }
+    if not args.reuse_installed:
+        # An install or upgrade, not a per-launch check: bound the MCP cache now.
+        summary["mcp_cache"] = prune_after_install()
+    print(json.dumps(summary), flush=True)
 
 
 if __name__ == "__main__":
