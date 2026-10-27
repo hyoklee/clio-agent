@@ -177,6 +177,7 @@ These resolve through `clio_agent.conf`: a value under the dotted key in `config
 | `CLIO_MAX_AGENT_TASK_DEPTH` | `agent_tasks.max_depth` | int | `8` | `src/clio_agent/gact/agent_task_limits.py` |
 | `CLIO_MAX_CONCURRENT_AGENT_TASKS` | `agent_tasks.max_concurrent` | int | `3` | `src/clio_agent/gact/agent_task_limits.py` |
 | `CLIO_MAX_FILE_SIZE_BYTES` | `tools.file_policy.max_file_size_bytes` | str | `1073741824` | `src/clio_agent/tools/file_policy.py` |
+| `CLIO_MAX_FORKS_PER_TASK` | `agent_tasks.max_forks_per_task` | int | `0` | `src/clio_agent/gact/agent_task_limits.py` |
 | `CLIO_MAX_LM_CALL_S` | `limits.lm_call_s` | float | `1800.0` | `src/clio_agent/runtime/lm_activity.py` |
 | `CLIO_MCP_CACHE_MAX_AGE_DAYS` | `tools.mcp_cache.max_age_days` | float | `14.0` | `src/clio_agent/tools/mcp_cache.py` |
 | `CLIO_MCP_CACHE_MAX_BYTES` | `tools.mcp_cache.max_bytes` | int | `2147483648` | `src/clio_agent/tools/mcp_cache.py` |

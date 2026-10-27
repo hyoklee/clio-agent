@@ -11,9 +11,14 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-MARKETPLACE = ROOT / "external" / "clio-agent-marketplace" / "plugins"
-WEB = ROOT / "external" / "gact-tui" / "web" / "src"
+import pytest
+
+from tests._marketplace import MARKETPLACE_ROOT, REPO_ROOT
+
+pytestmark = pytest.mark.marketplace
+
+MARKETPLACE = MARKETPLACE_ROOT / "plugins"
+WEB = REPO_ROOT / "external" / "gact-tui" / "web" / "src"
 
 FORBIDDEN = re.compile(
     r"\bwordle\b|\bwords?\b|\bgames?\b|\bguess(?:es|ed|ing)?\b|oscillat|\bperiods?\b",
@@ -23,15 +28,15 @@ FORBIDDEN = re.compile(
 GENERIC = [
     MARKETPLACE / "delegation",
     MARKETPLACE / "science-log",
-    ROOT / "src/clio_agent/gact/science_log",
-    ROOT / "src/clio_agent/gact/routes/science_log.py",
-    ROOT / "src/clio_agent/gact/task_forks.py",
-    ROOT / "src/clio_agent/gact/agent_fork.py",
-    ROOT / "src/clio_agent/gact/conversation_copy.py",
-    ROOT / "src/clio_agent/gact/spawn_tools.py",
-    ROOT / "src/clio_agent/gact/task_operations.py",
-    ROOT / "src/clio_agent/flows/run_view.py",
-    ROOT / "src/clio_agent/plugins/builtin/core/ai.iowarp.clio/flows/workflow.py",
+    REPO_ROOT / "src/clio_agent/gact/science_log",
+    REPO_ROOT / "src/clio_agent/gact/routes/science_log.py",
+    REPO_ROOT / "src/clio_agent/gact/task_forks.py",
+    REPO_ROOT / "src/clio_agent/gact/agent_fork.py",
+    REPO_ROOT / "src/clio_agent/gact/conversation_copy.py",
+    REPO_ROOT / "src/clio_agent/gact/spawn_tools.py",
+    REPO_ROOT / "src/clio_agent/gact/task_operations.py",
+    REPO_ROOT / "src/clio_agent/flows/run_view.py",
+    REPO_ROOT / "src/clio_agent/plugins/builtin/core/ai.iowarp.clio/flows/workflow.py",
 ]
 #: The generic views this change adds: the Science log tab, its study tree and log panel.
 GENERIC_VIEWS = ("science-log", "study-tree")
@@ -57,7 +62,7 @@ def test_generic_pieces_name_no_study_domain() -> None:
     files = _files()
     assert any("science-log" in str(p) for p in files)
     offenders = [
-        f"{path.relative_to(ROOT)}:{number}: {line.strip()}"
+        f"{path.relative_to(REPO_ROOT)}:{number}: {line.strip()}"
         for path in files
         for number, line in enumerate(
             path.read_text(encoding="utf-8", errors="ignore").splitlines(), 1

@@ -91,6 +91,10 @@ KEY_NOTES: dict[str, str] = {
         "Reserved or in-flight child inference at one spawn depth; tools and waits release their "
         "inference permit. This does not cap active sessions or background tasks."
     ),
+    "agent_tasks.max_forks_per_task": (
+        "Most forks one task or conversation may start; 0 means unlimited. A fork past the "
+        "limit is refused with fork_limit_reached and nothing is created."
+    ),
     "agent_tasks.max_depth": (
         "Maximum nesting level for new subagents (first child is level 1); 0 means unlimited. "
         "Changes apply to new spawns; existing deeper descendants remain visible."

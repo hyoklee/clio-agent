@@ -210,7 +210,7 @@ from clio_agent.gact.app import build_app
 # 407 -> 420: #1854 added 13 without a bump -- plugins local/upload/export/inspect,
 # extensions MCP registry, model search page, MCP sign-in start/status/complete/cancel and
 # authorization delete, memory creation runs and memory documents POST.
-EXPECTED_ROUTE_METHOD_PAIRS = 420
+EXPECTED_ROUTE_METHOD_PAIRS = 421
 
 # app.py is build_app + lifecycle + re-export shims only. The ceiling is
 # the current size (~2892 lines) plus ~300 lines of headroom so ordinary
