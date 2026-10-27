@@ -413,6 +413,9 @@ def build_workflow_editor_tools(editor: dict[str, Any]) -> list[Any]:
                 },
             },
             presentation="fields:step_id,target,note",
+            # Proposals only: the workflow applies them. So a read-only role (review)
+            # can be an editor; its posture keeps only natives that declare this.
+            read_only=True,
         ),
         native_tool(
             workflow_cancel_step,
@@ -422,5 +425,6 @@ def build_workflow_editor_tools(editor: dict[str, Any]) -> list[Any]:
             desc="Propose cancelling a workflow step that has not started yet.",
             args={"step_id": {"type": "string"}, "reason": {"type": "string", "default": ""}},
             presentation="fields:step_id,cancel",
+            read_only=True,
         ),
     ]
