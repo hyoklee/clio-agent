@@ -14,6 +14,9 @@ Neither study adds anything to the agent that was written for its domain. The po
 
 Work under `/goal`: the goal is met when every item under **Done** holds. Run to completion without stopping for review. Use the browser yourself to check every UI change, and do the live verification yourself. The human reviews the finished, installable branches.
 
+
+> **Addenda.** [Addendum A](delegation-fork-science-addendum-a.md) (sources, data access, isolated workspaces) is folded in. [Addendum B](delegation-fork-science-addendum-b.md) (study views: agent-built dashboards attached to the study, with live study data) and [Addendum C](delegation-fork-science-addendum-c.md) (issue #1823: the dashboard-export crash, selection-driven viewers, links, no component cap) extend it; each lists its phase, scenarios and done criteria.
+
 ## Contract
 
 This plan is the contract for the six workstreams. The SDK design documents still govern everything they cover, and the decisions in [acceptance-ledger.md](acceptance-ledger.md), [model-fleet-ledger.md](model-fleet-ledger.md) and [memory-ledger.md](memory-ledger.md) stay in force. When code and this plan disagree, change the code. If the plan turns out wrong, choose the fix that best keeps its intent, update this document in the same change, and record the decision in the science ledger.
