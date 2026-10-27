@@ -54,6 +54,12 @@ uv run clio-agent serve --host 0.0.0.0 --port 8100
 - Interfaces: `src/clio_agent/ui/`
 - Tests: mirror code domains under `tests/`
 
+For a new or changed tool, follow the
+[tool authoring guide](tool-result-presentation.md#adding-or-changing-a-tool).
+The change includes its readable request/result presentation and representative
+browser showcases, as well as the callable implementation. Use the existing
+producer contract and shared frontend readers rather than another tool viewer.
+
 ## 5) Submodules
 
 clio-agent ships two pinned git submodules:
@@ -106,6 +112,7 @@ Use Conventional Commit style:
 - `test(core): cover ...`
 
 PR checklist:
+
 - Explain problem and solution clearly.
 - Link issue(s) when relevant.
 - Include lint/test command output in PR description.
