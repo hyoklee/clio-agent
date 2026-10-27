@@ -46,6 +46,9 @@ in_study() { curl -s "$API/v1/sessions/$SID/science-log" | python3 -c 'import js
 sleep 60
 while [ "$(date +%s)" -lt "$deadline" ]; do
   if [ $opened = 0 ] && [ "$(in_study)" = True ]; then
+    # The tab lives in the workspace canvas, which starts closed.
+    cmd '{"op":"click","selector":"[aria-label=\"Open workspace canvas\"]"}' >/dev/null 2>&1 || true
+    cmd '{"op":"wait","ms":1500}' >/dev/null 2>&1 || true
     cmd '{"op":"click","selector":"::-p-text(Science log)"}' >/dev/null 2>&1 && opened=1
     cmd '{"op":"mark","label":"science log opened"}' >/dev/null
   fi
