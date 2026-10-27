@@ -1,0 +1,86 @@
+---
+title: A branched study
+description: Ask a question that needs experiments, then follow the study in the Science log as parallel branches test competing answers.
+lastUpdated: false
+---
+
+import { LinkCard } from '@astrojs/starlight/components';
+import Capture from '../../../../components/overview/Capture';
+import { captureImage } from '../../../../lib/captures';
+import branchesRunning from '../../../../assets/tutorials/branched-study/branches-running.png';
+import boardWall from '../../../../assets/tutorials/branched-study/board-wall.png';
+import branchLog from '../../../../assets/tutorials/branched-study/exported-branch-log.png';
+
+Some questions are answered by experiment rather than by reading. This example is
+a real recorded session in which the **CLIO Science** agent, asked a plain question,
+ran a small study: it proposed competing answers, tested them side by side and
+reported which ones the evidence can and cannot separate. You can open the whole
+session below and follow every claim to the games behind it.
+
+## The question
+
+The session started from this request, with no tools, steps or hypotheses named:
+
+```text
+What is the best approach to solving Wordle? Use the word list from the wordle
+tools, not the official one. Play every game yourself instead of writing a solver.
+```
+
+The agent used a Wordle plugin that serves games from its own synthetic word list
+and checks each guess. The plugin's answers stay on the server, so the agent could
+learn about the list only by playing.
+
+## How the study ran
+
+1. The agent wrote the question in the [Science log](/docs/science-log/) and proposed
+   three competing strategies as hypotheses: an opener chosen for this list's common
+   letters, the same opener followed by a fixed second word, and an English-style
+   opener. Each hypothesis states the result that would show it wrong.
+2. It started a workflow with one branch per hypothesis, all on the same twenty
+   seeds, and a merge step after them.
+3. Each branch handed its twenty games to four helper agents, five games each, so
+   twelve players worked at once and every guess was still chosen by a model.
+4. The merge compared the strategies seed by seed in its own analysis script and
+   wrote the conclusion, with two recorded conflicts about what the sample cannot
+   show.
+
+<Capture client:visible image={await captureImage(branchesRunning)}
+  alt="Workspace with the workflow running three branches in parallel and the Science log tab showing the study tree with the question, three hypotheses and three running steps"
+  caption="The workflow runs the three strategies in parallel. The Science log tab shows the study tree: the question, the three hypotheses and a branch for each." />
+
+<Capture client:visible image={await captureImage(boardWall)}
+  alt="Science log view of the board wall: games played by each of twelve helper branches, and the played boards"
+  caption="The Wordle plugin's view fills in as games finish: 60 games from 12 helper branches, with each board as played." />
+
+## What it found
+
+All three strategies solved all sixty games, in 3 to 5 guesses. Their means were
+3.75 guesses for the English-style opener and 3.65 for each of the other two. The
+paired comparisons over the shared seeds all had intervals that include zero, so
+the study concluded that twenty seeds cannot separate the strategies. It estimated
+that about 150 paired seeds would be needed to detect a difference of a quarter of
+a guess. A reference solver run separately on the same seeds averaged 3.65, in line
+with the study.
+
+## Check a claim
+
+Every claim in the conclusion cites the entries it rests on. Each game is an
+observation that points to the recorded calls that played it, so you can follow a
+number from the conclusion to the evidence, to the observation, and to the guesses
+in the transcript.
+
+<Capture client:visible image={await captureImage(branchLog)}
+  alt="Exported session showing the study tree with every branch and its folder, and the log of one helper branch with an observation's measurements, links and sources"
+  caption="In the saved session, select a branch in the study tree to read its entries: here one helper's games, each with its measurements, the evidence that cites it and its sources." />
+
+## Open the session
+
+<LinkCard title="Open the Wordle study" description="The recorded session: the conversation, the workflow, the Science log with every branch, and the board wall. 48 MB." href="/conversations/studies/wordle/" />
+
+The page is an interactive archive of the actual session. Opening it does not run
+the agent or contact any service. The session ran with tool approvals turned off
+(**Bypass checks**), so the agent did not stop to ask before each game.
+
+Model choices vary from run to run. In other runs of the same request the agent
+played every game itself or enlarged the sample after a first merge, so treat this
+session as one example of how a study can unfold, not as a fixed recipe.

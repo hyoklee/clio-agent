@@ -42,9 +42,10 @@ for (const [path, title, messages] of [
   ['/conversations/delegation/reading-guide/', 'Reading guide to the design folder', 2],
   ['/conversations/delegation/skill-review/', 'Skill review across plugins', 8],
   ['/conversations/delegation/agent-fork.html', 'Agent fork check', 10],
+  ['/conversations/studies/wordle/', 'Wordle study', 21],
 ] as const) {
-  test(`${path}: delegation archive opens without contacting services`, async ({ page, baseURL }) => {
-    // The reading guide embeds its ten children's transcripts (87 MB).
+  test(`${path}: published archive opens without contacting services`, async ({ page, baseURL }) => {
+    // The reading guide embeds its ten children's transcripts (87 MB); the study, every branch's (48 MB).
     test.setTimeout(90_000);
     const errors: string[] = [];
     const externalRequests: string[] = [];

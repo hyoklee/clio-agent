@@ -10,7 +10,7 @@ export interface PublishedConversation {
   readonly sha256: string;
 }
 
-/** A set of exports published together as the assets of one release. */
+/** A set of exports published together under one base URL (a release or a pinned commit). */
 export interface ConversationCollection {
   readonly id: string;
   readonly release: string;
@@ -18,6 +18,8 @@ export interface ConversationCollection {
 }
 
 const releases = 'https://github.com/iowarp/clio-agent/releases/download/';
+// JaimeCernuda/clio-exports at a fixed commit: the files there never change under a URL.
+const exports = 'https://raw.githubusercontent.com/JaimeCernuda/clio-exports/4eb811ef33c8f155000c5ab077a2af3e8d66c18e/';
 
 /** Every published conversation, served at /conversations/<collection>/<slug>/. */
 export const conversationCollections: readonly ConversationCollection[] = [
@@ -36,15 +38,23 @@ export const conversationCollections: readonly ConversationCollection[] = [
     ],
   },
   {
-    // Plain-request sessions recorded with default delegation: the release
-    // `delegation-fork-science-2026-10-27` carries them (too large to commit).
+    // Plain-request sessions recorded with default delegation (too large to commit).
     id: 'delegation',
-    release: `${releases}delegation-fork-science-2026-10-27/`,
+    release: `${exports}delegation/`,
     conversations: [
       { slug: 'reading-guide', file: 'Reading-guide-session.html', bytes: 87331887,
         sha256: 'bd505defbd060f243d7a7da315621fdc4e13d97a612d6a0f4e94c28c19d1837a' },
       { slug: 'skill-review', file: 'Skill-review-session.html', bytes: 35512587,
         sha256: '1c3622e3f8754e977b0557e800f6514dc4446f6d47827336ac6650f4b65aef9f' },
+    ],
+  },
+  {
+    // Branched studies asked as plain questions, recorded in the science log.
+    id: 'studies',
+    release: `${exports}studies/`,
+    conversations: [
+      { slug: 'wordle', file: 'Wordle-study-session.html', bytes: 48278832,
+        sha256: '8d3a29db0ec2aa39fad261f78a017e520715c94317815ffb36ca4483c00d6b61' },
     ],
   },
 ];

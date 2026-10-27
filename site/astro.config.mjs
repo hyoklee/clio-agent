@@ -130,6 +130,7 @@ export default defineConfig({
 						{ label: 'Explore ground motion', slug: 'docs/examples/ground-motion' },
 						{ label: 'EarthScope data from NDP', slug: 'docs/examples/ndp-earthscope' },
 						{ label: 'Scientific questions for NDP', slug: 'docs/examples/ndp-science' },
+						{ label: 'A branched study', slug: 'docs/examples/branched-study' },
 						{ label: 'Find a decision in research notes', slug: 'docs/examples/research-notes' },
 						{ label: 'Create a report and slides', slug: 'docs/examples/reports-and-slides' },
 					],
