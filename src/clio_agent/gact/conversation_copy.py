@@ -120,6 +120,10 @@ def fork_side_result(source: str, note: Any) -> dict[str, Any]:
         "this_session": "the fork",
         "forked_from": source,
         "note": str(note or ""),
+        "meaning": (
+            "You are the copy this call created. The conversation that called fork "
+            "carries on with the rest of its own plan; your direction is the note."
+        ),
     }
 
 

@@ -263,7 +263,9 @@ def build_spawn_runtime_tools(
             },
             "Start a copy of yourself that carries this conversation so far and pursues "
             "the note instead, beside you under the same parent; you get its handle and "
-            "continue your own work. Whoever waits on you also waits on the fork. In a "
+            "continue your own work. In the fork's copy this same call answers "
+            "this_session: 'the fork' with the note: that copy is the fork, and the note "
+            "is its direction. Whoever waits on you also waits on the fork. In a "
             "workflow step the fork is drawn beside your step and counts against the "
             "workflow's growth bounds and approval; in a conversation it opens a new "
             "conversation. A refusal names its reason (fork_limit_reached, "

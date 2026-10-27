@@ -38,12 +38,10 @@ def test_the_fork_call_is_kept_with_the_forks_own_result(monkeypatch: pytest.Mon
     assert ("tool_call", "call_other") not in kinds
     assert kinds[-2:] == [("tool_call", "call_fork"), ("tool_result", "call_fork")]
     answered = json.loads(message.parts[-1].content[0].text)
-    assert answered == {
-        "forked": True,
-        "this_session": "the fork",
-        "forked_from": "sess_src",
-        "note": "try the other idea",
-    }
+    assert answered["this_session"] == "the fork"
+    assert answered["forked_from"] == "sess_src"
+    assert answered["note"] == "try the other idea"
+    assert "You are the copy this call created" in answered["meaning"]
     # Without a fork call the copy stops at the last finished result, as before.
     plain = conversation_copy.open_turn_message(None, "sess_src", "sess_copy")
     assert [p.call_id for p in plain.parts if p.type == "tool_call"] == ["call_read"]
