@@ -26,7 +26,7 @@ def _tree_root(app: Any, sid: str) -> str:
 
     history = getattr(getattr(app, "state", None), "task_history", None)
     task = history.latest_assignment(sid) if history is not None and sid else None
-    while task is not None and task.owner.parent_handle:
+    while history is not None and task is not None and task.owner.parent_handle:
         parent = history.task_snapshot(task.owner.parent_handle)
         if parent is None:
             break

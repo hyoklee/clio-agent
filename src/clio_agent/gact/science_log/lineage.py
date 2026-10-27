@@ -121,9 +121,10 @@ def _artifacts(app: Any, call_id: str) -> list[dict[str, Any]]:
             row = edge.model_dump() if hasattr(edge, "model_dump") else dict(edge)
             rows.append({"direction": direction, **row})
     instrument = getattr(record, "instrument", None)
-    if instrument is not None and getattr(instrument, "script_hash", ""):
+    script_hash = getattr(instrument, "script_hash", None)
+    if script_hash:
         rows.append(
-            {"direction": "script", "sha256": instrument.script_hash, "cmd": instrument.cmd}
+            {"direction": "script", "sha256": script_hash, "cmd": getattr(instrument, "cmd", "")}
         )
     return rows
 

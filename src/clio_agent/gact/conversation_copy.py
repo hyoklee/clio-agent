@@ -67,7 +67,7 @@ def open_turn_message(
                 type="tool_result",
                 call_id=own,
                 tool_name="fork",
-                content=[Part(type="text", text=json.dumps(fork_call.get("result") or {}))],
+                content=[Part(type="text", text=json.dumps((fork_call or {}).get("result") or {}))],
                 metadata={"completed_at": datetime.now(timezone.utc).isoformat()},
             )
         )

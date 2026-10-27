@@ -78,10 +78,10 @@ def _duplicate_extents(source: Any, target: Any, length: int) -> None:
 
     import msvcrt  # noqa: PLC0415 - Windows only
 
-    request = _DuplicateExtents(msvcrt.get_osfhandle(source.fileno()), 0, 0, length)
+    request = _DuplicateExtents(msvcrt.get_osfhandle(source.fileno()), 0, 0, length)  # type: ignore[attr-defined]
     returned = ctypes.c_ulong()
     if not ctypes.windll.kernel32.DeviceIoControl(  # type: ignore[attr-defined]
-        ctypes.c_void_p(msvcrt.get_osfhandle(target.fileno())),
+        ctypes.c_void_p(msvcrt.get_osfhandle(target.fileno())),  # type: ignore[attr-defined]
         FSCTL_DUPLICATE_EXTENTS_TO_FILE,
         ctypes.byref(request),
         ctypes.sizeof(request),

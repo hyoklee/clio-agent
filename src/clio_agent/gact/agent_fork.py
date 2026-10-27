@@ -70,7 +70,7 @@ async def _fork_conversation(
     from clio_agent.gact.parts import Part  # noqa: PLC0415
 
     forks = await run_off_loop(_agent_forks, app, session.id)
-    branch = next(
+    branch: Any = next(
         (
             row
             for row in forks
