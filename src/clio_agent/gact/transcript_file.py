@@ -313,22 +313,21 @@ def _atom_boot(app: "FastAPI") -> None:
     from clio_agent.gact.session_store import (  # noqa: PLC0415 - import cycle
         _reconcile_restart_interrupted_sessions,
     )
-    from clio_agent.gact.task_event_lane import ensure_task_event_lane
+    from clio_agent.gact.store_migrations import ensure_at_boot  # noqa: PLC0415
     from clio_agent.gact.task_history import TaskHistory
-    from clio_agent.gact.task_lane_reads import ensure_task_lane_reads
-    from clio_agent.gact.transcript_migration import migrate_transcripts
 
     if getattr(app.state, "task_history", None) is None:
         with boot_timing.step(app, "task_history_restore"):
             history = TaskHistory(app.state.arc)
             history.restore()
-        with boot_timing.step(app, "task_event_lane"):
-            ensure_task_event_lane(history)  # before any tree loads; owed to the upgrade step
-        with boot_timing.step(app, "task_lane_reads"):
-            ensure_task_lane_reads(history)  # after the lane copy; owed to the upgrade step
         app.state.task_history = history
-    with boot_timing.step(app, "transcript_migration"):
-        migrate_transcripts(app)  # Capture legacy content before any reconciliation/cache update.
+        # Before any tree loads; normally `clio-agent migrate` copied it (one marker read).
+        ensure_at_boot(app, "task_event_lane")
+    # The session records every later step reads (normally one marker read).
+    ensure_at_boot(app, "session_records_import")
+    # Legacy content is captured before any reconciliation/cache update; normally
+    # `clio-agent migrate` already did, and this is one marker read.
+    ensure_at_boot(app, "transcript_legacy_import")
     with boot_timing.step(app, "interrupted_sessions"):
         _reconcile_restart_interrupted_sessions(app)
     with boot_timing.step(app, "interaction_times"):
