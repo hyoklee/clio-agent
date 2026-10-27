@@ -45,8 +45,9 @@ for (const [path, title, messages] of [
   ['/conversations/studies/wordle/', 'Wordle study', 21],
 ] as const) {
   test(`${path}: published archive opens without contacting services`, async ({ page, baseURL }) => {
-    // The reading guide embeds its ten children's transcripts (87 MB); the study, every branch's (48 MB).
-    test.setTimeout(90_000);
+    // The reading guide embeds its ten children's transcripts (87 MB); the study, every branch's
+    // (48 MB). Hydrating 87 MB takes over 30 s on a loaded machine.
+    test.setTimeout(150_000);
     const errors: string[] = [];
     const externalRequests: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
@@ -57,7 +58,7 @@ for (const [path, title, messages] of [
     const response = await page.goto(path);
     expect(response?.status()).toBe(200);
     expect(response?.headers()['content-type']).toContain('text/html');
-    await expect(page.getByRole('heading', { level: 1, name: title, exact: true }).filter({ visible: true })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('heading', { level: 1, name: title, exact: true }).filter({ visible: true })).toBeVisible({ timeout: 90_000 });
     await expect(page.getByText(new RegExp(`Transcript.*${messages} messages`)).filter({ visible: true })).toBeVisible();
     expect(errors).toEqual([]);
     expect(externalRequests).toEqual([]);

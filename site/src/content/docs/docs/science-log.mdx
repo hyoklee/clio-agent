@@ -11,6 +11,7 @@ import tree from '../../../assets/captures/docs-science-log-tree.png';
 import sources from '../../../assets/captures/docs-science-log-sources.png';
 import conflict from '../../../assets/captures/docs-science-log-conflict.png';
 import views from '../../../assets/captures/docs-science-log-views.png';
+import graph from '../../../assets/captures/docs-science-log-graph.png';
 
 Some questions are answered by experiment: running code, taking measurements, comparing conditions. An agent with the science log treats such a question as a study. It records what it learns in the study's **science log** as typed, linked entries, and you follow the study in the **Science log** tab. Each claim in the log points to the entries it rests on, and each measurement points to the recorded tool calls that produced it.
 
@@ -75,14 +76,20 @@ The log checks shape and references, never correctness. A link must point to an 
 
 The tab appears only for a conversation that belongs to a study: one that wrote the study's question, or one in the same tree of steps, children and forks. Other conversations do not offer it. For more room, choose **Maximize canvas**; the same button restores the conversation beside it.
 
+The tab has three modes, each using the whole tab:
+
+- **List**: the study tree and the selected branch's log.
+- **Graph**: every entry and the links between them. Each experiment's observations are drawn as one group.
+- **Views**: a plugin's live views, when the study has any.
+
 <Capture client:visible image={await captureImage(tab)}
-  alt="A study's final answer in the conversation, with the Science log tab open beside it: the question, three refuted hypotheses, and the steps h2_tenfold, h3_heterogeneity, h1_barely_matters and merge, each completed with its folder"
-  caption="The vaccination study with its Science log beside the conversation. The study tree is at the top; the selected branch's log starts below it."
+  alt="Science log tab in List mode with the canvas maximized: the question, three hypotheses with refuted or supported chips, and steps with their delegated children and folders"
+  caption="List: the study tree of the Wordle study, with each step's delegated children."
   sizes="(min-width: 50rem) 46rem, 100vw" />
 
 ## Read the study tree
 
-The study tree sits at the top of the tab. It starts with the question, lists the hypotheses under it, and then every branch under its parent: **Step** for a workflow step, **Delegated** for a child the agent started, and **Fork** for a fork. Each node names its kind and its state in words, such as open, supported, refuted, completed or superseded. Forks are framed with a dashed line and reframes with a dotted one. The hypotheses a branch wrote appear under that branch.
+In **List**, the study tree comes first. It starts with the question, lists the hypotheses under it, and then every branch under its parent: **Step** for a workflow step, **Delegated** for a child the agent started, and **Fork** for a fork. Each node names its kind and its state in words, such as open, supported, refuted, completed or superseded. Forks are framed with a dashed line and reframes with a dotted one. The hypotheses a branch wrote appear under that branch.
 
 **Task** on a branch opens its task. **Folder** opens the branch's folder in the Files view (see [Node folders](#node-folders)). When a candidate was derived from an earlier result, the node says **Derived from** and links to it.
 
@@ -92,6 +99,15 @@ The study tree sits at the top of the tab. It starts with the question, lists th
   sizes="(min-width: 50rem) 46rem, 100vw" />
 
 **Select a node** to open its branch's entries below the tree, under **Log of** and the branch's name with its entry count. A selected hypothesis is brought into view. Selecting never leaves the conversation you are in.
+
+## Read the study as a graph
+
+Choose **Graph** to see the whole study at once, from the question down to the conclusion. Select a node to read its record beside the graph; select a group to list its observations. **Selected and linked** narrows the graph to the selected entry and its direct links, and **Entire study** shows everything again. **Show in list** opens the record in its branch's log.
+
+<Capture client:visible image={await captureImage(graph)}
+  alt="Science log tab in Graph mode: the question, three hypotheses, three experiments, each experiment's 20 observations as one group, three evidence entries, two conflicts and the conclusion, with the question's record beside the graph"
+  caption="Graph: the Wordle study with the question selected."
+  sizes="(min-width: 50rem) 46rem, 100vw" />
 
 ## Follow a citation
 
@@ -125,7 +141,7 @@ Node folders rely on CLIO's write confinement. When it cannot confine writes on 
 
 ## Views and the current law
 
-A plugin can show live views fed by its own tools' results. The simulated bench in these examples records **Bench readings**: every measured period by input, colored by branch. In a study, views appear in a **Views** section above the study tree, which you can collapse. The section appears once a session in the study records a view.
+A plugin can show live views fed by its own tools' results. The simulated bench in these examples records **Bench readings**: every measured period by input, colored by branch. In a study, choose **Views** at the top of the Science log tab. It appears once a session in the study records a view.
 
 When a hypothesis states a law as a formula written in the readings' own names, such as `ten_cycles_s = 19.080 * arm_length_m^0.5908 * ...`, the newest such hypothesis that has not been refuted, superseded or withdrawn is the study's current law. The view names it above its chart, with the hypothesis and the number of readings the formula covers. A view whose plugin draws it also shows the law's value beside each reading as an open mark, so a wrong law sits away from the readings and a good one settles onto them. The view redraws when a hypothesis arrives or changes status.
 
