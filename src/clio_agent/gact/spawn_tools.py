@@ -140,9 +140,12 @@ def build_spawn_runtime_tools(
 
     async def fork(note: str, title: str | None = None) -> dict[str, Any]:
         from clio_agent.gact.agent_fork import fork_caller  # noqa: PLC0415
+        from clio_agent.gact.artifacts.observer_bridge import current_call_id  # noqa: PLC0415
 
         app, caller = _runtime()
-        invocation = TASK_CALL.get().invocation_id or uuid4().hex
+        # The observer's id of this very call: the fork's copy answers it, and a
+        # replay of the call addresses the same fork.
+        invocation = current_call_id() or TASK_CALL.get().invocation_id or uuid4().hex
         return await fork_caller(app, caller, note, title, invocation)
 
     # Internal subagents (started by their plugin's server code) are never offered.

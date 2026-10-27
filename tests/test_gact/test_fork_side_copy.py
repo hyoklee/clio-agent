@@ -47,3 +47,20 @@ def test_the_fork_call_is_kept_with_the_forks_own_result(monkeypatch: pytest.Mon
     # Without a fork call the copy stops at the last finished result, as before.
     plain = conversation_copy.open_turn_message(None, "sess_src", "sess_copy")
     assert [p.call_id for p in plain.parts if p.type == "tool_call"] == ["call_read"]
+
+
+def test_a_tool_names_the_call_it_runs_in_from_the_agent_loops_slot() -> None:
+    from clio_agent.gact.artifacts.observer_bridge import (
+        MODEL_CALL_SLOT,
+        current_call_id,
+        report_observer_call,
+    )
+
+    assert current_call_id() == ""
+    token = MODEL_CALL_SLOT.set({})
+    try:
+        report_observer_call("call_abc123def456")
+        report_observer_call("call_inner_tool")  # a tool's own inner calls keep its id
+        assert current_call_id() == "call_abc123def456"
+    finally:
+        MODEL_CALL_SLOT.reset(token)

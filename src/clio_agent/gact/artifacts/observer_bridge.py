@@ -28,6 +28,16 @@ def observer_call_id() -> str:
         return ""
 
 
+def current_call_id() -> str:
+    """The observer's id of the model tool call now running, or ``""``.
+
+    The agent loop's slot (filled when the observer starts the call) first, since it
+    survives the hand-off into a native tool's worker; else the observer's own var.
+    """
+    slot = MODEL_CALL_SLOT.get()
+    return str((slot or {}).get("call_id") or "") or observer_call_id()
+
+
 def report_observer_call(call_id: str) -> None:
     """Tell the agent loop which observer call the current model tool call is."""
     slot = MODEL_CALL_SLOT.get()
@@ -35,4 +45,4 @@ def report_observer_call(call_id: str) -> None:
         slot["call_id"] = call_id
 
 
-__all__ = ["MODEL_CALL_SLOT", "observer_call_id", "report_observer_call"]
+__all__ = ["MODEL_CALL_SLOT", "current_call_id", "observer_call_id", "report_observer_call"]

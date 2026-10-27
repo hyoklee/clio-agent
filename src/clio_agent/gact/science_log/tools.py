@@ -26,12 +26,15 @@ SCIENCE_LOG_TOOLS: tuple[str, ...] = (
 
 def _context() -> tuple[Any, str, str]:
     from clio_agent.gact import context  # noqa: PLC0415
+    from clio_agent.gact.artifacts.observer_bridge import current_call_id  # noqa: PLC0415
     from clio_agent.tools.task_call_context import TASK_CALL  # noqa: PLC0415
 
     app, session_id = context.active_app(), context.active_session_id()
     if app is None or not session_id:
         raise RuntimeError("the science log needs an active session")
-    return app, session_id, TASK_CALL.get().invocation_id or uuid4().hex
+    # The call that writes the entry: its id keys the entry, so a replay writes nothing
+    # twice, and it locates the turn that wrote it.
+    return app, session_id, current_call_id() or TASK_CALL.get().invocation_id or uuid4().hex
 
 
 def _native(func: Any, fields: str, *, read_only: bool = False, **declaration: Any) -> Any:
