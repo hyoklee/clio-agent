@@ -38,6 +38,31 @@ for (const [slug, title, messages] of [
   });
 }
 
+for (const [path, title, messages] of [
+  ['/conversations/delegation/reading-guide/', 'Reading guide to the design folder', 2],
+  ['/conversations/delegation/skill-review/', 'Skill review across plugins', 8],
+  ['/conversations/delegation/agent-fork.html', 'Agent fork check', 10],
+] as const) {
+  test(`${path}: delegation archive opens without contacting services`, async ({ page, baseURL }) => {
+    // The reading guide embeds its ten children's transcripts (87 MB).
+    test.setTimeout(90_000);
+    const errors: string[] = [];
+    const externalRequests: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    page.on('request', (request) => {
+      if (/^https?:/.test(request.url()) && new URL(request.url()).origin !== new URL(baseURL!).origin)
+        externalRequests.push(request.url());
+    });
+    const response = await page.goto(path);
+    expect(response?.status()).toBe(200);
+    expect(response?.headers()['content-type']).toContain('text/html');
+    await expect(page.getByRole('heading', { level: 1, name: title }).filter({ visible: true })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(new RegExp(`Transcript.*${messages} messages`)).filter({ visible: true })).toBeVisible();
+    expect(errors).toEqual([]);
+    expect(externalRequests).toEqual([]);
+  });
+}
+
 test('unqualified Ares archive is unpublished', async ({ page }) => {
   const response = await page.goto('/conversations/ndp/ares/');
   expect(response?.status()).toBe(404);
