@@ -34,7 +34,11 @@ cmd '{"op":"inspect"}' | grep -q "For example, Homelab" && {
 cmd "{\"op\":\"goto\",\"url\":\"$UI/workspaces/$WS/sessions/$SID\"}"
 cmd '{"op":"wait","ms":3000}'
 cmd "{\"op\":\"start\",\"name\":\"$TAKE\"}"
-cmd '{"op":"click","selector":"textarea, [contenteditable=\"true\"]"}'
+# The composer renders after the session loads; under load that takes a while.
+for _ in $(seq 1 24); do
+  cmd '{"op":"click","selector":"textarea, [contenteditable=\"true\"]"}' >/dev/null 2>&1 && break
+  cmd '{"op":"wait","ms":5000}' >/dev/null
+done
 python3 -c 'import json,sys; print(json.dumps({"op":"type","text":sys.argv[1],"delay":45}))' "$PROMPT" > "/tmp/record-$TAKE.type.json"
 cmd "$(cat "/tmp/record-$TAKE.type.json")"
 cmd '{"op":"key","key":"Enter"}'
