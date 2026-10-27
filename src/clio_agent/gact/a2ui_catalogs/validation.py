@@ -124,13 +124,12 @@ def _most_specific_error(errors: list[ValidationError]) -> ValidationError:
     return candidates[0] if len(candidates) == 1 else best_match(candidates)
 
 
-def validate_components(entry: "CatalogEntry", components: Any, *, max_components: int) -> None:
+def validate_components(entry: "CatalogEntry", components: Any) -> None:
     """Validate a full ``updateComponents`` list against one catalog's schemas.
 
     Args:
         entry: The surface's resolved catalog entry.
         components: The raw ``components`` array from the message.
-        max_components: Bound on the list length (caller resolves config).
 
     Raises:
         A2UIValidationError: If the list shape is invalid, a component names
@@ -140,8 +139,8 @@ def validate_components(entry: "CatalogEntry", components: Any, *, max_component
             failure text.
     """
 
-    if not isinstance(components, list) or not 1 <= len(components) <= max_components:
-        raise A2UIValidationError("A2UI components must be a non-empty bounded list")
+    if not isinstance(components, list) or not components:
+        raise A2UIValidationError("A2UI components must be a non-empty list")
     for component in components:
         if not isinstance(component, Mapping):
             raise A2UIValidationError("A2UI component must be an object")
