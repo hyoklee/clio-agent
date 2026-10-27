@@ -59,7 +59,10 @@ def test_selection_rows_and_bound_model_values_are_exported(
         components=_components(
             [{"case": "c01", "mesh": "c01.stl"}, {"case": "c02", "mesh": "c02.stl"}]
         ),
-        data_model={"current": {"mesh": "base.stl"}},
+        data_model={
+            "current": {"mesh": "base.stl"},
+            "selection": {"case": {"field": "mesh", "values": ["c01.stl"]}},
+        },
     )
     assert created["rendered"] is True, created
     exported = {row["path"] for row in created["exported_artifacts"]}
@@ -70,6 +73,9 @@ def test_selection_rows_and_bound_model_values_are_exported(
     assert all(row["mesh"].startswith("artifact://") for row in rows)
     model = next(m for m in surface.messages if "updateDataModel" in m)
     assert model["updateDataModel"]["value"]["current"]["mesh"].startswith("artifact://")
+    # A seeded selection is exported like the rows, so it still matches its row.
+    seeded = model["updateDataModel"]["value"]["selection"]["case"]["values"][0]
+    assert seeded == rows[0]["mesh"]
 
     update = build_update_a2ui_data_model_tool()
     moved = update(surface_id="cases", path="/current/mesh", value="c02.stl")

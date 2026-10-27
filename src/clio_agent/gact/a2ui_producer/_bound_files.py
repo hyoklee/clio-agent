@@ -118,6 +118,34 @@ def export_selection_rows(
     return exporter.exported
 
 
+def _export_selection_values(
+    exporter: _Exporter,
+    value: Any,
+    base: list[str],
+    values_path: list[str],
+    component_id: str,
+    prop: str,
+) -> dict[str, Any] | None:
+    """Export the path strings of a seeded ``/selection/<key>/values`` list in place."""
+
+    if values_path[: len(base)] != base and base[: len(values_path)] != values_path:
+        return None
+    if len(base) > len(values_path):
+        return None  # a write inside one value: the producer passed a single cell
+    current: Any = value
+    for token in values_path[len(base) :]:
+        current = current.get(token) if isinstance(current, dict) else None
+    if not isinstance(current, list):
+        return None
+    for index, item in enumerate(current):
+        if isinstance(item, str) and _path_candidate(item) is not None:
+            exported = _export(exporter, item, component_id=component_id, prop=prop)
+            if isinstance(exported, dict):
+                return exported
+            current[index] = exported
+    return None
+
+
 def export_bound_values(
     app: "FastAPI",
     session_id: str,
@@ -134,9 +162,16 @@ def export_bound_values(
     base = [] if path in ("", "/") else _tokens(path)
     exporter = _Exporter(app, session_id)
     for component_id, prop, pointer in file_bindings(components):
-        if pointer.startswith(_SELECTION):
-            continue
         tokens = _tokens(pointer)
+        if pointer.startswith(_SELECTION):
+            # A seeded selection names files the way the rows do, so it is exported
+            # the same way and keeps matching the exported cells.
+            if len(tokens) < 3 or tokens[2] != "values":
+                continue
+            stop = _export_selection_values(exporter, value, base, tokens[:3], component_id, prop)
+            if stop is not None:
+                return stop
+            continue
         if tokens[: len(base)] != base:
             continue
         rest = tokens[len(base) :]
