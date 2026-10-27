@@ -257,6 +257,7 @@ _PROJECTION_FIELDS = (
     "_resource_tasks",
     "_assignments",
     "_children",
+    "_forks",
     "_recipient_grants",
     "_subscriptions",
     "_workflow_bindings",
@@ -330,6 +331,8 @@ def _project(
                 self._assignments[snapshot.owner.session_id] = snapshot.handle
         if snapshot.owner.parent_handle is not None:
             self._children.setdefault(snapshot.owner.parent_handle, set()).add(snapshot.handle)
+        if snapshot.fork_of is not None:
+            self._forks.setdefault(snapshot.fork_of, set()).add(snapshot.handle)
         if snapshot.deduplication_key:
             key = (snapshot.owner.session_id, snapshot.deduplication_key)
             if snapshot.terminal_at is None and snapshot.cancellation_requested_at is None:

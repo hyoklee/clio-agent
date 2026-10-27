@@ -21,6 +21,7 @@ from clio_agent.gact.native_work import now
 from clio_agent.gact.task_access import TaskAccess, TaskAccessDenied, TaskCaller
 from clio_agent.gact.task_cursors import decode_cursor as _decode
 from clio_agent.gact.task_cursors import encode_cursor as _cursor
+from clio_agent.gact.task_forks import family_members
 from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.task_observations import pattern_text, read_observations
 from clio_agent.gact.task_publication import publish_task_notice, task_owner_recipient
@@ -361,7 +362,9 @@ class TaskOperations:
         outcomes: list[dict[str, Any]] = []
         pending: list[str] = []
         checks: dict[int, tuple[str, CoordinationRight]] = {}
-        for handle in handles:
+        # Waiting on a handle waits on its forks too (task_forks): read again on every
+        # pass, since a fork may be created while the wait is open.
+        for handle in family_members(self.history, handles):
             access = TaskAccess(self.history, caller)
             try:
                 current = access.require(handle, "observe")
@@ -417,6 +420,10 @@ class TaskOperations:
                         row.get("handle") == handle and row.get("error") for row in outcomes
                     ):
                         outcomes.append({"handle": handle, "error": "task_unavailable"})
+            for row in outcomes:
+                member = self.history.task_snapshot(str(row.get("handle") or ""))
+                if member is not None and member.fork_of and member.handle not in handles:
+                    row["fork_of"] = member.fork_of
         return outcomes, pending
 
     async def observe(

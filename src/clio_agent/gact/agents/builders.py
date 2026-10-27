@@ -566,7 +566,7 @@ def build_agent_module(base_agent: Any, agent_def: "AgentDef", resolution: "Reso
                     live=live,
                 )
                 claimed = {row["name"] for row in resolution.tools if row["kind"] == "native"}
-                if claimed & {"spawn_agent_task", "spawn_agents_parallel"}:
+                if claimed & {"spawn_agent_task", "spawn_agents_parallel", "fork"}:
                     spawn_tools = [
                         tool
                         for tool in build_spawn_runtime_tools(

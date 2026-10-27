@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import re
 from typing import Any
 
 import dspy
@@ -172,9 +173,10 @@ def test_clio_react_executes_recorded_and_instrumented_async_native_tool() -> No
     ]
     assert len(observed) == 1
     assert observed[0].is_error is False
-    assert "".join(getattr(part, "text", "") for part in observed[0].content) == (
-        "Found campaign review"
-    )
+    # The result, then the observer's citable reference to this exact call.
+    text, reference = (getattr(part, "text", "") for part in observed[0].content)
+    assert text == "Found campaign review"
+    assert re.fullmatch(r"\[call:[^/\]]+/call_[0-9a-f]{12}\]", reference), reference
     assert len(rows) == 1
     assert rows[0]["ok"] is True
     assert rows[0]["args"] == {"query": "campaign review"}

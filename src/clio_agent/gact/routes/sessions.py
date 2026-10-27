@@ -256,24 +256,14 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
 
     async def copy_session_context(src: str, dst: str, at: str = "") -> int:
         """Deep-copy ``src``'s messages (to + including ``at``) and context files into ``dst``."""
-        src_msgs = list(app.state.messages.get(src, []))
-        if at and any(m.id == at for m in src_msgs):
-            src_msgs = src_msgs[: next(i for i, m in enumerate(src_msgs) if m.id == at) + 1]
-        # Deep-copy parts so the copy's log doesn't alias the source's (model_copy snapshot).
-        await run_off_loop(
-            deps.replace_session_messages,
-            app,
-            dst,
-            [m.model_copy(deep=True, update={"session_id": dst}) for m in src_msgs],
-        )
-        if source_context_files := app.state.context_files.get(src, {}):
-            app.state.context_files[dst] = {k: dict(row) for k, row in source_context_files.items()}
-        return len(src_msgs)
+        from clio_agent.gact.conversation_copy import copy_conversation  # noqa: PLC0415
+
+        return await run_off_loop(copy_conversation, app, src, dst, at)
 
     register_side_session_routes(
         app, copy_context=copy_session_context, delete_session=delete_session
     )
-    register_session_fork_route(app, copy_context=copy_session_context)
+    register_session_fork_route(app)
 
     # ---- Rollback (undo / rewind) -----------------------------------
 

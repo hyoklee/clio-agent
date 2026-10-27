@@ -3,9 +3,11 @@
 A child is one of the parent agent's defined subagents (shipped by the parent's
 resolved plugins), an installed agent started as a general subagent through the
 ``delegation`` plugin, or ``self``: the parent's own agent, which a flow run
-uses. Either way the child session pins its own
-resolution, computed here outside task locking, before the assignment is
-accepted.
+uses. A ``fork:<session>`` target is a fork of that session: its exact
+resolution, delta, role and flow, on its model, with its conversation copied in
+before the fork's first turn (:mod:`~clio_agent.gact.task_forks`). Either way the
+child session pins its own resolution, computed here outside task locking, before
+the assignment is accepted.
 """
 
 from __future__ import annotations
@@ -24,6 +26,9 @@ if TYPE_CHECKING:
 
 CreatePreparedChild = Callable[[str, str, dict[str, Any], str | None], StoredSession]
 PrepareChild = Callable[[str, str, dict[str, Any] | None, str], CreatePreparedChild]
+
+#: A spawn target ``fork:<session>`` forks that session (the ``fork`` tool's target).
+FORK_TARGET = "fork:"
 
 
 def _launch_context(parent: StoredSession) -> dict[str, Any]:
@@ -64,6 +69,17 @@ def resolve_child_agent(
     )
     from clio_agent.plugins.resolve import ResolutionError, delegable_subagents  # noqa: PLC0415
 
+    if agent_id.startswith(FORK_TARGET):
+        # A fork runs its source's exact resolution, delta, role and flow.
+        source = agent_id.removeprefix(FORK_TARGET)
+        forked = session_resolution(app, source)
+        metadata = dict(getattr(app.state.sessions.get(source), "metadata", None) or {})
+        pin = {
+            key: metadata[key]
+            for key in (AGENT_REF_KEY, AGENT_DELTA_KEY, SUBAGENT_KEY, "agent_flow")
+            if key in metadata
+        }
+        return forked, {**pin, AGENT_RESOLUTION_KEY: forked.digest}
     parent = session_resolution(app, parent_id)
     if agent_id == "self":
         # A flow run (``run_flow``, ``run_workflow``, ``ctx.call`` on a flow) runs the
@@ -133,9 +149,25 @@ def prepare_child_session(
     launch = _launch_context(parent)
     digest = argument_digest(launch)
     child, pin = resolve_child_agent(app, parent_id, agent_id)
-    choice = choose_child_model(app, parent, child, explicit=model, same_agent=agent_id == "self")
+    source = (
+        store.snapshot(agent_id.removeprefix(FORK_TARGET))
+        if agent_id.startswith(FORK_TARGET)
+        else None
+    )
+    if source is not None and not model:
+        # A fork runs on the model its source runs on.
+        model = "/".join(
+            str(source.model.get(key) or "") for key in ("provider_id", "model_id")
+        ).strip("/")
+    choice = choose_child_model(
+        app, parent, child, explicit=model, same_agent=agent_id == "self" or source is not None
+    )
     pin = {**pin, "spawn_target": agent_id, MODEL_CHOICE_KEY: choice.to_dict()}
-    title = str(child.agent.get("name") or child.agent["id"])
+    title = (
+        f"{source.title} (fork)"
+        if source is not None
+        else str(child.agent.get("name") or child.agent["id"])
+    )
     # A role declared ``effects="read"`` runs under the side sessions' read-only
     # profile: the same gate, the same typed deny reason, no spawn or workflow tools.
     read_only = child.agent.get("effects") == "read"
@@ -162,7 +194,7 @@ def prepare_child_session(
             from clio_agent.gact.side_sessions import READ_ONLY_SIDE_PROFILE  # noqa: PLC0415
 
             approval_profile = READ_ONLY_SIDE_PROFILE
-        return store.create(
+        created = store.create(
             workspace_id=parent.workspace_id,
             title=str(inherited.get("subagent_name") or title),
             parent_session_id=parent_id,
@@ -179,6 +211,13 @@ def prepare_child_session(
             creation_digest=creation_digest,
             defer_initialization=True,
         )
+        if source is not None:
+            # The fork starts where its source is: its conversation through the last
+            # finished tool result, before the assignment (the fork's note) arrives.
+            from clio_agent.gact.conversation_copy import copy_conversation  # noqa: PLC0415
+
+            copy_conversation(app, source.id, created.id, open_turn=True)
+        return created
 
     # The spending guard reads the choice before the child is created.
     create.model_choice = choice.to_dict()  # type: ignore[attr-defined]

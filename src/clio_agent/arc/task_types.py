@@ -165,6 +165,8 @@ class TaskSnapshot(TaskRecord):
     deduplication_key: str | None = None
     attention_episode: str | None = None
     resource_id: str | None = None
+    #: The handle this task was forked from: whoever waits on that handle waits on this too.
+    fork_of: str | None = None
 
     @classmethod
     def read_history(cls, record: dict[str, Any]) -> TaskSnapshot:
@@ -197,6 +199,7 @@ class TaskSnapshot(TaskRecord):
                 "created_at",
                 "description",
                 "description_missing",
+                "fork_of",
             )
         ):
             raise ValueError("Task identity cannot change under an existing handle")

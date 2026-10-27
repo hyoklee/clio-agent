@@ -138,6 +138,13 @@ def build_spawn_runtime_tools(
                 outcomes.append({"index": index, "error": str(error)})
         return {"spawned": outcomes, "outcomes": outcomes}
 
+    async def fork(note: str, title: str | None = None) -> dict[str, Any]:
+        from clio_agent.gact.agent_fork import fork_caller  # noqa: PLC0415
+
+        app, caller = _runtime()
+        invocation = TASK_CALL.get().invocation_id or uuid4().hex
+        return await fork_caller(app, caller, note, title, invocation)
+
     # Internal subagents (started by their plugin's server code) are never offered.
     rows = getattr(resolution, "subagents", None) or []
     subagents = [row for row in rows if not row.get("internal")]
@@ -237,6 +244,27 @@ def build_spawn_runtime_tools(
                 },
             },
             "Accept several child assignments and return their Subagent handles with independent errors. Native inference budgets apply only to model calls. Use shared observation or waiting across the returned handles.",
+        )
+    )
+    tools.append(
+        _tool(
+            fork,
+            "fork",
+            {
+                "note": {
+                    "type": "string",
+                    "description": "What the fork should do differently from you: the "
+                    "direction it pursues (another hypothesis, a reframed question).",
+                },
+                "title": {**_STRING, "description": "Optional short name for the fork."},
+            },
+            "Start a copy of yourself that carries this conversation so far and pursues "
+            "the note instead, beside you under the same parent; you get its handle and "
+            "continue your own work. Whoever waits on you also waits on the fork. In a "
+            "workflow step the fork is drawn beside your step and counts against the "
+            "workflow's growth bounds and approval; in a conversation it opens a new "
+            "conversation. A refusal names its reason (fork_limit_reached, "
+            "max_added_reached, not_approved).",
         )
     )
     return tools

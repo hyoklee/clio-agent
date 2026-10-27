@@ -187,6 +187,7 @@ def _new_assignment(
     invocation_id: str,
     handle: str | None = None,
     initial_details: AssignmentDetails | None = None,
+    fork_of: str | None = None,
 ) -> TaskSnapshot:
     startup_error = self.sessions.startup_retirement_error(sid)
     if startup_error:
@@ -264,6 +265,7 @@ def _new_assignment(
         activity="queued",
         details=details,
         resource_id=predecessor.resource_id if predecessor is not None else None,
+        fork_of=fork_of,
         supported_actions=(
             "observe",
             "wait",
@@ -531,6 +533,7 @@ async def spawn(
     start: bool = True,
     model: str = "",
     standing: bool = False,
+    fork_of: str | None = None,
 ) -> dict[str, Any]:
     """Persist the original assignment before enrichment or child inference starts.
 
@@ -605,6 +608,7 @@ async def spawn(
                 session = self.sessions.get(existing.owner.session_id)
                 if (
                     existing.description != assignment
+                    or existing.fork_of != fork_of
                     or existing.owner.human_id != caller.human_id
                     or session is None
                     or session.metadata.get("spawn_target", session.agent.get("id")) != agent_id
@@ -718,6 +722,7 @@ async def spawn(
                     evidence_assignment=handle if pins else None,
                     standing=standing,
                 ),
+                fork_of=fork_of,
             )
             if resource_id is not None:
                 if task.resource_id is not None and task.resource_id != resource_id:

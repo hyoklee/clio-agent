@@ -80,6 +80,9 @@ class FlowCall:
         self.together = ""  #: The first invocation of the gather this call ran in.
         #: Set by the workflow flow for an editor's call: the child gets the editor tools.
         self.editor: dict[str, Any] | None = None
+        #: Set by the workflow flow for a step's call (run, step): a fork of the step
+        #: counts against the run's growth bounds and approval.
+        self.workflow_step: dict[str, Any] | None = None
         self._task: asyncio.Future[CallResult] | None = None
 
     def _future(self) -> asyncio.Future[CallResult]:
@@ -663,7 +666,8 @@ class FlowContext:
         if outcome.get("next_cursor"):
             value = await self.app.state.task_history.io.run(self._full_result, handle)
         model = await self.app.state.task_history.io.run(child_model, self.app, handle)
-        return CallResult(value, handle=handle, target=name, kind=kind, model=model)
+        forks = [row for row in (waited.get("outcomes") or [])[1:] if row.get("fork_of")]
+        return CallResult(value, handle=handle, target=name, kind=kind, model=model, forks=forks)
 
     def _full_result(self, handle: str) -> Any:
         """A paged result's whole content (the wait already authorized reading it)."""

@@ -1039,6 +1039,7 @@ def test_shared_task_tools_declare_rows_without_legacy_default_controls() -> Non
     expected = {
         "spawn_agent_task": "Spawn agent task",
         "spawn_agents_parallel": "Spawn agents parallel",
+        "fork": "Fork",
         "query_tasks": "Query tasks",
         "observe_tasks": "Observe tasks",
         "wait_tasks": "Wait tasks",

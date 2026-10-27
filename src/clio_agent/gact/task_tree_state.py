@@ -90,6 +90,7 @@ class TreeState:
         self._resource_tasks: dict[str, set[str]] = {}
         self._assignments: dict[str, str] = {}
         self._children: dict[str, set[str]] = {}
+        self._forks: dict[str, set[str]] = {}
         self._recipient_grants: dict[str, set[str]] = {}
         self._subscriptions: dict[str, dict[str, TaskSubscription]] = {}
         self._workflow_bindings: dict[tuple[str, str], WorkflowCheckpoint] = {}

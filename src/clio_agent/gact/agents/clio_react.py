@@ -307,6 +307,9 @@ class _CallOutcome:
     value: Any
     is_error: bool
     escalate: BaseException | None = None
+    #: ``call:<session>/<call_id>``: the observer's record of this call, which the
+    #: model sees with the result and can cite (the science log's sources).
+    call_ref: str = ""
 
 
 class _Loop:
@@ -480,7 +483,8 @@ class _Loop:
         finally:
             _ctx.reset(thought_token)
         results = {c.id: (o.value, o.is_error) for c, o in zip(calls, outcomes, strict=True)}
-        self._record(text, thinking, calls, results, origin)
+        refs = {c.id: o.call_ref for c, o in zip(calls, outcomes, strict=True) if o.call_ref}
+        self._record(text, thinking, calls, results, origin, refs)
         for outcome in outcomes:
             if outcome.escalate is not None:
                 raise outcome.escalate
@@ -525,8 +529,18 @@ class _Loop:
         tool = self.agent.tools.get(call.name)
         if tool is None:
             return _CallOutcome(f"Unknown tool: {call.name}", True)
-        with injections.collect() as told:
-            outcome = self._run_tool(call, tool)
+        from clio_agent.gact.artifacts.observer_bridge import MODEL_CALL_SLOT  # noqa: PLC0415
+        from clio_agent.gact.science_log.lineage import call_reference  # noqa: PLC0415
+
+        slot: dict[str, str] = {}
+        slot_token = MODEL_CALL_SLOT.set(slot)
+        try:
+            with injections.collect() as told:
+                outcome = self._run_tool(call, tool)
+        finally:
+            MODEL_CALL_SLOT.reset(slot_token)
+        if slot.get("call_id"):
+            outcome.call_ref = call_reference(self.recorder.session, slot["call_id"])
         # What the harness told the agent about this call is shown to the user too.
         for source, text in told:
             emit_injection(source, text, call_id=call.id, agent_id=self.recorder.expert_id)
@@ -592,6 +606,7 @@ class _Loop:
         calls: list[ToolCallPart],
         results: dict[str, tuple[Any, bool]],
         origin: tuple[str, bool] = ("", True),
+        refs: dict[str, str] | None = None,
     ) -> None:
         self.recorder.step_done(
             self.step,
@@ -602,6 +617,7 @@ class _Loop:
             results=results,
             thinking_source=origin[0],
             thinking_complete=origin[1],
+            refs=refs,
         )
 
     def _stop(self, reason: str) -> dspy.Prediction:
