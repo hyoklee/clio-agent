@@ -44,7 +44,7 @@ export default defineConfig({
 			plugins: [starlightLinksValidator({
 				errorOnLocalLinks: false,
 				// Static native HTML endpoints are checked by the archive browser tests.
-				exclude: ['/conversations/ndp/alta/', '/conversations/ndp/tahoe/', '/conversations/ndp/konza/', '/conversations/ndp/endpoint/'],
+				exclude: ['/conversations/**'],
 			})],
 			sidebar: [
 				{
