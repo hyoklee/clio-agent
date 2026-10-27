@@ -30,6 +30,7 @@ from clio_agent.gact.agents.tool_instrumentation import (
     declare_structured_content,
     pop_declared_structured_content,
 )
+from clio_agent.gact.node_folders import node_confinement
 from clio_agent.gact.tool_observation import CollectedTaskResult, PresentedToolResult
 from clio_agent.tools.task_call_context import TASK_CALL, permission_snapshot
 
@@ -203,7 +204,7 @@ class BuiltinBoundary:
             arguments=arguments,
             workspace=workspace.root_path,
             permissions=permission_snapshot(self.app, sid),
-            confinement={},
+            confinement=node_confinement(self.app, sid),
             attribution={
                 "agent": captured.run(context.active_react_scope),
                 "read_only": bool(getattr(tool.func, READ_ONLY_ATTR, False)),
@@ -422,7 +423,8 @@ class BuiltinBoundary:
             invocation_id=call.invocation_id or uuid4().hex,
             workspace=workspace.root_path,
             permissions=permission_snapshot(self.app, sid),
-            confinement={},
+            # An isolated workflow node's shell writes only its folder (node_folders.py).
+            confinement=node_confinement(self.app, sid),
             attribution=attribution,
             execution_limits={},
             description=description,

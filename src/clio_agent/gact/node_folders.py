@@ -51,6 +51,13 @@ def session_node_folder(app: Any, session_id: str) -> str:
     return folder
 
 
+def node_confinement(app: Any, session_id: str) -> dict[str, Any]:
+    """A native submission's confinement: the session's node folder, when it has one."""
+
+    folder = session_node_folder(app, session_id)
+    return {"write_root": folder} if folder else {}
+
+
 def isolation_refusal() -> dict[str, Any] | None:
     """A typed refusal when the OS fence cannot narrow a node's writes, else ``None``."""
 
@@ -167,6 +174,7 @@ __all__ = [
     "NODE_FOLDER_KEY",
     "child_node_metadata",
     "isolation_refusal",
+    "node_confinement",
     "prompt_lines",
     "run_folder",
     "session_node_folder",
