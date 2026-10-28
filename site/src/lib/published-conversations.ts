@@ -55,8 +55,6 @@ export const conversationCollections: readonly ConversationCollection[] = [
     conversations: [
       { slug: 'wordle', file: 'Wordle-study-session.html', bytes: 48278832,
         sha256: '8d3a29db0ec2aa39fad261f78a017e520715c94317815ffb36ca4483c00d6b61' },
-      { slug: 'wordle-views', file: 'Wordle-study-views-session.html', bytes: 32895657,
-        sha256: '1d1db8bb3de7cccbd215968fa196c2ca82bd0700df90640d2e547a21f2a69e0d' },
     ],
   },
 ];

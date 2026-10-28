@@ -8,6 +8,7 @@ import { LinkCard } from '@astrojs/starlight/components';
 import Capture from '../../../../components/overview/Capture';
 import { captureImage } from '../../../../lib/captures';
 import strategiesView from '../../../../assets/tutorials/branched-study/study-view-strategies.png';
+import boardsView from '../../../../assets/tutorials/branched-study/study-view-boards.png';
 import studyGraph from '../../../../assets/tutorials/branched-study/study-graph.png';
 import observations from '../../../../assets/tutorials/branched-study/observations-inspected.png';
 
@@ -66,11 +67,17 @@ Nothing about them is fixed by the plugin: in a later run of the same request th
 agent built a seed-by-seed comparison of its three strategies over the study's
 measurements, looked at its own chart and revised it. Asked for a way to look at
 the games themselves, it added a second view with a seed picker that replays one
-game's boards. The Views mode shows one view at a time, switched by title.
+game's boards. The Views mode shows one view at a time, switched by title. The
+session you can open below ran before views existed, so the captures here come from
+that later run.
 
 <Capture client:visible image={await captureImage(strategiesView)}
   alt="Science log tab in Views mode: a chart of guesses per game for strategies A, B and C over the same ten seeds, lines joining each seed, with the mean of each strategy marked"
   caption="A view the agent designed: guesses per game for each strategy on the same ten seeds, read live from the study's measurements." />
+
+<Capture client:visible image={await captureImage(boardsView)}
+  alt="Science log tab in Views mode with two view titles, Guesses per game by strategy and Game boards by seed; the second is shown, with a seed picker set to 5 and a Wordle board of colored guesses"
+  caption="The second view, added when asked for a look at the games: pick a seed to replay its boards. The agent's own chart has flaws it did not catch: the heading reads undefined, and the three strategies' boards are drawn on top of each other." />
 
 ## Check a claim
 
@@ -86,8 +93,6 @@ in the transcript.
 ## Open the session
 
 <LinkCard title="Open the Wordle study" description="The recorded session: the conversation, the workflow and the Science log with every branch. 48 MB." href="/conversations/studies/wordle/" />
-
-<LinkCard title="Open the run with views" description="A later run of the same request, with the two views its agent attached to the study. 33 MB." href="/conversations/studies/wordle-views/" />
 
 The page is an interactive archive of the actual session. Opening it does not run
 the agent or contact any service. The session ran with tool approvals turned off
