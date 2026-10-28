@@ -80,6 +80,19 @@ A running step can fork itself to try another direction, such as a competing hyp
 
 Outside workflows, **Forks per task** under Settings → **Execution & history** → **Subagents** limits how many forks one task, or one conversation, may have. Zero means unlimited.
 
+### Give each step its own folder
+
+When steps must not overwrite each other's files, the agent can start a workflow
+isolated. The run gets its own folder, `runs/<run-id>/` in the workspace, and each
+step writes only in its subfolder, such as `runs/<run-id>/b/`. A fork starts with a
+copy of its step's folder, in `b~1/`, and a subagent a step hands work to writes
+in a folder nested under the step's. Steps can still read the rest of the workspace,
+and a merge step reads the folders of the steps it waited on.
+
+Isolation needs the operating system's write fence. Where the fence is not active,
+an isolated run is refused at start with that reason rather than run unconfined;
+[Permissions](/docs/permissions/) explains the fence.
+
 ## Follow a run
 
 A flow appears as a card in the conversation, with its name, its state, and a count of its steps. The diagram reads left to right:
