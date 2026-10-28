@@ -208,6 +208,7 @@ class ResidentLedgerSet(MutableMapping[str, list["Message"]]):
         is_active: Optional[Callable[[str], bool]] = None,
         audit: Optional[Callable[[dict[str, Any]], None]] = None,
         materialize: Optional[Callable[[str], Optional[list["Message"]]]] = None,
+        before_rehydrate: Optional[Callable[[str], object]] = None,
         on_rehydrate: Optional[Callable[[str, list["Message"]], object]] = None,
         on_evict: Optional[Callable[[str], object]] = None,
         clock: Callable[[], float] = monotonic,
@@ -223,6 +224,8 @@ class ResidentLedgerSet(MutableMapping[str, list["Message"]]):
             materialize: The rehydration source: a session id to its ``list[Message]``
                 (``None`` = never persisted, ``[]`` = empty, ``LedgerReadError`` =
                 propagate). Defaults to ``store.load_session``.
+            before_rehydrate: Finish lifecycle writes before capturing the durable
+                transcript; called outside this set's lock, only for a cache miss.
             on_rehydrate: Once-per-materialization hook fired AFTER a cache-miss install
                 (the lazy stale-handoff reconcile sweep); never on a cache hit.
             on_evict: Hook fired with a session id AFTER this set evicts it (capacity or
@@ -237,6 +240,7 @@ class ResidentLedgerSet(MutableMapping[str, list["Message"]]):
         self._is_active = is_active or (lambda _sid: False)
         self._audit = audit or (lambda _payload: None)
         self._materialize = materialize or store.load_session
+        self._before_rehydrate = before_rehydrate
         self._on_rehydrate = on_rehydrate
         self._on_evict = on_evict
         self._clock = clock
@@ -263,6 +267,8 @@ class ResidentLedgerSet(MutableMapping[str, list["Message"]]):
                 self._resident.move_to_end(sid)
                 entry.last_access = self._clock()
                 return entry.messages
+        if self._before_rehydrate is not None:
+            self._before_rehydrate(sid)
         try:
             rows = self._materialize(sid)
         except LedgerReadError as exc:
@@ -708,6 +714,9 @@ def build_resident_ledger_set(app: "FastAPI") -> ResidentLedgerSet:
         is_active=lambda sid: _session_is_active(app, sid),
         audit=lambda payload: _record_resident_audit(app, payload),
         materialize=lambda sid: materialize_ledger(app, sid),
+        # Settle before capturing atoms: background recovery may otherwise retire
+        # its marker between the read and install, leaving an old user-only copy.
+        before_rehydrate=lambda sid: settle_restart_interruption(app, sid),
         # Opening a conversation a restart interrupted closes its transcript first.
         on_rehydrate=lambda sid, rows: settle_restart_interruption(app, sid, rows),
         on_evict=lambda sid: forget_evicted_session(

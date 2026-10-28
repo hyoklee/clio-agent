@@ -263,6 +263,34 @@ def test_off_restart_reconciles_an_interrupted_session_from_the_atoms(
 
 
 @pytest.mark.usefixtures("file_off")
+def test_off_restart_settles_before_capturing_the_materialized_snapshot(
+    tmp_path: Path, core_store: _MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A background close between a durable read and install cannot cache stale rows."""
+    first = _app(tmp_path, core_store, "first")
+    sid = first.state.sessions.create(workspace_id="ws_default", title="crashed").id
+    mint_message_part_atoms(first.state.arc, sid, _message(sid, "msg_user_crash", "still there?"))
+    first.state.sessions.update(sid, status="running", message_count=1)
+    second = _app(tmp_path, core_store, "second")
+    resident = second.state.messages
+    materialize = resident._materialize
+
+    def read_then_finish_recovery(session_id: str) -> Any:
+        rows = materialize(session_id)
+        # Force the background lane's exact interleaving without depending on
+        # thread scheduling: it closes and drops its ledger before install.
+        second.state.restart_interruptions.settle_quietly(session_id)
+        return rows
+
+    monkeypatch.setattr(resident, "_materialize", read_then_finish_recovery)
+    rows = resident[sid]
+    assert [row.role for row in rows] == ["user", "assistant"]
+    assert rows[1].error_info.error == "server_restart_interrupted"
+    assert second.state.sessions.get(sid).message_count == 2
+    _no_message_files(tmp_path)
+
+
+@pytest.mark.usefixtures("file_off")
 def test_off_a_busy_lane_waits_off_the_loop(tmp_path: Path, core_store: _MemoryStore) -> None:
     """Off the loop the cold read waits for the writer; never serves an empty lane."""
 

@@ -1861,11 +1861,11 @@ def test_put_lm_provider_reuses_loaded_lm_studio_model(tmp_path: Path, monkeypat
                 "context_length": 32768,
             },
         )
-
-    assert resp.status_code == 200, resp.text
-    assert captured["post_called"] is False
-    assert app.state.lm_config["context_length"] == 32768
-    assert app.state.lm_studio_owned_instance is None
+        assert resp.status_code == 200, resp.text
+        assert _wait_lm_provider_ready(c)["state"] == "ready"
+        assert captured["post_called"] is False
+        assert app.state.lm_config["context_length"] == 32768
+        assert app.state.lm_studio_owned_instance is None
 
 
 def test_lifespan_unloads_clio_owned_lm_studio_instance(tmp_path: Path, monkeypatch) -> None:
