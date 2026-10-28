@@ -38,6 +38,19 @@ $TuiErr = $null
 $OfficeProc = $null
 $OfficeLog = $null
 $OfficeErr = $null
+$BytecodeProc = $null
+$BytecodeLog = $null
+$BytecodeErr = $null
+function Stop-BytecodePrepare {
+    if ($script:BytecodeProc -and -not $script:BytecodeProc.HasExited) {
+        $current = Get-Process -Id $script:BytecodeProc.Id -ErrorAction SilentlyContinue
+        if ($current -and $current.StartTime -eq $script:BytecodeProc.StartTime) {
+            & taskkill /T /F /PID $script:BytecodeProc.Id *> $null
+            $script:BytecodeProc.WaitForExit()
+        }
+    }
+    $script:BytecodeProc = $null
+}
 function Stop-OfficePrepare {
     if ($script:OfficeProc -and -not $script:OfficeProc.HasExited) {
         $current = Get-Process -Id $script:OfficeProc.Id -ErrorAction SilentlyContinue
@@ -55,9 +68,9 @@ function Stop-TuiBuild {
     }
     $script:TuiProc = $null
 }
-function Die  ($m) { Stop-OfficePrepare; Stop-TuiBuild; Write-Host "xx $m"  -ForegroundColor Red; exit 1 }
+function Die  ($m) { Stop-BytecodePrepare; Stop-OfficePrepare; Stop-TuiBuild; Write-Host "xx $m"  -ForegroundColor Red; exit 1 }
 # DieWith CODE MESSAGE: Die, keeping the failed command's exit status.
-function DieWith ([int]$code, $m) { Stop-OfficePrepare; Stop-TuiBuild; Write-Host "xx $m" -ForegroundColor Red; exit $code }
+function DieWith ([int]$code, $m) { Stop-BytecodePrepare; Stop-OfficePrepare; Stop-TuiBuild; Write-Host "xx $m" -ForegroundColor Red; exit $code }
 function Have ($cmd) { return $null -ne (Get-Command $cmd -ErrorAction SilentlyContinue) }
 function RunNative($cmd, [string[]]$cmdArgs) {
     & $cmd @cmdArgs
@@ -396,6 +409,33 @@ function Complete-OfficePrepare {
     Remove-Item -LiteralPath $script:OfficeLog, $script:OfficeErr -Force -ErrorAction SilentlyContinue
 }
 
+function Start-BytecodePrepare {
+    $stem = Join-Path ([IO.Path]::GetTempPath()) ("clio-bytecode-" + [Guid]::NewGuid().ToString('N'))
+    $script:BytecodeLog = "$stem.log"
+    $script:BytecodeErr = "$stem.err.log"
+    $compileArgs = '-B -m compileall -q -j 2 "{0}" "{1}"' -f (Join-Path $Src 'src'), (Join-Path $Venv 'Lib/site-packages')
+    Say "Compiling installed bytecode beside final setup (log: $($script:BytecodeLog))"
+    $script:BytecodeProc = Start-Process -FilePath $VenvPython -ArgumentList $compileArgs `
+        -WorkingDirectory $Src -WindowStyle Hidden -PassThru `
+        -RedirectStandardOutput $script:BytecodeLog -RedirectStandardError $script:BytecodeErr
+    $null = $script:BytecodeProc.Handle
+}
+
+function Complete-BytecodePrepare {
+    if (-not $script:BytecodeProc) { return }
+    $proc = $script:BytecodeProc
+    $proc.WaitForExit()
+    $code = $proc.ExitCode
+    $seconds = [Math]::Round(($proc.ExitTime - $proc.StartTime).TotalSeconds, 1)
+    $script:BytecodeProc = $null
+    if ($code -ne 0) {
+        Get-Content -LiteralPath $script:BytecodeLog, $script:BytecodeErr -Tail 80 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+        DieWith $code "Bytecode preparation failed (logs: $($script:BytecodeLog), $($script:BytecodeErr)); installation was not marked ready."
+    }
+    Say "Installed bytecode prepared in $seconds s"
+    Remove-Item -LiteralPath $script:BytecodeLog, $script:BytecodeErr -Force -ErrorAction SilentlyContinue
+}
+
 function Complete-TuiBuild {
     if (-not $script:TuiProc) { return }
     Say 'Waiting for the TUI build'
@@ -465,9 +505,6 @@ if ($OptSource) {
         $py = PythonOf (Join-Path $Src '.python-version')
         $syncArgs = @('sync', '--locked', '--python', $py, '--extra', 'argonne', '--extra', 'flowcept')
     }
-    # Compile dependency bytecode during installation, alongside Office preparation.
-    # A first server start should not parse every installed SDK module from source.
-    $syncArgs += '--compile-bytecode'
     # The TUI builds from the source now, beside the slow stages below.
     Start-OfficePrepare
     Start-TuiBuild
@@ -562,6 +599,7 @@ print(max(v for _, v in found) if sys.argv[1] == "stable" else max(found)[1])
 
 $InstalledClioVersion = $null
 $VenvPython = Join-Path $Venv 'Scripts\python.exe'
+if ($OptSource) { Start-BytecodePrepare }
 if (Test-Path $VenvPython) {
     try {
         $InstalledClioVersion = (& $VenvPython -c "from importlib.metadata import version; print(version('clio-agent'))").Trim()
@@ -736,6 +774,7 @@ if ($OptSource) {
 }
 
 # ---------- finishing notes -------------------------------------------
+Complete-BytecodePrepare
 Say "Done."
 $clioSrc = if ($OptSource) { "source: $Src" } else { "PyPI: $ClioVersion" }
 $gactSrc = if ($GactRef) { "source: $GactRef" } elseif ($OptSource) { "built from the checkout's submodule" } else { "release: $tag" }
@@ -752,6 +791,7 @@ Write-Host "  3. Manage the server: clio status | clio restart | clio logs"
 Write-Host "  4. Tab-completion:    clio completion powershell >> `$PROFILE"
 Write-Host "  5. Uninstall:         clio uninstall   (add -Purge to drop config)"
 } finally {
+    Stop-BytecodePrepare
     Stop-OfficePrepare
     Stop-TuiBuild
 }
