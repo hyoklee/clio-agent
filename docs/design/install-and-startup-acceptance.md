@@ -317,6 +317,77 @@ retain the intermediate failures. Defender remained enabled; a sample during the
 `7c866113` run reported aggregate process CPU 486% (about 4.86 logical cores),
 without attributing an exact amount of wall time to scanning.
 
+### Stable 0.9.5 release cohort (2026-10-28)
+
+The final dependency cohort was measured at clio-agent `6a8cb736d`, integrated
+unchanged into develop by #1896 at `67009d816`. The bundled desktop uses released
+gact-tui `e025d306a` (v0.11.3), Kit 2.11.1, Schemas 0.6.0 and Marketplace v0.7.0
+(`458d7da9`). This is a new measurement; it does not relabel the earlier passing
+repair matrix. Machine specifications are the same Windows host reported above.
+
+| | Cold | Repeat | Limit | Pass |
+|---|---|---|---|---|
+| Install | 203.082 s | 27.534 s | 180 s | cold accepted exception / repeat yes |
+| Agent | 25.095 s | 19.615 s | 30 s | yes |
+| Desktop | 40.1 s | 29.3 s | 60 s | yes |
+| *Desktop package install (`/S`)* | *176.033 s, exit 0* | *21.787 s, exit 0* | | *yes* |
+
+The user explicitly accepted the approximately 200 s cold installation for this
+release, with a future Rust installer deferred. The original 180 s limit is
+retained in the table: this is an accepted exception, not a passing measurement.
+An earlier attempt on the same cohort took 222.496 s cold and 41.757 s repeat;
+that result is also retained. Installation completed successfully in every case.
+
+Cold source installation means a new empty `D:\cw\fp9` profile: HOME, USERPROFILE,
+LOCALAPPDATA, APPDATA, CLIO_BIN_DIR and uv/Go/npm caches were private, with CODEX_HOME
+matching HOME/.codex. The copied standalone installer ran `-Dev -Source` with the
+explicit measured preparation-branch ref; repeat reused the same profile and ref.
+The product tree is identical to its subsequent develop merge. OS file and
+Defender caches were not reset. The quiet preflight observed three five-second
+samples at 8.7–16.0% total CPU, with Defender nearly idle and no encoder. No
+independent owned build or test ran during any acceptance timer.
+
+Defender remained enabled, without exclusions. During the final cold install it
+averaged about 291% aggregate process CPU (2.9 logical cores); no encoder was
+observed. This measures scanning activity, not an exact wall-time attribution.
+Dependency preparation took 103.6 s and installation 5.19 s. Managed tools prepared
+in 163.5 s, startup bytecode in 45.5 s, and the TUI's actual build lifetime was 89 s.
+These stages overlapped and must not be added together. Flowcept remains an
+optional package extra explicitly selected by the existing installer.
+
+The unchanged default workload generated `D:\cw\r5` locally on Windows, with 934
+conversations and 109 open records. No store was copied. The installed fp9 agent
+migrated it before measurement (8.467 s command time). Its bounded list returned
+30 of 934 in 33/6 ms; opening the newest message page took 79/10 ms. Both servers
+reached readiness `ready` and exited gracefully in 6.563/5.715 s. Controller-owned
+native services stopped through their controller; no forced cleanup or survivors.
+No model provider was configured for this store or any of these six measurements.
+
+The local unsigned NSIS candidate is now version **0.9.5**, installed into the new
+`D:\cw\d095` target with the private `D:\cw\sp` profile. Its SHA-256 is
+`29f352addc98e861a80a6ed8ab6437c3a7064f25899f8777214047f70e699b3b`.
+The portable runtime passed relocation, real Core initialization and a 24.85 s
+backend smoke before packaging. Its bundled Codex is 0.162.1; native MXC protection
+remains enabled and is checked before backend startup. No machine-installed Codex
+or legacy administrator sandbox setup was substituted.
+
+Desktop cold means the first GUI launch after successful silent setup on the
+generated/migrated r5 store; repeat reuses that installation, profile and store.
+Tauri-driver used matching Edge WebDriver/WebView2 156.0.4314.50. Both launches
+verified readiness `ready`, 30 of 934 records and eight visible conversation links.
+The app remained open until package validation succeeded: the managed package
+step took 122.585/1.693 s, independently of the usable-workspace time. All observed
+application descendants retired 13.8/11.1 s after Quit, without forced application
+cleanup; the driver helpers also retired. The agent picker still showed
+"Loading agents…", the existing issue tracked on #1887.
+
+[Cold workspace](evidence/windows-stable-095-2026-10-28/stable-desktop-cold-04-before-quit.png)
+and [repeat workspace](evidence/windows-stable-095-2026-10-28/stable-desktop-repeat-04-before-quit.png)
+retain the actual 932 × 1076 viewport. The cold AppLog API probe was too early;
+the fallback resolved the actual current private log. Repeat resolved it through
+the running app. [Bounded measurements and artifact identities](evidence/windows-stable-095-2026-10-28/matrix.json)
+retain both timings, backend checks, cleanup results and screenshot hashes.
+
 ## The reference store
 
 The agent and desktop rows run on a generated long-lived store, not an empty one:
