@@ -264,32 +264,56 @@ class ScopeCache:
 
     # ---- release -------------------------------------------------------
 
+    @contextmanager
+    def _locked_scopes(self, session_id: str | None) -> Iterator[list[tuple[str, str]]]:
+        """Lock a stable scope set without holding the registry while waiting.
+
+        Lane writers can look up another scope while holding their base lock.
+        Release therefore waits for scope locks outside the registry, then
+        rechecks membership before dropping cache state. A concurrent new scope
+        retries the snapshot. The yielded body must perform only cache updates.
+        """
+        while True:
+            with self._registry_lock:
+                selected = sorted(
+                    (key, lock)
+                    for key, lock in self._scope_locks.items()
+                    if session_id is None or key[0] == session_id
+                )
+            held: list[threading.RLock] = []
+            try:
+                for _key, lock in selected:
+                    lock.acquire()
+                    held.append(lock)
+                with self._registry_lock:
+                    keys = sorted(
+                        key
+                        for key in self._scope_locks
+                        if session_id is None or key[0] == session_id
+                    )
+                    if keys != [key for key, _lock in selected]:
+                        continue
+                    yield keys
+                    return
+            finally:
+                for lock in reversed(held):
+                    lock.release()
+
     def release(self, session_id: str) -> int:
         """Drop a session's in-memory scopes (write-through, nothing lost); returns how
         many were released.
 
-        Holds the registry lock (freezing the lock set) AND each affected scope lock, so
-        it never races a per-scope op. No deadlock: a per-scope op touches the registry
-        only at its single ``_lock_for`` entry, before taking its scope lock. The keys
-        come from the lock registry, a superset of the loaded keys (every scope is locked
-        before it is loaded), never from iterating ``_scopes`` while a cold-load on
-        another session inserts into it."""
-        with self._registry_lock:
-            lock_keys = sorted(k for k in self._scope_locks if k[0] == session_id)
-            held = [self._scope_locks[k] for k in lock_keys]
-            for lk in held:
-                lk.acquire()
-            try:
-                released = 0
-                for k in lock_keys:
-                    if self._scopes.pop(k, None) is not None:
-                        released += 1
-                    self._loaded.discard(k)
-                    self._index.drop_scope(k[0], k[1])
-                self._invocation_counts.pop(session_id, None)
-            finally:
-                for lk in held:
-                    lk.release()
+        The stable lock registry is a superset of loaded scopes. Scope locks
+        serialize the drop with reads/writes; the registry is never held while
+        waiting for them, so a nested lane lookup can finish."""
+        with self._locked_scopes(session_id) as lock_keys:
+            released = 0
+            for k in lock_keys:
+                if self._scopes.pop(k, None) is not None:
+                    released += 1
+                self._loaded.discard(k)
+                self._index.drop_scope(k[0], k[1])
+            self._invocation_counts.pop(session_id, None)
         if self._residency is not None:
             self._residency.session_released(session_id)
         logger.info("segments: release session=%s scopes=%d", session_id, released)
@@ -297,19 +321,12 @@ class ScopeCache:
 
     def clear(self) -> None:
         """Drop ALL in-memory scope state (store untouched); same locking as release."""
-        with self._registry_lock:
-            held = [self._scope_locks[k] for k in sorted(self._scope_locks)]
-            sessions = sorted({k[0] for k in self._scope_locks})
-            for lk in held:
-                lk.acquire()
-            try:
-                self._scopes.clear()
-                self._loaded.clear()
-                self._index.clear()
-                self._invocation_counts.clear()
-            finally:
-                for lk in held:
-                    lk.release()
+        with self._locked_scopes(None) as lock_keys:
+            sessions = sorted({key[0] for key in lock_keys})
+            self._scopes.clear()
+            self._loaded.clear()
+            self._index.clear()
+            self._invocation_counts.clear()
         if self._residency is not None:
             for session_id in sessions:
                 self._residency.session_released(session_id)
