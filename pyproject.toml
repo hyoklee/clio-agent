@@ -69,7 +69,7 @@ dependencies = [
     "fastmcp-tasks==4.1.0",
     "mcp==2.0.0",  # reviewed native Tasks wire/client contract
     "pydocket==0.26.2",  # fastmcp-tasks 4.1 requires >=0.26; native execution owner
-    "clio-schemas @ git+https://github.com/iowarp/clio-schemas@23542ea868bc4e4daa9e58405849a32443708d1d",
+    "clio-schemas @ git+https://github.com/iowarp/clio-schemas@ac1be7bc4b814228bbe3222cd80fb95251ec7024",
     "pydantic>=2.12,<2.14",
     # A2UI catalog validation: official catalog.json files are validated at runtime
     # with Draft 2020-12 (docs/design/a2ui-compat-campaign-2026-09.md, S2).
