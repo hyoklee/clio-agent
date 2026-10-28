@@ -157,6 +157,78 @@ and a fresh desktop package install failed its Office check.
 are retained. Slow or broken product findings are tracked in
 [#1887](https://github.com/iowarp/clio-agent/issues/1887#issuecomment-6461556314).
 
+### Authorized Windows repairs and remeasurement
+
+The Windows product repairs were subsequently authorized. They remain on
+`codex/windows-startup-acceptance` in clio-agent PR #1889 and gact-tui PR #697,
+based on the develop heads above. The baseline table remains a record of develop;
+candidate measurements must not be presented as already merged behavior.
+
+The source installer now starts a small lock-resolved worker that prepares the
+real Office, Python, Node and GitHub package caches alongside the main dependency
+sync. It joins that worker and still verifies packages and protected execution
+before saving the installation receipt. Failure and interruption retire the worker.
+The same startup-graph precompiler used by the bundled runtime prepares only the
+modules startup actually loads, alongside migration and final setup. Its bytecode
+still validates the source hash. The TUI duration now uses the compiler process's
+actual exit time.
+
+Office uses an isolated disposable profile. On Windows, the checksum-pinned MSI
+is read as a database and its embedded CAB decompressed directly into validated
+private application/font paths, without MSI registration actions. The longer-path
+fallback expands into staging and moves the files; no fixed Windows buffer is
+truncated. All application languages and bundled fonts are retained. A diagnostic
+of direct extraction took 33.328 s for 19,467 files; its real version probe and
+HTML-to-PDF conversion passed, with 117 bundled TrueType fonts. This diagnostic
+does not replace the end-to-end install timing.
+
+The desktop now checks real Windows protection before backend startup, then checks
+document packages alongside the backend. Old runtimes without the new
+protection-only option retain the full blocking check. Protection failures remain
+failures; startup does not request elevation. The Office check retains its 30 s
+timeout.
+
+Intermediate source-install results, each with another empty profile/cache set:
+
+| Candidate | Cold | Outcome |
+|---|---|---|
+| `74fea6f3` | 235.860 s | exit 0; exceeds 180 s; Office overlap alone was insufficient |
+| `4a949ff9` | 187.036 s | exit 1; minimal worker's uv lookup eagerly imported the infrastructure stack |
+| `7c866113` | 194.434 s | exit 0; full dependency bytecode compilation took 30.40 s before migration |
+| `3b86557f` | 210.147 s | exit 0; parallel full-tree compilation took 92.9 s and did not improve installation |
+| `d9a476623` | 194.277 s | exit 0; another full render was discovered on the machine afterwards; no continuous CPU sample for this run |
+
+The infrastructure import was repaired in `7c866113`: platform helpers no longer
+import service dependencies just to locate CLIO's own uv; public infrastructure
+class exports keep their identity. A live minimal-worker retry prepared all managed
+packages. Focused Windows validation passed 103 tests plus a UTF-16 path-limit
+check; changed-module Ruff/mypy passed. The later startup-graph change passed 48
+worker/policy/precompiler checks, and a real installed-environment diagnostic
+prepared 2,642 modules in 25.773 s. This diagnostic used an already installed
+environment and is not a cold install number.
+
+The same `d9a476623` candidate was remeasured with another empty profile/cache
+set after that render finished. Preflight total CPU was 22%; continuous telemetry
+during installation observed no ffmpeg process. OS/Defender caches were not
+dropped, and Defender stayed enabled. Cold mean total CPU was 68.0% including
+the installer's work, with a 100% peak. No owned descendants survived either run.
+The earlier elapsed measurements are retained; their CPU load was not recorded
+continuously, so no exact slowdown is attributed to the competing render.
+
+| | Cold | Repeat | Limit | Pass |
+|---|---|---|---|---|
+| Install (candidate `d9a476623`) | 162.103 s | 28.349 s | 180 s | yes |
+| Agent | pending | pending | 30 s | pending |
+| Desktop | pending | pending | 60 s | pending |
+
+The source-install row passes. Windows acceptance remains incomplete until the
+installed-agent, rebuilt bundled-desktop and fresh bundled-setup checks pass.
+
+[Repair measurements and diagnostics](evidence/windows-startup-repair-2026-10-28)
+retain the intermediate failures. Defender remained enabled; a sample during the
+`7c866113` run reported aggregate process CPU 486% (about 4.86 logical cores),
+without attributing an exact amount of wall time to scanning.
+
 ## The reference store
 
 The agent and desktop rows run on a generated long-lived store, not an empty one:
