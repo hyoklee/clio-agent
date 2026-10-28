@@ -15,9 +15,11 @@ from pathlib import Path
 import pytest
 
 from tests.test_scripts.installer_shims import (
+    RELEASE_STOP,
     ROOT,
     STOP,
     run_installer,
+    shell_path,
     write_release,
     write_releases,
 )
@@ -51,7 +53,8 @@ def _call(calls: list[str], prefix: str) -> str:
 def test_default_installs_the_latest_stable_release_locked_by_its_tag(tmp_path: Path) -> None:
     _release_fixtures(tmp_path)
     result, calls = run_installer(tmp_path)
-    assert result.returncode == STOP, result.stdout + result.stderr
+    assert result.returncode == RELEASE_STOP, result.stdout + result.stderr
+    assert "could not install clio-agent" in result.stderr
     assert "--python 3.13" in _call(calls, "uv venv")  # 0.9.4.24 predates .python-version
     install = _call(calls, "uv pip install")
     assert "clio-agent[argonne,flowcept]==0.9.4.24" in install
@@ -62,7 +65,8 @@ def test_default_installs_the_latest_stable_release_locked_by_its_tag(tmp_path: 
 def test_dev_installs_the_latest_release_including_pre_releases(tmp_path: Path) -> None:
     _release_fixtures(tmp_path)
     result, calls = run_installer(tmp_path, "--dev")
-    assert result.returncode == STOP, result.stdout + result.stderr
+    assert result.returncode == RELEASE_STOP, result.stdout + result.stderr
+    assert "could not install clio-agent" in result.stderr
     assert "--python 3.14" in _call(calls, "uv venv")
     assert "clio-agent[argonne,flowcept]==0.9.5b8" in _call(calls, "uv pip install")
     assert "curl https://raw.githubusercontent.com/iowarp/clio-agent/v0.9.5-beta.8/uv.lock" in calls
@@ -77,7 +81,8 @@ def test_a_pinned_release_installs_exactly_that_version(
 ) -> None:
     _release_fixtures(tmp_path)
     result, calls = run_installer(tmp_path, *args, env=env)
-    assert result.returncode == STOP, result.stdout + result.stderr
+    assert result.returncode == RELEASE_STOP, result.stdout + result.stderr
+    assert "could not install clio-agent" in result.stderr
     assert "clio-agent[argonne,flowcept]==0.9.5b2" in _call(calls, "uv pip install")
     assert not any("api.github.com" in call for call in calls), "a pinned version is not resolved"
 
@@ -96,7 +101,7 @@ def test_source_from_a_stream_clones_the_branch_and_installs_its_lock(
     assert f"--branch {branch}" in _call(calls, "git clone")
     sync = _call(calls, "uv sync")
     assert "--locked" in sync and "--python 3.14" in sync
-    assert sync.endswith(f"(in {tmp_path / 'prefix' / 'clio-agent'})")
+    assert sync.endswith(f"(in {shell_path(tmp_path / 'prefix' / 'clio-agent')})")
 
 
 def test_source_ref_pins_a_commit(tmp_path: Path) -> None:
@@ -121,11 +126,17 @@ def test_source_from_a_checkout_installs_it_in_place(tmp_path: Path) -> None:
     result, calls = run_installer(tmp_path, "--source", script=checkout / "install/install.sh")
     assert result.returncode == STOP, result.stdout + result.stderr
     assert not any(call.startswith("git clone") for call in calls)
-    assert f"git -C {checkout} submodule update --init --recursive" in calls
+    assert f"git -C {shell_path(checkout)} submodule update --init --recursive" in calls
     sync = _call(calls, "uv sync")
-    assert sync.endswith(f"(in {checkout})") and "--python 3.14" in sync
+    assert sync.endswith(f"(in {shell_path(checkout)})") and "--python 3.14" in sync
     link = tmp_path / "prefix" / "clio-agent"
-    assert link.is_symlink() and link.resolve() == checkout.resolve()
+    assert f"ln -sfn {shell_path(checkout)} {shell_path(link)}" in calls
+    if os.name != "nt":
+        assert link.is_symlink() and link.resolve() == checkout.resolve()
+    else:
+        # Git Bash can emulate ln with a directory copy; Windows installs use
+        # install.ps1. The Bash installer must still request the exact link.
+        assert link.is_dir()
 
 
 @pytest.mark.parametrize(

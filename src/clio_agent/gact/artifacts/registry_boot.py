@@ -144,7 +144,11 @@ def rebuild_registry_at_boot(app: "FastAPI") -> ArtifactRegistry:
         from clio_agent.gact import store_migrations  # noqa: PLC0415 - import cycle
 
         if store_migrations.ensure_at_boot(app, "artifact_index"):
-            return cast(ArtifactRegistry, app.state.artifact_registry)
+            migrated_registry = getattr(app.state, "artifact_registry", None)
+            if migrated_registry is not None:
+                return cast(ArtifactRegistry, migrated_registry)
+            # A fresh store only writes the empty migration marker; no fold
+            # creates an in-process registry. Open its new record backend below.
         return rebuild_registry_at_boot(app)  # migrated meanwhile: open the records
     return _fold_registry(app, None)
 
@@ -161,7 +165,7 @@ def artifact_index_owed(app: "FastAPI") -> bool:
         return False
     try:
         return registry_migration.read_marker(store) is None
-    except (ClioCoreRuntimeLostError, *registry_store.STORE_ERRORS):
+    except registry_store.STORE_ERRORS:
         return False
 
 

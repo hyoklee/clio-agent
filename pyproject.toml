@@ -244,6 +244,19 @@ all = [
     "clio-agent[optimizers,adios,argonne,claude-code,desktop,flowcept,dev]",
 ]
 
+[dependency-groups]
+# The Windows source installer prepares Office alongside the main environment.
+# Resolve the independent managed-tool worker from the same lock, without the agent.
+install-bootstrap = [
+    "filelock>=3.12.0",
+    "httpx>=0.28.1",
+    "packaging>=23.0",
+    "psutil>=5.9.0",  # bounded subprocess-tree cleanup if first Office startup times out
+    "pyyaml>=6.0.3,<7",
+    "truststore==0.10.4",
+    "zstandard==0.25.0",
+]
+
 [project.urls]
 Homepage = "https://github.com/iowarp/clio-agent"
 Documentation = "https://iowarp.github.io/clio-agent/"

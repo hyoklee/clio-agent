@@ -9,12 +9,16 @@ import apple from '@/assets/platform-icons/apple.svg';
 import linux from '@/assets/platform-icons/linux.svg';
 import windows from '@/assets/platform-icons/windows.svg';
 
+interface Props {
+	id?: string;
+}
+const { id = 'download' } = Astro.props;
 const icons: PlatformIcons = { windows: windows.src, macos: apple.src, linux: linux.src };
 ---
 
-<section class="download not-content" aria-labelledby="download">
+<section class="download not-content" aria-labelledby={id}>
 	<SectionHeading
-		id="download"
+		id={id}
 		label="Download"
 		title="Get CLIO"
 		emphasis="stable."

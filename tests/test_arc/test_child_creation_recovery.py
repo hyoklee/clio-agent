@@ -41,7 +41,10 @@ async def test_spawn_retry_reuses_the_child_address_without_replaying_creation_h
         nonlocal fired
         if fault == "session_flush" and not fired:
             fired = True
-            raise OSError("session projection flush unavailable")
+            # Lose the reply after the real record was committed. Staged writes
+            # do not publish a session when the put itself never happened.
+            original_persist(session)
+            raise OSError("session projection flush reply lost after confirmation")
         original_persist(session)
 
     def record(snapshot: TaskSnapshot, **kwargs: Any) -> None:
@@ -76,7 +79,7 @@ async def test_spawn_retry_reuses_the_child_address_without_replaying_creation_h
         def recover() -> None:
             owner.history.restore()
             if reconstruct:
-                app.state.sessions = SessionStore(path=tmp_path / "sessions.json")
+                app.state.sessions = SessionStore(path=tmp_path / "sessions.json", store=arc._store)
                 owner.sessions = app.state.sessions
                 install_session_lifecycle_observer(app)
 
@@ -229,7 +232,7 @@ async def test_unconfirmed_hook_effects_are_not_replayed_by_session_reuse(
         def recover() -> None:
             owner.history.restore()
             if reconstruct:
-                app.state.sessions = SessionStore(path=tmp_path / "sessions.json")
+                app.state.sessions = SessionStore(path=tmp_path / "sessions.json", store=arc._store)
                 owner.sessions = app.state.sessions
                 install_session_lifecycle_observer(app)
 

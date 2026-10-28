@@ -28,7 +28,7 @@ def test_inconclusive_probe_is_typed_not_dead(
 ) -> None:
     """Resource/permission failures and timeouts are not refused connections."""
     error = OSError(error_number, "local failure") if error_number else TimeoutError("timed out")
-    monkeypatch.setattr(liveness.socket, "create_connection", lambda *_a, **_k: _raise(error))
+    monkeypatch.setattr(liveness, "_listener_present", lambda *_a, **_k: _raise(error))
     with pytest.raises(liveness.ClioCoreRuntimeLostError) as raised:
         liveness._runtime_alive(9413)
     assert raised.value.details["reason"] == liveness.SOCKET_PROBE_UNAVAILABLE_REASON
@@ -42,8 +42,8 @@ def _raise(error: Exception) -> Any:
 def test_refused_connection_still_proves_socket_absence(monkeypatch: pytest.MonkeyPatch) -> None:
     """Confirmed refusal retains the fail-before-native-access path."""
     monkeypatch.setattr(
-        liveness.socket,
-        "create_connection",
+        liveness,
+        "_listener_present",
         lambda *_a, **_k: _raise(ConnectionRefusedError(errno.ECONNREFUSED, "refused")),
     )
     assert liveness._runtime_alive(9413) is False

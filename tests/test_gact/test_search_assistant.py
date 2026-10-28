@@ -28,6 +28,8 @@ from clio_agent.gact.search_assistant import (
     read_search_source,
     search_connected_service,
 )
+from clio_agent.gact.server_boot import process_arc
+from clio_agent.gact.session_store import _replace_session_messages
 from clio_agent.gact.side_sessions import READ_ONLY_SIDE_PROFILE, is_read_only_side_session
 from clio_agent.gact.types import Message, Part
 from tests._plugin_fixtures import custom_marketplace, tools_module
@@ -113,12 +115,15 @@ def _message(session_id: str, text: str, *, message_id: str = "msg_match") -> Me
 
 
 def _source(app: FastAPI, root: Path, name: str = "Evidence") -> Any:
+    process_arc(app)
     root.mkdir(exist_ok=True)
     workspace = app.state.workspaces.create(name=name, root_path=str(root))
     session = app.state.sessions.create(workspace_id=workspace.id, title=f"{name} decision")
-    app.state.messages[session.id] = [
-        _message(session.id, "I checked the protocol. Share a plant with the reviewer.")
-    ]
+    _replace_session_messages(
+        app,
+        session.id,
+        [_message(session.id, "I checked the protocol. Share a plant with the reviewer.")],
+    )
     return workspace, session
 
 
@@ -129,10 +134,14 @@ def test_rendered_phrase_beats_common_words_and_excerpt_reaches_later_passage(
     workspace, session = _source(app, tmp_path / "data")
     query = "Share a plant with the reviewer"
     text = "A heading and unrelated context. " * 100 + "Share a **plant** with the reviewer."
-    app.state.messages[session.id] = [
-        _message(session.id, text),
-        _message(session.id, "a reviewer mentioned a protocol", message_id="msg_other"),
-    ]
+    _replace_session_messages(
+        app,
+        session.id,
+        [
+            _message(session.id, text),
+            _message(session.id, "a reviewer mentioned a protocol", message_id="msg_other"),
+        ],
+    )
     response = _recall_search_response(
         app, query=query, workspace_id=workspace.id, include_cross_session=True
     )
@@ -149,8 +158,8 @@ async def test_search_crosses_registered_workspaces_and_returns_navigable_source
     tmp_path: Path,
 ) -> None:
     app = await asyncio.to_thread(build_app, sessions_path=tmp_path / "sessions.json", agent=None)
-    first, _ = _source(app, tmp_path / "first", "First")
-    second, session = _source(app, tmp_path / "second", "Second")
+    first, _ = await asyncio.to_thread(_source, app, tmp_path / "first", "First")
+    second, session = await asyncio.to_thread(_source, app, tmp_path / "second", "Second")
     (tmp_path / "second" / "notes.txt").write_text(
         "Intro\nShare a plant with the reviewer.\n", encoding="utf-8"
     )
@@ -184,7 +193,7 @@ async def test_policy_denial_and_partial_content_are_reported(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     app = await asyncio.to_thread(build_app, sessions_path=tmp_path / "sessions.json", agent=None)
-    workspace, _ = _source(app, tmp_path / "data")
+    workspace, _ = await asyncio.to_thread(_source, app, tmp_path / "data")
     config = tmp_path / "data" / ".clio" / "config.yaml"
     config.parent.mkdir(exist_ok=True)
     config.write_text("private_key: secret-token\n", encoding="utf-8")
@@ -325,16 +334,28 @@ async def test_native_tools_read_real_sources_and_global_search_omits_ephemeral_
     tmp_path: Path,
 ) -> None:
     app = await asyncio.to_thread(build_app, sessions_path=tmp_path / "sessions.json", agent=None)
-    workspace, session = _source(app, tmp_path / "data")
+    workspace, session = await asyncio.to_thread(_source, app, tmp_path / "data")
     (tmp_path / "data" / "notes.txt").write_text("Evidence from the file", encoding="utf-8")
-    side = app.state.sessions.create(
+    side = await asyncio.to_thread(
+        app.state.sessions.create,
         workspace_id=workspace.id,
         metadata={"search_session": {"ephemeral": True}, "side_session": {"ephemeral": True}},
         approval_profile=READ_ONLY_SIDE_PROFILE,
     )
-    app.state.messages[side.id] = [_message(side.id, "Share a plant with the reviewer.")]
-    app.state.sessions.create(workspace_id=workspace.id, metadata={"side_session": "legacy marker"})
-    hits = _recall_search_response(app, query="share a plant", include_cross_session=True)
+    await asyncio.to_thread(
+        _replace_session_messages,
+        app,
+        side.id,
+        [_message(side.id, "Share a plant with the reviewer.")],
+    )
+    await asyncio.to_thread(
+        app.state.sessions.create,
+        workspace_id=workspace.id,
+        metadata={"side_session": "legacy marker"},
+    )
+    hits = await asyncio.to_thread(
+        _recall_search_response, app, query="share a plant", include_cross_session=True
+    )
     assert side.id not in {hit.session_id for hit in hits.hits}
     app_token, session_token = context.set_app(app), context.set_session_id(side.id)
     try:

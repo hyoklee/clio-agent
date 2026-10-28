@@ -35,6 +35,32 @@ $TuiProc = $null
 $TuiOut = $null
 $TuiLog = $null
 $TuiErr = $null
+$OfficeProc = $null
+$OfficeLog = $null
+$OfficeErr = $null
+$BytecodeProc = $null
+$BytecodeLog = $null
+$BytecodeErr = $null
+function Stop-BytecodePrepare {
+    if ($script:BytecodeProc -and -not $script:BytecodeProc.HasExited) {
+        $current = Get-Process -Id $script:BytecodeProc.Id -ErrorAction SilentlyContinue
+        if ($current -and $current.StartTime -eq $script:BytecodeProc.StartTime) {
+            & taskkill /T /F /PID $script:BytecodeProc.Id *> $null
+            $script:BytecodeProc.WaitForExit()
+        }
+    }
+    $script:BytecodeProc = $null
+}
+function Stop-OfficePrepare {
+    if ($script:OfficeProc -and -not $script:OfficeProc.HasExited) {
+        $current = Get-Process -Id $script:OfficeProc.Id -ErrorAction SilentlyContinue
+        if ($current -and $current.StartTime -eq $script:OfficeProc.StartTime) {
+            & taskkill /T /F /PID $script:OfficeProc.Id *> $null
+            $script:OfficeProc.WaitForExit()
+        }
+    }
+    $script:OfficeProc = $null
+}
 function Stop-TuiBuild {
     if ($script:TuiProc) {
         if (-not $script:TuiProc.HasExited) { & taskkill /T /F /PID $script:TuiProc.Id *> $null }
@@ -42,9 +68,9 @@ function Stop-TuiBuild {
     }
     $script:TuiProc = $null
 }
-function Die  ($m) { Stop-TuiBuild; Write-Host "xx $m"  -ForegroundColor Red; exit 1 }
+function Die  ($m) { Stop-BytecodePrepare; Stop-OfficePrepare; Stop-TuiBuild; Write-Host "xx $m"  -ForegroundColor Red; exit 1 }
 # DieWith CODE MESSAGE: Die, keeping the failed command's exit status.
-function DieWith ([int]$code, $m) { Stop-TuiBuild; Write-Host "xx $m" -ForegroundColor Red; exit $code }
+function DieWith ([int]$code, $m) { Stop-BytecodePrepare; Stop-OfficePrepare; Stop-TuiBuild; Write-Host "xx $m" -ForegroundColor Red; exit $code }
 function Have ($cmd) { return $null -ne (Get-Command $cmd -ErrorAction SilentlyContinue) }
 function RunNative($cmd, [string[]]$cmdArgs) {
     & $cmd @cmdArgs
@@ -351,6 +377,68 @@ function Start-TuiBuild {
     try { $script:TuiProc.PriorityClass = 'BelowNormal' } catch { Warn "TUI build runs at normal priority: $($_.Exception.Message)" }
 }
 
+# Managed tools need only the locked bootstrap packages, so their preparation
+# overlaps the agent's much larger sync without racing the main virtualenv.
+function Start-OfficePrepare {
+    if ($script:OfficeProc) { return }
+    $worker = Join-Path $Src 'install/prepare-office.ps1'
+    if (-not (Test-Path -LiteralPath $worker)) { return }  # older source ref
+    $stem = Join-Path ([IO.Path]::GetTempPath()) ("clio-office-" + [Guid]::NewGuid().ToString('N'))
+    $script:OfficeLog = "$stem.log"
+    $script:OfficeErr = "$stem.err.log"
+    $shell = (Get-Process -Id $PID).Path
+    $workerArgs = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -SourceRoot "{1}" -PythonVersion "{2}"' -f $worker, $Src, $py
+    Say "Preparing managed tools beside the agent dependencies (log: $($script:OfficeLog))"
+    $script:OfficeProc = Start-Process -FilePath $shell -ArgumentList $workerArgs `
+        -WorkingDirectory $Src -WindowStyle Hidden -PassThru `
+        -RedirectStandardOutput $script:OfficeLog -RedirectStandardError $script:OfficeErr
+    $null = $script:OfficeProc.Handle
+}
+
+function Complete-OfficePrepare {
+    if (-not $script:OfficeProc) { return }
+    $proc = $script:OfficeProc
+    $proc.WaitForExit()
+    $code = $proc.ExitCode
+    $seconds = [Math]::Round(($proc.ExitTime - $proc.StartTime).TotalSeconds, 1)
+    $script:OfficeProc = $null
+    if ($code -ne 0) {
+        Get-Content -LiteralPath $script:OfficeLog, $script:OfficeErr -Tail 80 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+        DieWith $code "Managed-tool preparation failed (logs: $($script:OfficeLog), $($script:OfficeErr)); installation was not marked ready."
+    }
+    Say "Managed-tool preparation completed in $seconds s; the managed-package step will verify it again"
+    Remove-Item -LiteralPath $script:OfficeLog, $script:OfficeErr -Force -ErrorAction SilentlyContinue
+}
+
+function Start-BytecodePrepare {
+    $precompiler = Join-Path $Src 'install/precompile_runtime.py'
+    if (-not (Test-Path -LiteralPath $precompiler)) { return }  # older source ref
+    $stem = Join-Path ([IO.Path]::GetTempPath()) ("clio-bytecode-" + [Guid]::NewGuid().ToString('N'))
+    $script:BytecodeLog = "$stem.log"
+    $script:BytecodeErr = "$stem.err.log"
+    $compileArgs = '-B "{0}" --python-root "{1}" --source-root "{2}"' -f $precompiler, $Venv, (Join-Path $Src 'src')
+    Say "Compiling installed bytecode beside final setup (log: $($script:BytecodeLog))"
+    $script:BytecodeProc = Start-Process -FilePath $VenvPython -ArgumentList $compileArgs `
+        -WorkingDirectory $Src -WindowStyle Hidden -PassThru `
+        -RedirectStandardOutput $script:BytecodeLog -RedirectStandardError $script:BytecodeErr
+    $null = $script:BytecodeProc.Handle
+}
+
+function Complete-BytecodePrepare {
+    if (-not $script:BytecodeProc) { return }
+    $proc = $script:BytecodeProc
+    $proc.WaitForExit()
+    $code = $proc.ExitCode
+    $seconds = [Math]::Round(($proc.ExitTime - $proc.StartTime).TotalSeconds, 1)
+    $script:BytecodeProc = $null
+    if ($code -ne 0) {
+        Get-Content -LiteralPath $script:BytecodeLog, $script:BytecodeErr -Tail 80 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+        DieWith $code "Bytecode preparation failed (logs: $($script:BytecodeLog), $($script:BytecodeErr)); installation was not marked ready."
+    }
+    Say "Installed bytecode prepared in $seconds s"
+    Remove-Item -LiteralPath $script:BytecodeLog, $script:BytecodeErr -Force -ErrorAction SilentlyContinue
+}
+
 function Complete-TuiBuild {
     if (-not $script:TuiProc) { return }
     Say 'Waiting for the TUI build'
@@ -372,10 +460,11 @@ function Complete-TuiBuild {
         Die "could not move the built TUI into place at ${GactExe}: $($_.Exception.Message). Close a running CLIO terminal UI, then run this installer again."
     }
     Remove-Item -LiteralPath $script:TuiLog, $script:TuiErr -Force -ErrorAction SilentlyContinue
-    Say "TUI built in $([int]((Get-Date) - $script:TuiStarted).TotalSeconds) s: $GactExe"
+    Say "TUI built in $([int]($proc.ExitTime - $proc.StartTime).TotalSeconds) s: $GactExe"
 }
 
 # ---------- install clio-agent ----------------------------------------
+try {
 $Venv = Join-Path $Prefix 'clio-agent\.venv'
 $Src = $null
 $ClioVersion = $null
@@ -405,7 +494,7 @@ if ($OptSource) {
             Update-SourceClone $Src $ref
         } else {
             Say "Cloning clio-agent at $ref"
-            & git clone --quiet --recurse-submodules --shallow-submodules --branch $ref --depth 1 $ClioRepo $Src 2>$null
+            & git clone --quiet --branch $ref --depth 1 $ClioRepo $Src 2>$null
             if ($LASTEXITCODE -ne 0) {
                 # A commit is not a branch or tag: fetch it by id.
                 RemoveTree $Src
@@ -413,13 +502,16 @@ if ($OptSource) {
                 RunNative git @('-C', $Src, 'remote', 'add', 'origin', $ClioRepo)
                 RunNative git @('-C', $Src, 'fetch', '-q', '--depth', '1', 'origin', $ref)
                 RunNative git @('-C', $Src, 'checkout', '-q', 'FETCH_HEAD')
-                RunNative git @('-C', $Src, 'submodule', 'update', '--init', '--recursive', '--depth', '1')
             }
+            $py = PythonOf (Join-Path $Src '.python-version')
+            Start-OfficePrepare
+            RunNative git @('-C', $Src, 'submodule', 'update', '--init', '--recursive', '--depth', '1')
         }
         $py = PythonOf (Join-Path $Src '.python-version')
         $syncArgs = @('sync', '--locked', '--python', $py, '--extra', 'argonne', '--extra', 'flowcept')
     }
     # The TUI builds from the source now, beside the slow stages below.
+    Start-OfficePrepare
     Start-TuiBuild
     Say "Installing clio-agent deps (uv $($syncArgs -join ' '))"
     Push-Location $Src
@@ -512,6 +604,7 @@ print(max(v for _, v in found) if sys.argv[1] == "stable" else max(found)[1])
 
 $InstalledClioVersion = $null
 $VenvPython = Join-Path $Venv 'Scripts\python.exe'
+if ($OptSource) { Start-BytecodePrepare }
 if (Test-Path $VenvPython) {
     try {
         $InstalledClioVersion = (& $VenvPython -c "from importlib.metadata import version; print(version('clio-agent'))").Trim()
@@ -539,6 +632,7 @@ if ($LASTEXITCODE -eq 0) {
     Say "clio-agent $InstalledClioVersion has no 'clio-agent migrate'; its boot migrates the store"
 }
 
+Complete-OfficePrepare
 & $VenvPython -c 'import importlib.util, sys; sys.exit(0 if importlib.util.find_spec("clio_agent.runtime.document_install") else 3)'
 if ($LASTEXITCODE -eq 0) {
     Say 'Installing managed Python/uv and Node/pnpm packages and Office rendering'
@@ -685,6 +779,7 @@ if ($OptSource) {
 }
 
 # ---------- finishing notes -------------------------------------------
+Complete-BytecodePrepare
 Say "Done."
 $clioSrc = if ($OptSource) { "source: $Src" } else { "PyPI: $ClioVersion" }
 $gactSrc = if ($GactRef) { "source: $GactRef" } elseif ($OptSource) { "built from the checkout's submodule" } else { "release: $tag" }
@@ -700,3 +795,8 @@ Write-Host "  2. Run:   clio"
 Write-Host "  3. Manage the server: clio status | clio restart | clio logs"
 Write-Host "  4. Tab-completion:    clio completion powershell >> `$PROFILE"
 Write-Host "  5. Uninstall:         clio uninstall   (add -Purge to drop config)"
+} finally {
+    Stop-BytecodePrepare
+    Stop-OfficePrepare
+    Stop-TuiBuild
+}

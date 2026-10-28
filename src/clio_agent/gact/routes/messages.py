@@ -430,6 +430,7 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
         # of the oldest message in this page WHEN the limit truncated older rows.
         next_cursor: str | None = None
         if page is not None:
+            assert limit is not None  # Only a bounded request creates a transcript page.
             # The live projection may have joined the newest page: the oldest row
             # it displaced is then the start of the next page.
             more = page.has_more or len(rows) > limit

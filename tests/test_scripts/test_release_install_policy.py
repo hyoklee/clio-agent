@@ -62,7 +62,7 @@ def test_release_installers_explicitly_root_intentional_prereleases() -> None:
             'sync_args=(sync --locked --python "$py" --extra argonne --extra flowcept)',
         ),
         "install/install.ps1": (
-            "'--constraint', $Constraints",
+            "--constraint $Constraints",
             "'export', '--quiet', '--frozen', '--no-hashes', '--no-emit-project'",
             "$syncArgs = @('sync', '--locked', '--python', $py, '--extra', 'argonne', '--extra', 'flowcept')",
         ),

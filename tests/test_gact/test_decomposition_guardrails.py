@@ -212,7 +212,8 @@ from clio_agent.gact.app import build_app
 # authorization delete, memory creation runs and memory documents POST.
 # 420 -> 421: GET /v1/sessions/{sid}/science-log. 421 -> 422: POST
 # /v1/studies/{study}/table-query, the live study sources views read (Addendum B).
-EXPECTED_ROUTE_METHOD_PAIRS = 422
+# 422 -> 423: POST /v1/sessions/{sid}/mcp/{namespace}/reconnect, conversation MCP preparation.
+EXPECTED_ROUTE_METHOD_PAIRS = 423
 
 # app.py is build_app + lifecycle + re-export shims only. The ceiling is
 # the current size (~2892 lines) plus ~300 lines of headroom so ordinary

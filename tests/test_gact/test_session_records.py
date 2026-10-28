@@ -199,8 +199,11 @@ def _migration_app(store: SessionStore) -> Any:
     return SimpleNamespace(state=SimpleNamespace(sessions=store, task_history=history))
 
 
-def test_legacy_json_is_imported_once_by_the_store_migration(tmp_path: Path) -> None:
+def test_legacy_json_is_imported_once_by_the_store_migration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     legacy = tmp_path / "sessions.json"
+    monkeypatch.setenv("CLIO_SESSIONS_PATH", str(legacy))
     legacy.write_text(
         json.dumps(
             {

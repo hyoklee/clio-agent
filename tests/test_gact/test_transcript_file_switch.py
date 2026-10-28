@@ -251,11 +251,42 @@ def test_off_restart_reconciles_an_interrupted_session_from_the_atoms(
     second = _app(tmp_path, core_store, "second")
     session = second.state.sessions.get(sid)
     assert session.status == "error"
-    assert session.message_count == 2
+    assert session.message_count == 1
+    assert second.state.restart_interruptions.waiting(sid)
     with TestClient(second) as client:
         rows = _wire(client, sid)
+        # Boot marks the record; opening the transcript closes the interrupted turn.
+        assert second.state.sessions.get(sid).message_count == 2
     assert [row["role"] for row in rows] == ["user", "assistant"]
     assert rows[1]["error_info"]["error"] == "server_restart_interrupted"
+    _no_message_files(tmp_path)
+
+
+@pytest.mark.usefixtures("file_off")
+def test_off_restart_settles_before_capturing_the_materialized_snapshot(
+    tmp_path: Path, core_store: _MemoryStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A background close between a durable read and install cannot cache stale rows."""
+    first = _app(tmp_path, core_store, "first")
+    sid = first.state.sessions.create(workspace_id="ws_default", title="crashed").id
+    mint_message_part_atoms(first.state.arc, sid, _message(sid, "msg_user_crash", "still there?"))
+    first.state.sessions.update(sid, status="running", message_count=1)
+    second = _app(tmp_path, core_store, "second")
+    resident = second.state.messages
+    materialize = resident._materialize
+
+    def read_then_finish_recovery(session_id: str) -> Any:
+        rows = materialize(session_id)
+        # Force the background lane's exact interleaving without depending on
+        # thread scheduling: it closes and drops its ledger before install.
+        second.state.restart_interruptions.settle_quietly(session_id)
+        return rows
+
+    monkeypatch.setattr(resident, "_materialize", read_then_finish_recovery)
+    rows = resident[sid]
+    assert [row.role for row in rows] == ["user", "assistant"]
+    assert rows[1].error_info.error == "server_restart_interrupted"
+    assert second.state.sessions.get(sid).message_count == 2
     _no_message_files(tmp_path)
 
 
@@ -418,7 +449,8 @@ def test_off_the_atom_boot_runs_when_the_process_arc_attaches(
     second = build_app(sessions_path=tmp_path / "sessions.json", agent=FakeClioAgent(), arc=None)
     if second.state.arc is None:  # nothing attached clio-core during the build
         assert not second.state.transcript_boot_ready.is_set()
-        assert second.state.sessions.get(sid).status == "running"
+        # The index cannot read Core records until the process ARC is attached.
+        assert second.state.sessions.get(sid) is None
     with TestClient(second) as client:
         assert second.state.transcript_boot_ready.is_set()
         assert second.state.sessions.get(sid).status == "error"

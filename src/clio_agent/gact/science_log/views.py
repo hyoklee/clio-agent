@@ -40,7 +40,7 @@ def study_views(app: Any, entries: list[dict[str, Any]], root: str) -> list[dict
                 "purpose": str(fields.get("purpose") or ""),
                 "serves": [link["to"] for link in entry.get("links") or []],
                 "created_at": entry.get("created_at"),
-                "surface": record.to_wire() if live else None,
+                "surface": record.to_wire() if live and record is not None else None,
                 **({} if live else {"reason": "view_surface_deleted"}),
             }
         )

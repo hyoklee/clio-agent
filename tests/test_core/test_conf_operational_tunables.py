@@ -143,21 +143,21 @@ def test_mcp_mount_retry_delays_are_configurable(monkeypatch: pytest.MonkeyPatch
         mcp_mount_retry_delays_s,
         mount_namespace_for_session,
     )
-    from clio_agent.tools import mcp_discovery
 
     set_config("tools", {"mcp": {"mount_retry_delays_s": "0.001,0.001,0.001"}})
     assert mcp_mount_retry_delays_s() == (0.001, 0.001, 0.001)
 
     attempts = 0
 
-    def _always_fail(namespace: str, spec: Any) -> Any:
+    def _always_fail(namespace: str) -> Any:
         nonlocal attempts
         attempts += 1
         raise RuntimeError("cold mount refused")
 
-    monkeypatch.setattr(mcp_discovery, "ensure_namespace", _always_fail)
+    executor = _StubExecutor()
+    monkeypatch.setattr(executor, "list_namespace_tools", _always_fail, raising=False)
     with pytest.raises(RuntimeError, match="cold mount refused"):
-        mount_namespace_for_session(_StubExecutor(), "ns", object())
+        mount_namespace_for_session(executor, "ns", object())
     # One attempt more than there are delays.
     assert attempts == 4
 

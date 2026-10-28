@@ -772,6 +772,11 @@ hooks.stop_loop_cap: 8
 # before failing safe to human escalation; lower to fail fast.
 permissions.ai_review_timeout_s: "45.0"
 
+# CLIO_SESSIONS_CACHE_RECORDS  (int)  <- src/clio_agent/gact/session_records.py
+# How many conversation-list rows stay in memory; older rows are read from
+# clio-core when the list pages to them.
+sessions.cache_records: 1024
+
 # CLIO_TRANSCRIPT_FILE  (bool)  <- src/clio_agent/gact/transcript_file.py
 # Keep the per-session messages/<sid>.json copy of every transcript next to
 # clio-core's atoms; set false to make clio-core the only transcript store
@@ -1702,11 +1707,3 @@ spotter.max_clearance_events: 256
 # Installed agent (marketplace/id) that runs as the SPOTTER standing watcher
 # child session; change to point spotter-ai at a custom watcher agent.
 spotter.watcher_agent: "clio/spotter-ai"
-
-# ==========================================================================
-# Unassigned -- add these to scripts/config_key_notes.py
-
-# CLIO_SESSIONS_CACHE_RECORDS  (int)  <- src/clio_agent/gact/session_records.py
-# How many conversation-list rows stay in memory; older rows are read from
-# clio-core when the list pages to them.
-sessions.cache_records: 1024

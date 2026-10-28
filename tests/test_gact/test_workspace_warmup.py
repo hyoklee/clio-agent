@@ -122,7 +122,7 @@ def test_draft_prepares_default_fleet_and_first_session_reuses_it(
     monkeypatch.setattr(workspace_warmup, "_warm_and_release", warm_workspace)
     monkeypatch.setattr(session_warmup, "_warm_and_release", warm_session)
 
-    def mount(executor: _Executor, namespace: str, spec: Any, *, connect: bool) -> dict:
+    def mount(executor: _Executor, namespace: str, spec: Any, *, connect: bool = True) -> dict:
         assert connect
         executor.prepared.add(namespace)
         mounted.append((executor, namespace))

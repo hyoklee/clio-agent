@@ -12,9 +12,9 @@ for (const theme of ['light', 'dark']) {
 			await page.addInitScript((value) => localStorage.setItem('starlight-theme', value), theme);
 			await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
 			await page.goto('/');
-			const workflows = page.getByRole('region', { name: 'Compare, assemble, and share.' });
+			const workflows = page.getByRole('region', { name: 'Study, delegate, compare, and share.' });
 			await workflows.scrollIntoViewIfNeeded();
-			await expect(workflows.getByText('Development preview', { exact: true })).toHaveCount(2);
+			await expect(workflows.getByText('Development preview', { exact: true })).toHaveCount(5);
 			expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
 			await workflows.screenshot({ path: test.info().outputPath(`workflows-${width}-${theme}.png`) });
 			for (const guide of guides) {

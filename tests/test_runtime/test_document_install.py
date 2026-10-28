@@ -221,3 +221,26 @@ def test_install_bounds_the_mcp_cache_with_a_typed_outcome(
     monkeypatch.setattr(mcp_cache, "prune_owned_mcp_cache", broken)
     outcome = installer.prune_after_install()
     assert outcome["status"] == "failed" and outcome["reason"] == "mcp_cache_prune_failed"
+
+
+def test_bootstrap_prepares_real_package_stage_without_fence_or_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result: dict[str, Any] = {
+        "runtime_id": "locked",
+        "javascript": {"status": "ready"},
+        "native_tools": {},
+        "capabilities": {},
+    }
+    monkeypatch.setattr(installer, "prepare_document_runtime", lambda *a, **kw: result)
+    monkeypatch.setattr(installer, "prepare_office_runtime", lambda: "private soffice")
+    monkeypatch.setattr(installer, "ensure_github_cli", lambda: tmp_path / "gh")
+
+    def unexpected(*args: Any, **kwargs: Any) -> None:
+        pytest.fail("Cache preparation must leave protection and receipt to the installer")
+
+    monkeypatch.setattr(installer, "prepare_protected_execution", unexpected)
+    monkeypatch.setattr(installer, "save_install_receipt", unexpected)
+    prepared = installer.prepare_managed_packages(tmp_path / "workspace", cache_root=tmp_path)
+    assert prepared["capabilities"]["office_render_recalculate"] == "available"
+    assert "protected_execution" not in prepared["native_tools"]

@@ -1095,9 +1095,17 @@ def test_subagent_start_and_stop_fire_exactly_once(tmp_path: Path) -> None:
             released = threading.Event()
             child = app.state.task_history.task_snapshot(handle)
             assert child is not None
+            # Spawn acceptance can precede worker admission. Register against the
+            # worker's reservation, rather than observing the initial idle gap.
+            assert disp.wait_for_task(SUBAGENT_START, handle)
             app.state.turn_runner.run_when_released(child.owner.session_id, released.set)
             assert disp.wait_for_task(SUBAGENT_STOP, handle)
             assert released.wait(5), "the child worker did not release its reservation"
+            # The pump can briefly reserve the session again to check queued
+            # input. Await its settlement before asserting the idle state.
+            asyncio.run_coroutine_threadsafe(
+                owner.runner.run_pending(child.owner.session_id), owner._loop
+            ).result(timeout=10)
             assert disp.count_for_task(SUBAGENT_START, handle) == 1
             assert disp.count_for_task(SUBAGENT_STOP, handle) == 1
             child = app.state.task_history.task_snapshot(handle)

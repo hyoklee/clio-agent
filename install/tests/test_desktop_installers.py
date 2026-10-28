@@ -34,12 +34,12 @@ def test_backend_installer_requests_compatible_mac_wheels(
     tmp_path: Path, system: str, version: str
 ) -> None:
     """The registry install uses wheel-only resolution on Mac, retaining Linux source support."""
-    from tests.test_scripts.installer_shims import STOP, run_installer, write_release
+    from tests.test_scripts.installer_shims import RELEASE_STOP, run_installer, write_release
 
     for tag in ("v0.9.5-beta.2", "v0.9.5-beta.5.1"):
         write_release(tmp_path / "fixtures", tag, python="3.14")
     result, calls = run_installer(tmp_path, "--version", version, system=system)
-    assert result.returncode == STOP, result.stdout + result.stderr
+    assert result.returncode == RELEASE_STOP, result.stdout + result.stderr
     install = next(call for call in calls if call.startswith("uv pip install"))
     package_version = "0.9.5b5.post1" if version == "v0.9.5-beta.5.1" else version
     assert f"clio-agent[argonne,flowcept]=={package_version}" in install
@@ -208,7 +208,10 @@ exit $LASTEXITCODE
         timeout=30,
     )
     assert result.returncode == 77, result.stdout + result.stderr
-    assert "clio-agent==0.9.5b5.post1" in args_file.read_text(encoding="utf-8-sig").splitlines()
+    assert (
+        "clio-agent[argonne,flowcept]==0.9.5b5.post1"
+        in args_file.read_text(encoding="utf-8-sig").splitlines()
+    )
 
 
 def test_shell_release_parser_accepts_bsd_whitespace(tmp_path: Path) -> None:

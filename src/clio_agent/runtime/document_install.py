@@ -25,15 +25,32 @@ from clio_agent.runtime.execution_environment import publish_environment
 from clio_agent.runtime.github_cli import ensure_github_cli
 
 
-def install_document_runtime(
+def prepare_protected_execution(
+    *, setup_protected_execution: bool = False, progress: Callable[[str], None] | None = None
+) -> dict[str, Any]:
+    """Verify the Windows fence independently of document package preparation."""
+    if progress is not None:
+        progress("Preparing and checking protected execution...")
+    protected = prepare_existing_windows_fence(
+        progress=progress, allow_elevation=setup_protected_execution
+    )
+    helpers = (
+        {"status": "not_required", "implementation": "mxc"}
+        if protected.get("implementation") == "mxc"
+        else ensure_bundled_codex_windows_helpers()
+    )
+    if progress is not None and protected["status"] == "setup_required":
+        progress(protected["next_action"])
+    return {"protected_execution": protected, "codex_windows_helpers": helpers}
+
+
+def prepare_managed_packages(
     workspace: Path,
     *,
     cache_root: Path | None = None,
     progress: Callable[[str], None] | None = None,
-    setup_protected_execution: bool = False,
-    reuse_installed: bool = False,
 ) -> dict[str, Any]:
-    """Provision and verify all required packages without enlarging the installer payload."""
+    """Prepare package caches without qualifying protection or saving an install receipt."""
     workspace.mkdir(parents=True, exist_ok=True)
     # These installers own separate cache trees and locks. Overlap the native
     # downloads/extraction with Python/Node preparation, without changing the
@@ -57,6 +74,37 @@ def install_document_runtime(
         report("GitHub command-line tool is ready.")
         return github
 
+    with package_preparation.preparing(cache_root):
+        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="clio-install") as workers:
+            office_job = workers.submit(prepare_office)
+            github_job = workers.submit(prepare_github)
+            result = prepare_document_runtime(workspace, cache_root=cache_root, progress=report)
+            if result["javascript"]["status"] != "ready":
+                raise DocumentRuntimeError(
+                    f"Node/pnpm package installation failed: {result['javascript']}"
+                )
+            office = office_job.result()
+            github = github_job.result()
+        result["native_tools"]["soffice"] = {"status": "available", "path": office}
+        result["capabilities"]["office_render_recalculate"] = "available"
+        result["native_tools"]["gh"] = {
+            "status": "available",
+            "path": str(github),
+            "authentication": "clio_account",
+        }
+    return result
+
+
+def install_document_runtime(
+    workspace: Path,
+    *,
+    cache_root: Path | None = None,
+    progress: Callable[[str], None] | None = None,
+    setup_protected_execution: bool = False,
+    reuse_installed: bool = False,
+) -> dict[str, Any]:
+    """Verify packages and protection before publishing a complete installation receipt."""
+    workspace.mkdir(parents=True, exist_ok=True)
     result = (
         reuse_install_receipt(workspace, cache_root=cache_root)
         if reuse_installed and not setup_protected_execution
@@ -64,26 +112,7 @@ def install_document_runtime(
     )
     reused = result is not None
     if result is None:
-        # The agent may already be running (a first desktop launch does not wait for
-        # this): it reads this record and answers "still preparing" meanwhile.
-        with package_preparation.preparing(cache_root):
-            with ThreadPoolExecutor(max_workers=2, thread_name_prefix="clio-install") as workers:
-                office_job = workers.submit(prepare_office)
-                github_job = workers.submit(prepare_github)
-                result = prepare_document_runtime(workspace, cache_root=cache_root, progress=report)
-                if result["javascript"]["status"] != "ready":
-                    raise DocumentRuntimeError(
-                        f"Node/pnpm package installation failed: {result['javascript']}"
-                    )
-                office = office_job.result()
-                github = github_job.result()
-            result["native_tools"]["soffice"] = {"status": "available", "path": office}
-            result["capabilities"]["office_render_recalculate"] = "available"
-            result["native_tools"]["gh"] = {
-                "status": "available",
-                "path": str(github),
-                "authentication": "clio_account",
-            }
+        result = prepare_managed_packages(workspace, cache_root=cache_root, progress=progress)
     else:
         from clio_agent.runtime.document_stack.process import scratch_root
         from clio_agent.tools.file_policy import FileAccessPolicy
@@ -94,27 +123,19 @@ def install_document_runtime(
             policy.validate_write(str(scratch / name / "manifest.json"), create_parent=True)
         cache = (cache_root or paths.user_cache_dir() / "document-runtime") / result["runtime_id"]
         publish_environment(workspace, result, cache)
-        report(
-            "Verified installation unchanged; reusing Office, Python, Node.js and GitHub packages."
+        if progress is not None:
+            progress(
+                "Verified installation unchanged; reusing Office, Python, Node.js and GitHub packages."
+            )
+    result["native_tools"].update(
+        prepare_protected_execution(
+            progress=progress, setup_protected_execution=setup_protected_execution
         )
-    if progress is not None:
-        progress("Preparing and checking protected execution...")
-    result["native_tools"]["protected_execution"] = prepare_existing_windows_fence(
-        progress=report, allow_elevation=setup_protected_execution
     )
-    result["native_tools"]["codex_windows_helpers"] = (
-        {"status": "not_required", "implementation": "mxc"}
-        if result["native_tools"]["protected_execution"].get("implementation") == "mxc"
-        else ensure_bundled_codex_windows_helpers()
-    )
-    if (
-        progress is not None
-        and result["native_tools"]["protected_execution"]["status"] == "setup_required"
-    ):
-        progress(result["native_tools"]["protected_execution"]["next_action"])
     if not reused:
         save_install_receipt(workspace, result, cache_root=cache_root)
-    report("All managed runtime packages are installed and verified.")
+    if progress is not None:
+        progress("All managed runtime packages are installed and verified.")
     return result
 
 
@@ -141,6 +162,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", type=Path, default=paths.user_data_dir() / "workspace")
     parser.add_argument(
+        "--protected-execution-only",
+        action="store_true",
+        help="Verify protected execution before starting the agent, without preparing document tools.",
+    )
+    parser.add_argument(
         "--reuse-installed",
         action="store_true",
         help="Reuse installation checks while the verified managed package files are unchanged.",
@@ -156,6 +182,16 @@ def main() -> None:
         help="Do not run `clio-agent migrate` here (the caller runs it as its own step).",
     )
     args = parser.parse_args()
+    if args.protected_execution_only:
+        tools = prepare_protected_execution(
+            progress=lambda message: print(message, flush=True),
+            setup_protected_execution=args.setup_protected_execution,
+        )
+        ready = tools["protected_execution"]["status"] in {"available", "not_required"}
+        print(json.dumps({"status": "ready" if ready else "setup_required", **tools}), flush=True)
+        if not ready:
+            raise SystemExit(1)
+        return
     # This standalone installer owns its workspace. Never widen a running agent's policy.
     os.environ["CLIO_ALLOWED_ROOTS"] = str(args.workspace.resolve())
     result = install_document_runtime(

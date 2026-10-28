@@ -17,7 +17,8 @@ The defense clio-agent ships now
 A cheap **liveness gate** wrapped around every clio-core op (:class:`LivenessGate`):
 
 * Before an op reaches the native binding, the gate confirms the daemon is
-  accepting connections. The probe result is cached for a short TTL
+  listening. Windows reads the OS listener table without consuming ephemeral
+  ports; other hosts connect to the endpoint. The result is cached for a short TTL
   (:data:`_DEFAULT_LIVENESS_TTL_S`, configurable) so the per-op overhead is a
   single ``time.monotonic()`` comparison in the common case, not a socket connect.
 * On probe failure the store enters a **QUARANTINED** state and every op raises a
@@ -174,17 +175,27 @@ def _resolve_runtime_port(config_path: str) -> int:
     return _DEFAULT_RUNTIME_PORT
 
 
+def _listener_present(port: int) -> bool:
+    if os.name == "nt":
+        from clio_agent.arc.windows_tcp import loopback_listener_present
+
+        return loopback_listener_present(port)
+    with socket.create_connection(("127.0.0.1", port), timeout=3.0):
+        return True
+
+
 def _runtime_alive(port: int) -> bool:
     """Return listener presence; raise when the local probe cannot establish it.
 
-    Only a refused connection proves absence. Timeouts and local socket exhaustion
-    cannot authorize daemon replacement or permanent dead-client quarantine.
+    A refused connection or Windows' OS listener table proves absence. Timeouts,
+    local socket exhaustion and table-query failures cannot authorize replacement
+    or permanent dead-client quarantine.
     """
     try:
-        # Windows can take two seconds to return WSAECONNREFUSED on loopback.
-        # A shorter deadline makes a closed port indistinguishable from a timeout.
-        with socket.create_connection(("127.0.0.1", port), timeout=3.0):
-            return True
+        # Windows reads actual OS listener state instead of allocating another
+        # connection: under sustained use the connect probe can exhaust local
+        # ports even while the existing native client is healthy.
+        return _listener_present(port)
     except OSError as error:
         if error.errno == errno.ECONNREFUSED or getattr(error, "winerror", None) == 10061:
             return False
@@ -318,8 +329,8 @@ class LivenessGate:
     Args:
         config_path: The clio-core config path (used to resolve the RPC port).
         log_level: The runtime log level, carried for the reconnect seam.
-        probe: Injectable liveness probe ``(port) -> bool`` (defaults to a real TCP
-            connect); the seam the tests drive to simulate daemon loss without an AV.
+        probe: Injectable liveness probe ``(port) -> bool`` (OS listener state on
+            Windows, TCP connect elsewhere); tests simulate loss here without an AV.
         ttl_s: Probe-cache TTL in seconds; ``None`` resolves the configured default.
         auto_recover: Permit native rebinding when true. When false, only an RPC
             probe of the verified original daemon/client can recover a stall.

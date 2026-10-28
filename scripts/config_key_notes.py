@@ -30,7 +30,16 @@ SECTIONS: list[tuple[str, tuple[str, ...], str]] = [
     ),
     (
         "GACT server",
-        ("gact", "a2ui", "autocompact", "compaction", "permissions", "hooks", "transcript"),
+        (
+            "gact",
+            "a2ui",
+            "autocompact",
+            "compaction",
+            "permissions",
+            "hooks",
+            "transcript",
+            "sessions",
+        ),
         "The GACT HTTP/SSE server: ledgers, the transcript file copy, auth, hooks, A2UI payload "
         "bounds and context auto-compaction.",
     ),

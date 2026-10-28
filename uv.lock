@@ -743,6 +743,17 @@ optimizers = [
     { name = "scipy" },
 ]
 
+[package.dev-dependencies]
+install-bootstrap = [
+    { name = "filelock" },
+    { name = "httpx" },
+    { name = "packaging" },
+    { name = "psutil" },
+    { name = "pyyaml" },
+    { name = "truststore" },
+    { name = "zstandard" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "adios2", marker = "sys_platform != 'win32' and extra == 'adios'", specifier = ">=2.10.0" },
@@ -823,6 +834,17 @@ requires-dist = [
     { name = "zstandard", specifier = "==0.25.0" },
 ]
 provides-extras = ["optimizers", "adios", "argonne", "desktop", "claude-code", "flowcept", "dev", "all"]
+
+[package.metadata.requires-dev]
+install-bootstrap = [
+    { name = "filelock", specifier = ">=3.12.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "packaging", specifier = ">=23.0" },
+    { name = "psutil", specifier = ">=5.9.0" },
+    { name = "pyyaml", specifier = ">=6.0.3,<7" },
+    { name = "truststore", specifier = "==0.10.4" },
+    { name = "zstandard", specifier = "==0.25.0" },
+]
 
 [[package]]
 name = "clio-kit"

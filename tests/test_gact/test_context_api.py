@@ -8,12 +8,13 @@ plus the redacted arc.op SSE-bus frame for the TUI.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
 
+from clio_agent.arc.batch_put import PutRecord
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.gact.app import build_app
 
@@ -352,6 +353,11 @@ class _CteShapedStore:
 
     def put(self, kind, name, data, *, tier="warm", search_text=None):
         self._blobs[(kind, name)] = data
+
+    def put_many(self, kind: str, records: Sequence[PutRecord]) -> None:
+        """Implement the current store contract for session-record writes."""
+        for record in records:
+            self.put(kind, record.name, record.data, search_text=record.search_text)
 
     def get(self, kind, name):
         return self._blobs.get((kind, name))

@@ -299,6 +299,7 @@ def test_a_warmup_asked_for_before_the_agent_is_ready_runs_when_it_is(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Opening a conversation right after start is never dropped: it waits for the agent."""
+    monkeypatch.setattr(session_warmup, "session_warmup_enabled", lambda: True)
     app = SimpleNamespace(state=SimpleNamespace(agent=None))
     warmed: list[tuple[str, str]] = []
     monkeypatch.setattr(

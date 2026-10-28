@@ -168,7 +168,8 @@ class SegmentStore(ScopeCache, PlainContextRestore):
         # single store-wide lock held through disk I/O. The lock-registry itself is
         # guarded by a tiny ``_registry_lock`` (held only to look up / create a scope
         # lock and for store-wide structural ops, never through disk I/O). LOCK ORDER
-        # is fixed to avoid deadlock: registry -> scope -> clock (never reverse).
+        # lookup is brief. Structural drops acquire scope locks outside the
+        # registry, then recheck its keys, so nested lane lookups cannot deadlock.
         self._registry_lock = threading.RLock()
         self._scope_locks: dict[tuple[str, str], threading.RLock] = {}
         # The shared logical-time clock gets its OWN tiny lock so the brief tick is
