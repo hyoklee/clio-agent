@@ -88,7 +88,9 @@ def _resolved_path(app: FastAPI, artifact_id: str, workspace_id: str) -> tuple[P
     try:
         path = _serve_bytes(app, record, version, consume=lambda source, *_: Path(source))
     except HTTPException as exc:
-        error = ((exc.detail or {}).get("error") or {}) if isinstance(exc.detail, dict) else {}
+        error: dict[str, Any] = (
+            ((exc.detail or {}).get("error") or {}) if isinstance(exc.detail, dict) else {}
+        )
         if error.get("error") != "custody_not_cas":
             raise DashboardExportRefused(
                 "dashboard_export_file_unavailable",

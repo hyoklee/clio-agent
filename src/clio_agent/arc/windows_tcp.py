@@ -7,7 +7,7 @@ import errno
 import socket
 import struct
 from functools import cache
-from typing import Any
+from typing import Any, cast
 
 _ROW = struct.Struct("<6I")  # MIB_TCPROW_OWNER_PID: six DWORDs on x64 and ARM64.
 _MAX_TABLE_BYTES = 32 * 1024 * 1024
@@ -15,7 +15,8 @@ _MAX_TABLE_BYTES = 32 * 1024 * 1024
 
 @cache
 def _table_function() -> Any:
-    library: Any = ctypes.WinDLL("iphlpapi", use_last_error=True)
+    # ctypes exposes this export only on Windows; non-Windows type stubs omit it.
+    library: Any = cast(Any, ctypes).WinDLL("iphlpapi", use_last_error=True)
     function = library.GetExtendedTcpTable
     function.argtypes = [
         ctypes.c_void_p,

@@ -2,8 +2,8 @@
 
 The MSI is a read-only database. Application files and bundled fonts are published;
 Windows system-integration components are not part of the private application.
-Windows' own expand.exe decompresses its CAB after member names and sizes match
-the MSI File table. No installer service, registration or external extractor runs.
+Windows' CAB API decompresses members after their names and sizes match the MSI
+File table, with expand.exe for longer paths. No installer service or registration runs.
 """
 
 from __future__ import annotations
@@ -17,9 +17,9 @@ from collections.abc import Callable, Generator, Iterator, Mapping
 from contextlib import contextmanager
 from ctypes import wintypes
 from pathlib import Path, PureWindowsPath
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
-if __package__:
+if TYPE_CHECKING or __package__:
     from .process import DocumentError, inherit_parent_access, run
 else:
     from process import DocumentError, inherit_parent_access, run
@@ -34,7 +34,7 @@ class _Database:
     """Own all native handles opened against a read-only MSI database."""
 
     def __init__(self, archive: Path) -> None:
-        self.api: Any = ctypes.WinDLL("msi")
+        self.api: Any = cast(Any, ctypes).WinDLL("msi")
         handle = ctypes.c_uint
         self.api.MsiOpenDatabaseW.argtypes = [
             wintypes.LPCWSTR,
@@ -253,11 +253,11 @@ class _ExtractedFile(ctypes.Structure):
 
 def _iterate_cabinet(cabinet: Path, notify: Callable[[int, int], int]) -> None:
     """Use Windows' CAB decompressor without any device/application install actions."""
-    callback_type = ctypes.WINFUNCTYPE(
+    callback_type = cast(Any, ctypes).WINFUNCTYPE(
         wintypes.UINT, ctypes.c_void_p, wintypes.UINT, ctypes.c_size_t, ctypes.c_size_t
     )
     callback = callback_type(lambda context, message, first, second: notify(message, first))
-    api: Any = ctypes.WinDLL("setupapi", use_last_error=True)
+    api: Any = cast(Any, ctypes).WinDLL("setupapi", use_last_error=True)
     api.SetupIterateCabinetW.argtypes = [
         wintypes.LPCWSTR,
         wintypes.DWORD,
@@ -266,7 +266,8 @@ def _iterate_cabinet(cabinet: Path, notify: Callable[[int, int], int]) -> None:
     ]
     api.SetupIterateCabinetW.restype = wintypes.BOOL
     if not api.SetupIterateCabinetW(str(cabinet), 0, callback, None):
-        raise DocumentError(f"Could not expand verified Office cabinet: {ctypes.WinError()}")
+        error = cast(Any, ctypes).WinError()
+        raise DocumentError(f"Could not expand verified Office cabinet: {error}")
 
 
 def _direct_paths_supported(cabinet: Path, targets: Mapping[str, tuple[Path, int]]) -> bool:
