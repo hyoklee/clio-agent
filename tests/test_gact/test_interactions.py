@@ -60,7 +60,11 @@ def test_question_header_is_not_an_answerable_interaction_before_posting(
         assert response.status_code == 200, response.text
         assert response.json()["interactions"] == []
         assert response.json()["degradations"] == [
-            {"reason": "question_posting_unconfirmed", "owner_session_id": sid}
+            {
+                "reason": "question_posting_unconfirmed",
+                "owner_session_id": sid,
+                "detail": f"A question in {sid} is not listed until its posting is confirmed.",
+            }
         ]
         assert _question_from_interaction_id(app, "question:" + task.handle) is None
         observed.append(task.handle)
@@ -380,3 +384,33 @@ def test_invalid_transcript_text_degrades_surfaces_without_hiding_permissions(
     assert response.json()["degradations"][0]["reason"] == "a2ui_transcript_decode_failed"
     assert snapshot.json()["surfaces"] == []
     assert snapshot.json()["degradations"][0]["reason"] == "a2ui_transcript_decode_failed"
+
+
+def test_quarantined_surface_degrades_with_reason_and_detail() -> None:
+    """A persisted surface the current catalog refuses is one ``{reason, detail}`` row."""
+    from types import SimpleNamespace
+
+    from clio_agent.gact.routes.interactions import _a2ui_interactions
+
+    message = (
+        "component=Button id=openBtn pointer=/action: is not valid under any of the given schemas"
+    )
+    store = SimpleNamespace(
+        list_wire_with_degradations=lambda owner: (
+            [],
+            [{"code": "a2ui_persisted_payload_invalid", "reason": message, "part_id": "p1"}],
+        )
+    )
+    app = SimpleNamespace(state=SimpleNamespace(a2ui_store=store))
+
+    rows, degradations = _a2ui_interactions(app, "sess_owner")
+
+    assert rows == []
+    assert degradations == [
+        {
+            "code": "a2ui_persisted_payload_invalid",
+            "reason": "a2ui_persisted_payload_invalid",
+            "detail": message,
+            "part_id": "p1",
+        }
+    ]

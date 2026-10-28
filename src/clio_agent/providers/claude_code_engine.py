@@ -69,6 +69,7 @@ from clio_agent.lm.engines.text_tools import (
 )
 from clio_agent.providers import claude_code_bridge as _bridge
 from clio_agent.providers.claude_code_audit import emit_call_started, emit_call_usage
+from clio_agent.providers.claude_code_lifecycle import DEAD_ENTRY_MARKER
 from clio_agent.providers.claude_code_multimodal import native_blocks
 from clio_agent.providers.claude_code_options import require_claude_agent_sdk, thinking_key
 from clio_agent.providers.claude_code_output_progress import FormattingProgress
@@ -192,7 +193,6 @@ class AsyncClaudeCodeEngine:
             prompt=body,
         )
         gact_session = _active_gact_session_id()
-        entry = _STREAM_CLIENT_POOL.entry_for(session_id=gact_session, gact_session_id=gact_session)
         turn = _Turn(
             self.model,
             call_index,
@@ -202,25 +202,47 @@ class AsyncClaudeCodeEngine:
             ),
         )
         yield StreamStartEvent(model=request.model)
+        entry = _STREAM_CLIENT_POOL.entry_for(session_id=gact_session, gact_session_id=gact_session)
+        received = False
         try:
-            async with aclosing(
-                entry.stream(
-                    payload=body,
-                    native_blocks=blocks,
-                    session_id=session_id,
-                    idle_timeout=self.idle_timeout(),
-                    on_construct=_STREAM_CLIENT_POOL.bump_construct,
-                    model=self.model,
-                    cwd=self.cwd,
-                    thinking=self.thinking,
-                    system_prompt=system,
-                )
-            ) as messages:
-                async for message in messages:
-                    for out in turn.handle(message):
-                        yield out
-                    if turn.protocol_error:
-                        break
+            for attempt in range(2):
+                try:
+                    async with aclosing(
+                        entry.stream(
+                            payload=body,
+                            native_blocks=blocks,
+                            session_id=session_id,
+                            idle_timeout=self.idle_timeout(),
+                            on_construct=_STREAM_CLIENT_POOL.bump_construct,
+                            model=self.model,
+                            cwd=self.cwd,
+                            thinking=self.thinking,
+                            system_prompt=system,
+                        )
+                    ) as messages:
+                        async for message in messages:
+                            received = True
+                            for out in turn.handle(message):
+                                yield out
+                            if turn.protocol_error:
+                                break
+                    break
+                except RuntimeError as exc:
+                    # The session's pooled entry was released (an abandoned stream, a
+                    # turn-end release, the idle sweep) after this call took it and
+                    # before anything was sent. Its typed error is retryable: take the
+                    # session's fresh entry once. On the record, never silent.
+                    if received or attempt or DEAD_ENTRY_MARKER not in str(exc):
+                        raise
+                    logger.info(
+                        "claude_code query reconnected reason=dead_entry_reconnect "
+                        "model=%s session=%s",
+                        self.model,
+                        gact_session,
+                    )
+                    entry = _STREAM_CLIENT_POOL.entry_for(
+                        session_id=gact_session, gact_session_id=gact_session
+                    )
         except TimeoutError as exc:  # typed by claude_code_expiry: connect vs stream idle
             _reset(send)
             raise LMTimeoutError(f"{exc} (model={self.model})") from exc

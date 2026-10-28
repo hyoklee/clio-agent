@@ -60,7 +60,7 @@ from clio_agent.gact.runtime.type_parsing import (
     _parse_field_annotation,
     _structured_output_enabled,
 )
-from clio_agent.gact.task_declarations import build_spawn_runtime_tools
+from clio_agent.gact.spawn_tools import build_spawn_runtime_tools
 from clio_agent.lm.session_clients import session_model
 from clio_agent.runtime import trace
 
@@ -566,7 +566,7 @@ def build_agent_module(base_agent: Any, agent_def: "AgentDef", resolution: "Reso
                     live=live,
                 )
                 claimed = {row["name"] for row in resolution.tools if row["kind"] == "native"}
-                if claimed & {"spawn_agent_task", "spawn_agents_parallel"}:
+                if claimed & {"spawn_agent_task", "spawn_agents_parallel", "fork"}:
                     spawn_tools = [
                         tool
                         for tool in build_spawn_runtime_tools(

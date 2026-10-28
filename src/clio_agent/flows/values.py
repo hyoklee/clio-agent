@@ -73,9 +73,13 @@ class CallResult(Mapping[str, Any]):
         kind: str = "",
         index: int = -1,
         model: str = "",
+        forks: list[dict[str, Any]] | None = None,
     ) -> None:
         self._value = value
         self.handle = handle
+        #: The wait's outcome for each fork of this call's task, in fork order
+        #: (``handle``, ``status``, ``result``): whoever waits on a task waits on its forks.
+        self.forks = list(forks or [])
         #: ``account/model`` the call's child ran on ("" for a tool or an unknown child).
         self.model = model
         self.target = target

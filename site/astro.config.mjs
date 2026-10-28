@@ -44,7 +44,7 @@ export default defineConfig({
 			plugins: [starlightLinksValidator({
 				errorOnLocalLinks: false,
 				// Static native HTML endpoints are checked by the archive browser tests.
-				exclude: ['/conversations/ndp/alta/', '/conversations/ndp/tahoe/', '/conversations/ndp/konza/', '/conversations/ndp/endpoint/'],
+				exclude: ['/conversations/**'],
 			})],
 			sidebar: [
 				{
@@ -94,6 +94,7 @@ export default defineConfig({
 						{ label: 'Answer a question', slug: 'docs/questions' },
 						{ label: 'Follow work in progress', slug: 'docs/following-work' },
 						{ label: 'Flows and workflows', slug: 'docs/flows' },
+						{ label: 'Study a question', slug: 'docs/science-log' },
 						{ label: 'Models and usage', slug: 'docs/models-and-usage' },
 						{ label: 'Updates during a conversation', slug: 'docs/injections' },
 						{ label: 'Continue work over time', slug: 'docs/long-running-work' },
@@ -129,6 +130,7 @@ export default defineConfig({
 						{ label: 'Explore ground motion', slug: 'docs/examples/ground-motion' },
 						{ label: 'EarthScope data from NDP', slug: 'docs/examples/ndp-earthscope' },
 						{ label: 'Scientific questions for NDP', slug: 'docs/examples/ndp-science' },
+						{ label: 'A branched study', slug: 'docs/examples/branched-study' },
 						{ label: 'Find a decision in research notes', slug: 'docs/examples/research-notes' },
 						{ label: 'Create a report and slides', slug: 'docs/examples/reports-and-slides' },
 					],

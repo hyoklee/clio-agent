@@ -180,7 +180,7 @@ def test_side_session_denies_every_tool_that_does_not_declare_no_side_effects(
             )
 
         assert decision == "deny"
-        assert "read-only side conversation" in getattr(decision, "deny_message", "")
+        assert "This session is read-only" in getattr(decision, "deny_message", "")
         rows = [row for row in app.state.permissions.values() if row["session_id"] == side]
         assert len(rows) == 1
         assert rows[0]["status"] == "auto_denied"

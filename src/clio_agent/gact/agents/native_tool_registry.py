@@ -23,6 +23,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from clio_agent.gact.agents import toolset_inventory
+from clio_agent.gact.science_log.tools import SCIENCE_LOG_TOOLS
 from clio_agent.gact.task_declarations import (
     TASK_COMPATIBILITY_ALIASES,
     TASK_TOOL_NAMES,
@@ -42,6 +43,7 @@ AGENT_RUNTIME_TOOLS: frozenset[str] = frozenset(
         "spawn_skill_task",
         "spawn_agent_task",
         "spawn_agents_parallel",
+        "fork",
         "draft_alternatives",
     }
 )
@@ -116,6 +118,7 @@ def _singles(agent_def: Any) -> dict[str, Callable[[], Any]]:
     from clio_agent.gact.plan_mode import build_plan_exit_tool  # noqa: PLC0415
     from clio_agent.gact.plugin_authoring import build_make_plugin_tool  # noqa: PLC0415
     from clio_agent.gact.recall_context_tool import build_recall_context_tool  # noqa: PLC0415
+    from clio_agent.gact.science_log.tools import BUILDERS as SCIENCE_LOG_BUILDERS  # noqa: PLC0415
     from clio_agent.gact.search_assistant import (  # noqa: PLC0415
         build_clio_search_read_tool,
         build_clio_search_tool,
@@ -170,6 +173,7 @@ def _singles(agent_def: Any) -> dict[str, Callable[[], Any]]:
         "clio_search": build_clio_search_tool,
         "clio_search_read": build_clio_search_read_tool,
         **MEMORY_BUILDERS,
+        **SCIENCE_LOG_BUILDERS,
         "session_search": lambda: build_session_search_tool(agent_def),
         "session_read_summary": lambda: build_session_summary_tool(agent_def),
         "session_read_context_frame": lambda: build_session_context_frame_tool(agent_def),
@@ -237,6 +241,7 @@ _SINGLE_NAMES = frozenset(
         "run_workflow",
         "make_plugin",
         *_A2UI_PRODUCERS,
+        *SCIENCE_LOG_TOOLS,
     }
 )
 

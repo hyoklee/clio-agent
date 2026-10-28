@@ -38,6 +38,13 @@ def child_session_metadata(call: "FlowCall", depth: int, run_id: str) -> dict[st
         metadata = {
             "agent_flow": {"id": "react", "options": {}, "depth": depth, "parent_run": run_id}
         }
+    if call.workflow_step is not None:
+        # An isolated run names the step's folder (``gact/node_folders.py``).
+        step = dict(call.workflow_step)
+        folder = str(step.pop("folder", "") or "")
+        metadata = {**(metadata or {}), "workflow_step_of": step}
+        if folder:
+            metadata["node_folder"] = folder
     if call.label:
         metadata = {**(metadata or {}), "subagent_name": call.label}
     return metadata

@@ -4,7 +4,9 @@ A flow run is the checkpoint under its owning assignment (D1). The projection
 joins the flow's published view (the ``workflow`` flow publishes its steps, and the
 proposals awaiting approval) with the run's recorded calls, so each step carries
 its task handle and that task's status, and lists the run's events and open
-questions. A run that ended on a typed outcome carries it as ``outcome``.
+questions. A run that ended on a typed outcome carries it as ``outcome``. A step's
+forks (``gact/agent_fork.py``) are read from task history and drawn beside it as
+``<step>~<n>`` while they run, before the step's wait reports them to the flow.
 """
 
 from __future__ import annotations
@@ -34,7 +36,8 @@ def flow_run(
         calls = _confirmed_children(history, handle, content, calls)
     view = content.get("view")
     if isinstance(view, dict) and isinstance(view.get("steps"), list):
-        view = {**view, "steps": [_step(row, calls) for row in view["steps"]]}
+        steps = [_step(row, calls) for row in view["steps"]]
+        view = {**view, "steps": [row for step in steps for row in (step, *_forks(history, step))]}
     status = str(content.get("status") or "running")
     result = content.get("result")
     projected = {
@@ -115,6 +118,38 @@ def _confirmed_children(
             ),
         }
     return result
+
+
+#: A fork task's status, as the step status the railroad draws.
+_FORK_STATUS = {"completed": "completed", "failed": "failed", "cancelled": "cancelled"}
+
+
+def _forks(history: Any, step: dict[str, Any]) -> list[dict[str, Any]]:
+    """The step's forks, labelled ``<step>~<n>`` in fork order, beside the step."""
+
+    from clio_agent.gact.task_forks import fork_family  # noqa: PLC0415
+
+    handle = str(step.get("handle") or "")
+    if not handle or "~" in str(step.get("id") or ""):
+        return []
+    rows = []
+    for number, member in enumerate(fork_family(history, handle)[1:], 1):
+        task = history.task_snapshot(member)
+        if task is None:
+            continue
+        rows.append(
+            {
+                "id": f"{step.get('id')}~{number}",
+                "target": step.get("target", ""),
+                "after": list(step.get("after") or []),
+                "status": _FORK_STATUS.get(task.status, "running"),
+                "handle": task.handle,
+                "task_status": task.status,
+                "fork_of": step.get("id"),
+                "note": task.description or "",
+            }
+        )
+    return rows
 
 
 def _step(row: dict[str, Any], calls: dict[str, dict[str, Any]]) -> dict[str, Any]:

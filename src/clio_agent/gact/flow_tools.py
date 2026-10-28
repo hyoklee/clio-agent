@@ -247,8 +247,13 @@ def build_run_workflow_tool() -> Any:
         allowed_targets: list[str] | None = None,
         approve_edits: bool = False,
         model: str = "",
+        isolate: bool = False,
     ) -> dict[str, Any]:
+        from clio_agent.gact.node_folders import isolation_refusal  # noqa: PLC0415
         from clio_agent.sdk.workflow import Workflow, WorkflowError  # noqa: PLC0415
+
+        if isolate and (refused := isolation_refusal()) is not None:
+            return refused
 
         try:
             normalized = Workflow.from_dict(workflow).to_dict()
@@ -273,6 +278,7 @@ def build_run_workflow_tool() -> Any:
             "max_edit_rounds": max_edit_rounds,
             "allowed_targets": allowed_targets,
             "approve_edits": approve_edits,
+            "isolate": isolate,
         }
         return await start_flow("workflow", flow_input, None, model)
 
@@ -337,6 +343,14 @@ def build_run_workflow_tool() -> Any:
             },
             "approve_edits": {"type": "boolean", "default": False},
             "model": _MODEL_ARG,
+            "isolate": {
+                "type": "boolean",
+                "default": False,
+                "description": (
+                    "Give the run its own folder (runs/<run-id>/) and each step a subfolder "
+                    "it alone may write; forks start with a copy of their step's folder."
+                ),
+            },
         },
         presentation="tasks",
     )
@@ -399,6 +413,9 @@ def build_workflow_editor_tools(editor: dict[str, Any]) -> list[Any]:
                 },
             },
             presentation="fields:step_id,target,note",
+            # Proposals only: the workflow applies them. So a read-only role (review)
+            # can be an editor; its posture keeps only natives that declare this.
+            read_only=True,
         ),
         native_tool(
             workflow_cancel_step,
@@ -408,5 +425,6 @@ def build_workflow_editor_tools(editor: dict[str, Any]) -> list[Any]:
             desc="Propose cancelling a workflow step that has not started yet.",
             args={"step_id": {"type": "string"}, "reason": {"type": "string", "default": ""}},
             presentation="fields:step_id,cancel",
+            read_only=True,
         ),
     ]

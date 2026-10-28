@@ -47,6 +47,7 @@ from clio_agent.gact.artifacts.environment import (
     tier_at_least,
 )
 from clio_agent.gact.artifacts.records import ArtifactVersion
+from clio_agent.gact.artifacts.shell_command_paths import shell_scan_args
 from clio_agent.gact.artifacts.transform_edges import (
     EdgeScan,
     contributing_workspace_ids,
@@ -405,7 +406,7 @@ def record_transform(
         else _detect_used_edges(
             app,
             sid,
-            args=args,
+            args=shell_scan_args(app, sid, tool_name, args, workspace_id),
             workspace_id=workspace_id,
             turn_id=turn_id,
             trace_id=trace_id,

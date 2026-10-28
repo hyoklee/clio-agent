@@ -2,6 +2,7 @@
 id: core.rendering
 section: rendering
 generate: ui_catalog
+when: {session: root}
 ---
 Response presentation:
 Use natural prose and Markdown where it helps: headings, emphasis, lists, tables,

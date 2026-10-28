@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Optional, cast
 
 from clio_agent.gact import context as _ctx
 from clio_agent.gact.artifacts.ingest_edges import join_call_to_serving_child
+from clio_agent.gact.artifacts.observer_bridge import report_observer_call
 from clio_agent.gact.artifacts.observer_provenance import tool_provenance_metadata
 from clio_agent.gact.artifacts.provenance_presentation import with_provenance_blocks
 from clio_agent.gact.delegation import _expert_handoff_fields
@@ -45,6 +46,9 @@ from clio_agent.gact.tool_call_merge import (
 from clio_agent.gact.tool_call_merge import (
     _tool_call_has_result_evidence as _tool_call_has_result_evidence,
 )
+from clio_agent.gact.tool_call_merge import (
+    _tool_calls_from_handoff_rows as _tool_calls_from_handoff_rows,
+)
 from clio_agent.gact.tool_completion_delivery import terminal_tool_delivery
 from clio_agent.gact.tool_observer_parts import completed_tool_metadata, completed_tool_text
 from clio_agent.gact.tool_progress import ToolProgressRegistry
@@ -72,25 +76,6 @@ from clio_agent.gact.tool_event_identity import (
 from clio_agent.gact.tool_event_identity import (
     _tool_call_name_args_key as _tool_call_name_args_key,
 )
-
-
-def _tool_calls_from_handoff_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return nested child tool-call evidence from delegation rows."""
-
-    tool_rows: list[dict[str, Any]] = []
-
-    def visit(row: Any) -> None:
-        if not isinstance(row, Mapping):
-            return
-        for call in row.get("tools_called") or []:
-            if isinstance(call, Mapping):
-                tool_rows.append(_normalize_tool_call_row(call))
-        for child in row.get("children") or []:
-            visit(child)
-
-    for row in rows:
-        visit(row)
-    return tool_rows
 
 
 def _session_turn_transcript(app: "FastAPI", sid: str) -> "Optional[TurnTranscript]":
@@ -546,6 +531,7 @@ def _make_tool_observer(app: "FastAPI"):
             call_id = f"call_{uuid.uuid4().hex[:12]}"
             # Concurrent coroutines must retain their own call identity and clock.
             _OBSERVER_CALL_IDS.set(call_id)
+            report_observer_call(call_id)
             started_at = time.time()
             _OBSERVER_CALL_T0.set(started_at)
             observer_handle = progress_registry.started(call_id, sid)

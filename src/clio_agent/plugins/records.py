@@ -14,6 +14,8 @@ from typing import Any, Literal
 
 Severity = Literal["error", "warning"]
 FRAGMENT_SECTIONS = ("guidelines", "rendering", "capabilities", "domain")
+#: A fragment's ``when.session``: empty (every session), ``root`` or ``delegated``.
+FRAGMENT_SESSIONS = frozenset({"", "root", "delegated"})
 
 
 @dataclass(frozen=True)
@@ -82,6 +84,10 @@ class SubagentRecord:
     max_iters: int = 0
     structured_outputs: dict[str, Any] = field(default_factory=dict)
     internal: bool = False
+    #: ``caller``: the plugins are the delegating agent's resolution.
+    derive: str = ""
+    #: ``read``: the child runs under the read-only profile.
+    effects: str = ""
 
 
 @dataclass(frozen=True)
@@ -103,6 +109,8 @@ class FragmentRecord:
     when_tools: tuple[str, ...] = ()
     when_plugins: tuple[str, ...] = ()
     generate: str = ""
+    #: ``root`` or ``delegated``: the sessions it reaches; empty means both.
+    when_session: str = ""
 
     @property
     def tokens(self) -> int:

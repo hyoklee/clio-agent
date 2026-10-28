@@ -103,6 +103,12 @@ Fernhill updates the saved charts and tables, including when you are offline.
 [Open the saved example HTML](/examples/bike-dashboard.html) ·
 [Download the source counts](/datasets/bike-stations.csv).
 
+Files the report shows, such as the meshes behind a 3D view, are embedded in the
+HTML, so a 48-case sweep of 3D designs makes a file of a few hundred megabytes. An
+export larger than `artifacts.dashboard_export_max_bytes` (2 GiB by default) is
+refused with a message naming its size; raise the limit in
+[Configuration](/docs/configuration/) if you need a larger file.
+
 The saved report cannot call a live agent. External services and uncaptured media
 do not become available merely because you export it. If the recipient also
 needs your questions, the recorded work, and supporting files,

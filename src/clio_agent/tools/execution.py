@@ -651,6 +651,8 @@ class SyncMCPToolExecutor(SyncNamespacePreparationMixin):
             _tool_input_schema(self._mcp_tools.get(name)),  # fastmcp-4 snake-case-aware read
             get_active_tool_workspace_root(),
         )
+        if refusal := _node_output_refusal(effective_args):  # outside an isolated node's folder
+            raise notify_refused_call(tool_observer, name, effective_args, refusal)
 
         approval = task_calls.capture_approval(name, effective_args) if permission_gate else None
         if permission_gate is not None:
@@ -963,15 +965,8 @@ class MCPToolBridge(SyncMCPToolExecutor):
     """Backward-compatible name for the sync MCP tool executor."""
 
 
-# Output-artifact designation table (issue #966 deletion inventory item 2): the
-# tool-declared output-arg names, artifact suffixes and the pre-call grounding
-# now live in the artifacts designation module — the ONE place that decides which
-# output paths become artifacts (designation, not discovery). The grounding call
-# in ``_call_tool_inner`` imports :func:`ground_output_paths` from there LAZILY:
-# ``execution.py`` is imported DURING ``clio_agent.gact`` package init (app.py ->
-# execution), so a top-level ``from clio_agent.gact.artifacts...`` would re-enter
-# the half-initialized ``gact`` package and deadlock the import. The lazy import
-# keeps the tool boundary's behavior byte-identical (parity test) with no cycle.
+# Output-path grounding lives in the artifacts designation module (#966); imported
+# LAZILY because execution.py loads during ``clio_agent.gact`` package init.
 
 
 def _ground_output_paths(
@@ -979,10 +974,15 @@ def _ground_output_paths(
     input_schema: Any,
     workspace_root: str,
 ) -> dict[str, Any]:
-    """Thin re-export of the artifacts designation grounding (behavior unchanged)."""
     from clio_agent.gact.artifacts.designation import ground_output_paths  # noqa: PLC0415
 
     return ground_output_paths(args, input_schema, workspace_root)
+
+
+def _node_output_refusal(args: "Mapping[str, Any]") -> str:
+    from clio_agent.gact.artifacts.designation import node_output_refusal  # noqa: PLC0415
+
+    return node_output_refusal(args)
 
 
 def _make_dspy_tools(

@@ -82,6 +82,18 @@ _DEFINITIONS = (
         unlimited_value=0,
     ),
     SettingDefinition(
+        "agent_tasks.max_forks_per_task",
+        "CLIO_MAX_FORKS_PER_TASK",
+        "Forks per task",
+        "Most copies an agent may make of itself to try another direction, per task. Inside a workflow a fork counts as an added step instead.",
+        "Subagents",
+        0.0,
+        "Applies to forks made from now on.",
+        minimum=0,
+        integer=True,
+        unlimited_value=0,
+    ),
+    SettingDefinition(
         "workflows.max_added_steps",
         "CLIO_WORKFLOW_MAX_ADDED_STEPS",
         "Steps editors may add",

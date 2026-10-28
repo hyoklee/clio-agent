@@ -41,6 +41,7 @@ SABOTAGE (run manually, each turns the named test red):
 from __future__ import annotations
 
 import json
+import re
 import sys
 import threading
 from collections.abc import Iterator
@@ -157,8 +158,19 @@ def _compaction_events(events: list[Any]) -> list[Any]:
     return [e for e in events if e.event_type.startswith("compaction.")]
 
 
+# A recorded tool result ends with its ``[call:<session>/<call_id>]`` reference (the
+# science log cites it); these tests compare the tool's own output.
+_CALL_REF = re.compile(r"\[call:[^\]]+\]$")
+
+
 def _texts(messages: tuple[LMMessage, ...] | list[LMMessage]) -> list[tuple[str, list[Any]]]:
-    return summarize(list(messages))
+    return [
+        (
+            role,
+            [(*p[:2], _CALL_REF.sub("", p[2]), *p[3:]) if p[0] == "result" else p for p in parts],
+        )
+        for role, parts in summarize(list(messages))
+    ]
 
 
 def _transcript(client: TestClient, sid: str) -> list[dict[str, Any]]:

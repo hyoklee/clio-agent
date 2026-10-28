@@ -271,6 +271,27 @@ def test_workflow_editor_tools_build_and_only_propose() -> None:
     assert cancel.func(step_id="polish")["cancel"] is True
 
 
+def test_a_read_only_role_keeps_the_editor_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The review role is read-only; as a workflow's editor it still sees the editor tools.
+
+    Live, a ``review`` editor step reported it had no ``workflow_add_step``: its read-only
+    posture drops natives that do not declare ``read_only``, and proposing changes nothing.
+    """
+
+    from types import SimpleNamespace
+
+    from clio_agent.gact.agents import session_tool_posture
+    from clio_agent.gact.agents.tool_instrumentation import instrument_tools
+    from clio_agent.gact.flow_tools import WORKFLOW_EDITOR_TOOLS, build_workflow_editor_tools
+    from clio_agent.gact.side_sessions import READ_ONLY_SIDE_PROFILE
+
+    session = SimpleNamespace(id="sess_editor", approval_profile=READ_ONLY_SIDE_PROFILE)
+    monkeypatch.setattr(session_tool_posture, "_active_session", lambda: session)
+    tools = instrument_tools(build_workflow_editor_tools({"run": "flowrun_x", "step": "edit"}))
+    kept = session_tool_posture.restrict_tools_to_session_posture(tools)
+    assert [tool.name for tool in kept] == list(WORKFLOW_EDITOR_TOOLS)
+
+
 def test_a_cancelled_workflow_ends_cancelled_not_stalled(flow_app: TestClient) -> None:
     """Cancelling the workflow run cancels its running step: the step and its dependents
     read cancelled and the run ends cancelled, never as a failed step's stall."""

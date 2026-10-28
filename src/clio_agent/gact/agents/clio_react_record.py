@@ -254,7 +254,11 @@ class _StepFold:
         if call is None or call_id in self.results:
             raise ContextFoldError("orphan_observation", seg, f"no open call {call_id!r}")
         self.results[call_id] = result_part(
-            call_id, call.name, content.get("text", ""), bool(content.get("is_error"))
+            call_id,
+            call.name,
+            content.get("text", ""),
+            bool(content.get("is_error")),
+            call_ref=str(content.get("call_ref") or ""),
         )
 
     def messages(self, next_seg: Any) -> list[Message]:
@@ -528,12 +532,14 @@ class StepRecorder:
         results: Mapping[str, tuple[Any, bool]],
         thinking_source: str = "",
         thinking_complete: bool = True,
+        refs: Mapping[str, str] | None = None,
     ) -> None:
         """Write the step's segments and put ``react.step.completed`` on the highway.
 
         ``thinking_source`` labels the step's thinking (``provider_field`` /
         ``inline_tag``); an inline block the reply never closed is marked
-        ``thinking_incomplete``.
+        ``thinking_incomplete``. ``refs`` carries each call's ``call:`` reference,
+        which the observation keeps so the model sees it with the result.
         """
         from clio_agent.gact.runtime.context_tokens import _arc_obs_value  # noqa: PLC0415
         from clio_agent.gact.runtime.globals import _emit_react_step_event  # noqa: PLC0415
@@ -569,6 +575,7 @@ class StepRecorder:
                 "call_id": call.id,
                 "text": _arc_obs_value(value),
                 "is_error": is_error,
+                **({"call_ref": refs[call.id]} if refs and refs.get(call.id) else {}),
                 **({"notification_ids": notification_ids} if notification_ids else {}),
                 **({"task_read_handles": read_handles} if read_handles else {}),
                 **({"task_observe_handles": observe_handles} if observe_handles else {}),

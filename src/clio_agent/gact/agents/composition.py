@@ -48,7 +48,11 @@ def _runtime_active_workspace_context(app: "FastAPI", *, session_id: str = "") -
             "session. Read inputs from wherever the user points you."
         ),
     ]
-    if allowed_roots:
+    from clio_agent.gact.node_folders import prompt_lines, session_node_folder  # noqa: PLC0415
+
+    if node_folder := session_node_folder(app, session_id):
+        lines = [lines[0], *prompt_lines(node_folder)]
+    elif allowed_roots:
         lines.append("Writes are only permitted under: " + ", ".join(allowed_roots) + ".")
     return "\n".join(lines)
 

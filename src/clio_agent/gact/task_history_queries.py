@@ -462,6 +462,14 @@ def notify_projected(
         or event_type == "session.coordination.grant",
         mail_targets=mail_targets,
     )
+    if event_type == "task.observed" and payload.get("fork_of"):
+        # Whoever waits on the original waits on its forks (task_forks): wake them on
+        # the fork's creation and on each change, all the way up the fork chain.
+        from clio_agent.gact.task_forks import fork_ancestors  # noqa: PLC0415
+
+        snapshot = self.task_snapshot(str(handle))
+        for original in fork_ancestors(self, snapshot) if snapshot is not None else ():
+            notify(self, handle=original)
 
 
 def notify(

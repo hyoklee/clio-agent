@@ -638,6 +638,8 @@ def _finish(
                 "structured_outputs": dict(sub.structured_outputs),
                 "prompt": sub.prompt,
                 "internal": sub.internal,
+                "derive": sub.derive,
+                "effects": sub.effects,
             }
             for owner, sub in collected["subagents"]
         ],
@@ -742,11 +744,29 @@ def resolve_subagent(catalog: Catalog, parent: Resolution, subagent_id: str) -> 
             ]
         )
     builder = _Builder(catalog, str(parent.agent.get("marketplace") or ""))
-    selections = [
-        (PluginRef.parse(CORE_PLUGIN), "core", "core", 0),
-        (PluginRef.parse(row["plugin"]), "agent", row["plugin"], 1),
-    ]
-    selections += [(PluginRef.parse(ref), "agent", row["plugin"], 1) for ref in row["plugins"]]
+    selections = [(PluginRef.parse(CORE_PLUGIN), "core", "core", 0)]
+    if row.get("derive") == "caller":
+        # A role derives its plugins from the agent delegating to it: exactly the
+        # caller's resolved plugins, pinned to the versions the caller runs. Packs are
+        # skipped: their members are listed already, and a pack would re-add a member
+        # the caller's delta removed.
+        selections += [
+            (
+                PluginRef(
+                    plugin["id"],
+                    f"={plugin['version']}" if plugin.get("version") else "",
+                    str(plugin.get("marketplace") or ""),
+                ),
+                "agent",
+                row["plugin"],
+                1,
+            )
+            for plugin in parent.plugins
+            if plugin["id"] != CORE_PLUGIN and plugin.get("kind") != "pack"
+        ]
+    else:
+        selections.append((PluginRef.parse(row["plugin"]), "agent", row["plugin"], 1))
+        selections += [(PluginRef.parse(ref), "agent", row["plugin"], 1) for ref in row["plugins"]]
     removed = _resolve_set(builder, selections, Delta(), user_depth=2)
     entries = sorted(builder.entries.values(), key=lambda e: e.order)
     agent = {
@@ -763,6 +783,8 @@ def resolve_subagent(catalog: Catalog, parent: Resolution, subagent_id: str) -> 
         "kind": "subagent",
         "max_iters": row.get("max_iters", 0),
         "structured_outputs": row.get("structured_outputs") or {},
+        "derive": row.get("derive") or "",
+        "effects": row.get("effects") or "",
     }
     return _finish(
         builder,

@@ -183,8 +183,9 @@ def _resolve_cwd(cwd: str | None) -> Path:
         from clio_agent.tools.execution import (  # noqa: PLC0415 - avoid import cycle
             get_active_tool_workspace_root,
         )
+        from clio_agent.tools.write_scope import active_tool_write_root  # noqa: PLC0415
 
-        active_root = get_active_tool_workspace_root()
+        active_root = str(active_tool_write_root() or get_active_tool_workspace_root())
         if active_root:
             raw = Path(active_root)
         else:
@@ -610,6 +611,8 @@ async def execute_shell(
         # The model's shell is not the authenticated human control channel.
         for internal_credential in ("CLIO_AUTH_TOKEN", "CLIO_GACT_BEARER_TOKEN"):
             run_env.pop(internal_credential, None)
+        # Secrets meant for plugin servers (``${CLIO_SECRET_*}``) never reach the shell.
+        run_env = {k: v for k, v in run_env.items() if not k.startswith("CLIO_SECRET_")}
         # Prepared scratch is already inside this workspace's writable territory.
         run_env.update({key: prepared[key] for key in ("TEMP", "TMP", "TMPDIR") if key in prepared})
         from clio_agent.paths import workspace_state_dir  # noqa: PLC0415

@@ -187,6 +187,35 @@ class BudgetWorker(Flow):
         return (await ctx.call("self", task)).answer
 
 
+class ForkedWorkflow(Flow):
+    id = "forkedworkflow"
+
+    async def forward(self, task, ctx):
+        spec = {
+            "workflow": {
+                "steps": [
+                    {"id": "draft", "target": "self", "input": "FORK " + task},
+                    {"id": "merge", "target": "self", "after": ["draft"], "input": "merge $draft"},
+                ]
+            },
+            "task": task,
+            "max_added_steps": 0 if "bounded" in task else None,
+            "approve_edits": "approve" in task,
+            "isolate": "isolated" in task,
+        }
+        result = await ctx.call("workflow", spec)
+        return {"answer": result.answer, "workflow": result.outputs.get("workflow")}
+
+
+class ChildForker(Flow):
+    id = "childforker"
+
+    async def forward(self, task, ctx):
+        result = await ctx.call("self", "FORKTWICE " + task)
+        forks = [row.get("result", {}).get("answer", "") for row in result.forks]
+        return {"answer": " | ".join([result.answer, *forks])}
+
+
 class CrashFanout(Flow):
     id = "crashfanout"
 
@@ -250,6 +279,8 @@ class Orchestrator(Agent):
 
 
 Editor = _agent("editor", "editedworkflow")
+Forker = _agent("forker", "forkedworkflow")
+ChildForkerer = _agent("childforkerer", "childforker")
 """
 
 
@@ -313,6 +344,46 @@ def default_program(question: str = "", **_: Any) -> Any:
                 raise RuntimeError("the test never stopped the child")
             time.sleep(0.05)
         raise _turn_cancelled()
+    if question.startswith("FORKTWICE") or question.startswith("FORKME"):
+        # A delegated child (FORKTWICE) or a root conversation (FORKME) forks itself.
+        import asyncio
+
+        from clio_agent.gact import context
+        from clio_agent.gact.agent_fork import fork_caller
+
+        app = context.active_app()
+        sid = context.active_session_id()
+        caller = app.state.conversations.caller(sid)
+        notes = ["Try the second idea", "Try the third idea"]
+        for index, note in enumerate(notes[: 2 if question.startswith("FORKTWICE") else 1]):
+            forked = asyncio.run_coroutine_threadsafe(
+                fork_caller(app, caller, note, None, f"fork-{index}"),
+                app.state.conversations._loop,
+            ).result(60)
+            app.state.fork_results = [*getattr(app.state, "fork_results", []), forked]
+        return dspy.Prediction(answer="first idea")
+    if question.startswith("FORK"):
+        # The step forks itself, as the model would call ``fork``, then answers.
+        import asyncio
+        import json
+        from pathlib import Path
+
+        from clio_agent.gact import context
+        from clio_agent.gact.agent_fork import fork_caller
+        from clio_agent.gact.node_folders import session_node_folder
+
+        app = context.active_app()
+        sid = context.active_session_id()
+        if folder := session_node_folder(app, sid):
+            # An isolated step's work so far, which its fork starts with.
+            (Path(folder) / "notes.txt").write_text("first half", encoding="utf-8")
+        caller = app.state.conversations.caller(sid)
+        forked = asyncio.run_coroutine_threadsafe(
+            fork_caller(app, caller, "Pursue the other branch", None, "fork-call"),
+            app.state.conversations._loop,
+        ).result(60)
+        app.state.fork_results = [*getattr(app.state, "fork_results", []), forked]
+        return dspy.Prediction(answer="drafted: " + json.dumps(forked.get("reason", "forked")))
     if "YIELD" in question:
         # The child keeps its assignment open for a follow-up nobody will send.
         return dspy.Prediction(answer="need approval to continue", assignment_disposition="yield")

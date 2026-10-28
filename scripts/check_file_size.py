@@ -671,7 +671,7 @@ RATCHET_BASELINE: dict[str, int] = {
     # gact/compaction.py::compact_session_context (one operation, two triggers); the
     # whole manual-compact body, gact/compact_memory.py's import, and the dead
     # session_archives snapshot are gone -- 1407 -> 1176.
-    "src/clio_agent/gact/routes/sessions.py": 850,  # fork and question routes have their own owners
+    "src/clio_agent/gact/routes/sessions.py": 840,  # fork and question routes have their own owners
     # #1215 S5: crossed the 800 new-file cap (793 -> 809) for enrich_turn_context —
     # a thin timed combinator wrapping the TWO existing enrichment calls
     # (_enrich_with_context_files + _enrich_with_requested_memory_search) in ONE
@@ -726,7 +726,7 @@ RATCHET_BASELINE: dict[str, int] = {
     # wake_on_parent_activity call site right after the tool.call.completed
     # publish (a lazy import + one call). All gating/coalesce/wake logic lives
     # in the owner module gact/spotter_watcher.py.
-    "src/clio_agent/gact/tool_observer.py": 921,  # Row identity/merging moved to tool_call_merge.
+    "src/clio_agent/gact/tool_observer.py": 907,  # Row identity/merging moved to tool_call_merge.
     # Collector-collapse work already on this branch grew the file to 1303 (>the
     # recorded 986 baseline) before this entry was updated — pre-existing, not
     # introduced here. P5 (wire semantics): +34 for the waited_tasks union-merge

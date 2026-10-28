@@ -14,6 +14,16 @@ limits what may be added. With ``approve_edits`` each proposal waits on a Questi
 proposed step is recorded as pending until then. A failed step is first offered to the
 editors as a typed stall (they may add a repair step within the same bounds); if nobody
 edits, the stall returns to the caller.
+
+A running step may ``fork`` itself (``gact/agent_fork.py``): the fork runs beside it as
+``<step>~<n>``, counts as an added step, and the step's wait covers it, so its
+dependents wait on both and ``$<step>`` reads every answer of the family, labelled. A
+failed fork is offered to the editors like a failed step.
+
+With ``isolate`` the run gets ``<workspace>/runs/<run-id>/`` and each step its own
+folder in it, which is the only place that step's session may write
+(``gact/node_folders.py``); a fork starts with a copy of its step's folder. A run
+whose OS fence cannot narrow writes stalls at start (``isolation_unconfined``).
 """
 
 from __future__ import annotations
@@ -26,11 +36,13 @@ from typing import Any
 from clio_agent.flows import limits
 from clio_agent.flows.outcomes import (
     CallCancelled,
+    CallFailed,
     FlowCheckpointLimit,
     FlowOutcome,
     FlowStall,
     FlowTargetUnknown,
 )
+from clio_agent.flows.values import CallResult
 from clio_agent.sdk import Flow, Step, Workflow, WorkflowError
 
 _EDIT_TOOLS = ("workflow_add_step", "workflow_cancel_step")
@@ -51,7 +63,14 @@ def _substitute(value: Any, task: Any, results: dict[str, Any]) -> Any:
             if name == "task":
                 return task
             result = results[name]
-            return getattr(result, "answer", result)
+            forks = _fork_labels(name, results)
+            if not forks:
+                return getattr(result, "answer", result)
+            # A forked step's reference reads the whole family, each answer labelled.
+            return "\n\n".join(
+                f"[{label}]\n{_text(getattr(results[label], 'answer', results[label]))}"
+                for label in (name, *forks)
+            )
 
         def known(name: str) -> bool:
             return name == "task" or name in results
@@ -78,6 +97,22 @@ def _substitute(value: Any, task: Any, results: dict[str, Any]) -> Any:
     if isinstance(value, list):
         return [_substitute(v, task, results) for v in value]
     return value
+
+
+def _fork_labels(step_id: str, labelled: Any) -> list[str]:
+    """``<step>~1``, ``<step>~2`` ... among ``labelled``'s keys, in fork order."""
+
+    prefix = step_id + "~"
+    found = [k for k in labelled if k.startswith(prefix) and k[len(prefix) :].isdigit()]
+    return sorted(found, key=lambda k: int(k[len(prefix) :]))
+
+
+def _isolate(workspace_root: str, run_id: str) -> dict[str, Any]:
+    from clio_agent.gact.node_folders import isolation_refusal, run_folder  # noqa: PLC0415
+
+    if not workspace_root:
+        return {"accepted": False, "reason": "no_workspace", "error": "no workspace folder"}
+    return isolation_refusal() or {"folder": str(run_folder(workspace_root, run_id))}
 
 
 def _bounds(asked_added: int | None, asked_rounds: int | None) -> dict[str, int | None]:
@@ -124,6 +159,9 @@ class _WorkflowRun:
         allowed = spec.get("allowed_targets")
         self.allowed = {str(t) for t in allowed} if allowed is not None else None
         self.approve = bool(spec.get("approve_edits", False))
+        self.isolate = bool(spec.get("isolate", False))
+        #: The run's folder when isolated: ``<workspace>/runs/<run-id>/``.
+        self.folder = ""
         self.status: dict[str, str] = dict.fromkeys(self.steps, "pending")
         self.results: dict[str, Any] = {}
         self.errors: dict[str, dict[str, Any]] = {}
@@ -133,6 +171,8 @@ class _WorkflowRun:
         self.handles: dict[str, str] = {}
         self.invocations: dict[str, str] = {}
         self.awaiting: dict[str, dict[str, Any]] = {}
+        #: A step's forks by label (``<step>~<n>``): the step it forked, handle, status.
+        self.forks: dict[str, dict[str, Any]] = {}
 
     # ------------------------------------------------------------ helpers
     def _ready(self) -> list[Step]:
@@ -164,7 +204,11 @@ class _WorkflowRun:
         if step.description:
             payload["instructions"] = step.description
         if step.after:
-            payload["inputs"] = {dep: self._dependency(dep) for dep in step.after}
+            payload["inputs"] = {
+                label: self._dependency(label)
+                for dep in step.after
+                for label in (dep, *_fork_labels(dep, self.results))
+            }
         return payload
 
     def _dependency(self, step_id: str) -> Any:
@@ -190,6 +234,7 @@ class _WorkflowRun:
                 }
                 for step in self.steps.values()
             ],
+            "forks": [{"id": label, **row} for label, row in self.forks.items()],
             "added": self.added,
             "rounds": self.rounds,
         }
@@ -212,6 +257,7 @@ class _WorkflowRun:
                 "max_added_steps": self.max_added_steps,
                 "max_edit_rounds": self.max_edit_rounds,
                 "approve_edits": self.approve,
+                **({"folder": self.folder} if self.folder else {}),
             }
         )
 
@@ -223,6 +269,12 @@ class _WorkflowRun:
             bounds["max_added_steps"],
             bounds["max_edit_rounds"],
         )
+        if self.isolate:
+            root = self.ctx.workspace.root
+            isolated = await self.ctx.step(_isolate, str(root or ""), self.ctx.run_id)
+            if "folder" not in isolated:
+                raise FlowStall(isolated["reason"], isolated["error"], observed=isolated)
+            self.folder = isolated["folder"]
         await self._publish()
         while True:
             while blocked := self._blocked():
@@ -268,6 +320,7 @@ class _WorkflowRun:
             return f"[{label}]\n{str(getattr(result, 'response_text', '')).strip()}"
 
         earlier = [n for n in self.steps if n in self.results and n not in sinks]
+        earlier += [label for label in self.forks if label in self.results]
         answer = "\n\n".join(section(n) for n in sinks)
         if earlier:
             answer += "\n\nEarlier steps:\n\n" + "\n\n".join(section(n) for n in earlier)
@@ -311,6 +364,11 @@ class _WorkflowRun:
         target = Flow(step.target, **step.options) if step.options else step.target
         call = self.ctx.call(target, payload, key=f"step:{step.id}", model=step.model)
         call.label = step.id
+        call.workflow_step = {"run": self.ctx.run_id, "step": step.id}
+        if self.folder:
+            from clio_agent.gact.node_folders import step_folder  # noqa: PLC0415
+
+            call.workflow_step["folder"] = step_folder(self.folder, step.id)
         if step.target in self.editors:
             call.editor = {"run": self.ctx.run_id, "step": step.id}
         self.invocations[step.id] = call.invocation
@@ -351,12 +409,44 @@ class _WorkflowRun:
         await self.ctx.record_event(
             {"event": "step_completed", "step": step_id, "handle": self.handles[step_id]}
         )
+        await self._settle_forks(step_id, result)
         if step.target in self.editors:
             await self._apply_edits(step_id, result)
         await self._publish()
 
-    async def _offer_stall(self, step_id: str, outcome: FlowOutcome) -> None:
-        """Offer a failed step to the editors, who may add a repair step."""
+    async def _settle_forks(self, step_id: str, result: Any) -> None:
+        """Record the step's forks, which its wait covered; offer a failed one to the editors."""
+
+        for number, row in enumerate(getattr(result, "forks", None) or [], 1):
+            label = f"{step_id}~{number}"
+            status = str(row.get("status") or ("failed" if row.get("error") else ""))
+            self.forks[label] = {
+                "fork_of": step_id,
+                "handle": row.get("handle", ""),
+                "status": status,
+            }
+            if status == "completed":
+                self.results[label] = CallResult(
+                    row.get("result"), handle=row.get("handle", ""), target=label, kind="agent"
+                )
+                await self.ctx.record_event(
+                    {"event": "fork_completed", "step": label, "fork_of": step_id}
+                )
+                continue
+            failure = CallFailed(
+                f"fork {label!r} ended {status or 'without a result'}",
+                handle=row.get("handle", ""),
+                status=status,
+                error=str(row.get("error") or ""),
+            )
+            self.errors[label] = failure.to_dict()
+            await self.ctx.record_event(
+                {"event": "fork_failed", "step": label, "fork_of": step_id, **failure.to_dict()}
+            )
+            await self._offer_stall(label, failure, target=self.steps[step_id].target)
+
+    async def _offer_stall(self, step_id: str, outcome: FlowOutcome, *, target: str = "") -> None:
+        """Offer a failed step (or fork) to the editors, who may add a repair step."""
 
         if not self.editors or self._rounds_spent():
             return
@@ -366,7 +456,7 @@ class _WorkflowRun:
             stall = {
                 "stall": "step_failed",
                 "step": step_id,
-                "target": self.steps[step_id].target,
+                "target": target or self.steps[step_id].target,
                 "error": outcome.to_dict(),
             }
             payload = {
@@ -429,7 +519,11 @@ class _WorkflowRun:
             after = [a for a in after if a != repairing]
         options = args.get("options") or None
         reason = ""
-        if self.max_added_steps is not None and self.added >= self.max_added_steps:
+        # A fork counts as an added step against the same bound.
+        if (
+            self.max_added_steps is not None
+            and self.added + len(self.forks) >= self.max_added_steps
+        ):
             reason = "max_added_reached"
         elif self.allowed is not None and target not in self.allowed:
             reason = "target_not_allowed"

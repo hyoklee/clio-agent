@@ -153,7 +153,13 @@ def agent_task_view(app: Any, task: dict[str, Any]) -> dict[str, Any]:
 
 
 def register_task_routes(app: FastAPI) -> None:
-    """Register canonical controls plus pure compatibility projections."""
+    """Register canonical controls plus pure compatibility projections.
+
+    The science log's read route lives with them: its entries are task-history events.
+    """
+    from clio_agent.gact.routes.science_log import register_science_log_routes  # noqa: PLC0415
+
+    register_science_log_routes(app)
 
     def caller(sid: str) -> TaskCaller:
         if not sid:

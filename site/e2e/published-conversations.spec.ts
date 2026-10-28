@@ -38,6 +38,34 @@ for (const [slug, title, messages] of [
   });
 }
 
+for (const [path, title, messages] of [
+  ['/conversations/delegation/reading-guide/', 'Reading guide to the design folder', 2],
+  ['/conversations/delegation/skill-review/', 'Skill review across plugins', 8],
+  ['/conversations/delegation/agent-fork.html', 'Agent fork check', 10],
+  ['/conversations/studies/wordle/', 'Wordle study', 21],
+  ['/conversations/studies/wordle-views/', 'Wordle study', 10],
+] as const) {
+  test(`${path}: published archive opens without contacting services`, async ({ page, baseURL }) => {
+    // The reading guide embeds its ten children's transcripts (87 MB); the study, every branch's
+    // (48 MB). Hydrating 87 MB takes over 30 s on a loaded machine.
+    test.setTimeout(150_000);
+    const errors: string[] = [];
+    const externalRequests: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
+    page.on('request', (request) => {
+      if (/^https?:/.test(request.url()) && new URL(request.url()).origin !== new URL(baseURL!).origin)
+        externalRequests.push(request.url());
+    });
+    const response = await page.goto(path);
+    expect(response?.status()).toBe(200);
+    expect(response?.headers()['content-type']).toContain('text/html');
+    await expect(page.getByRole('heading', { level: 1, name: title, exact: true }).filter({ visible: true })).toBeVisible({ timeout: 90_000 });
+    await expect(page.getByText(new RegExp(`Transcript.*${messages} messages`)).filter({ visible: true })).toBeVisible();
+    expect(errors).toEqual([]);
+    expect(externalRequests).toEqual([]);
+  });
+}
+
 test('unqualified Ares archive is unpublished', async ({ page }) => {
   const response = await page.goto('/conversations/ndp/ares/');
   expect(response?.status()).toBe(404);

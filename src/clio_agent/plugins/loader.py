@@ -37,6 +37,7 @@ from clio_agent.plugins.manifest import (
 from clio_agent.plugins.package_files import package_files
 from clio_agent.plugins.records import (
     FRAGMENT_SECTIONS,
+    FRAGMENT_SESSIONS,
     CatalogRecord,
     CommandRecord,
     Diagnostic,
@@ -299,8 +300,10 @@ def _fragments_and_texts(
             problem = f"section {section!r} must be one of {', '.join(FRAGMENT_SECTIONS)}"
         elif section in ("guidelines", "rendering") and plugin != "core":
             problem = f"only the core plugin contributes the {section} section"
-        elif not isinstance(when, dict) or set(when) - {"tools", "plugins"}:
-            problem = "when may only hold tools and plugins lists"
+        elif not isinstance(when, dict) or set(when) - {"tools", "plugins", "session"}:
+            problem = "when may only hold tools and plugins lists and a session scope"
+        elif str(when.get("session") or "") not in FRAGMENT_SESSIONS:
+            problem = f"when.session must be one of {', '.join(sorted(FRAGMENT_SESSIONS - {''}))}"
         if problem:
             diagnostics.append(
                 Diagnostic("error", "fragment_invalid", f"{relative}: {problem}", plugin)
@@ -315,6 +318,7 @@ def _fragments_and_texts(
                 when_tools=tuple(str(t) for t in when.get("tools") or ()),
                 when_plugins=tuple(str(p) for p in when.get("plugins") or ()),
                 generate=str(meta.get("generate") or ""),
+                when_session=str(when.get("session") or ""),
             )
         )
     return fragments, texts, diagnostics
@@ -495,6 +499,34 @@ def _subagent_record(
             return None
     else:
         text = str(prompt.get("text") or "")
+    invalid: list[tuple[str, str]] = []
+    if described["derive"] not in {"", "caller"}:
+        invalid.append(
+            (
+                "subagent_derive_invalid",
+                f"derive must be 'caller' or empty, not {described['derive']!r}",
+            )
+        )
+    elif described["derive"] == "caller" and described["plugins"]:
+        invalid.append(
+            (
+                "subagent_derive_conflict",
+                "derives its plugins from the caller and cannot also name plugins",
+            )
+        )
+    if described["effects"] not in {"", "read"}:
+        invalid.append(
+            (
+                "subagent_effects_invalid",
+                f"effects must be 'read' or empty, not {described['effects']!r}",
+            )
+        )
+    if invalid:
+        parts.diagnostics.extend(
+            Diagnostic("error", code, f"subagent {value.id!r}: {message}", plugin)
+            for code, message in invalid
+        )
+        return None
     return SubagentRecord(
         id=described["id"],
         description=described["description"],
@@ -506,6 +538,8 @@ def _subagent_record(
         max_iters=described["max_iters"],
         structured_outputs=described["structured_outputs"],
         internal=described["internal"],
+        derive=described["derive"],
+        effects=described["effects"],
     )
 
 

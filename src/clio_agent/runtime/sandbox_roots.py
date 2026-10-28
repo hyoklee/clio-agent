@@ -208,6 +208,19 @@ def effective_write_roots(
         if resolved not in roots:
             roots.append(resolved)
 
+    narrowed = tuple(getattr(policy, "write_roots", ()) or ())
+    if narrowed and profile == PROFILE_SHELL:
+        # An isolated workflow node's shell writes only its own folder and scratch
+        # (:mod:`clio_agent.tools.write_scope`), whatever cwd it runs in. The fleet is
+        # shared by every session of the workspace, so it is never narrowed per node.
+        roots = list(narrowed)
+        from clio_agent import paths  # noqa: PLC0415 - avoid import cycle at module load
+
+        _add(Path(tempfile.gettempdir()))
+        _add(paths.user_cache_dir())
+        _add(paths.user_config_dir())
+        return tuple(roots)
+
     if workspace_root:
         _add(Path(workspace_root))
     # Mid-session root grants (B5 #979.3): a recorded workspace root grant takes effect on the
