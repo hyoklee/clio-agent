@@ -243,7 +243,9 @@ def _mark_artifact_index_empty(app: Any) -> dict[str, Any]:
     from clio_agent.gact.artifacts import registry_migration, registry_store  # noqa: PLC0415
     from clio_agent.gact.artifacts.registry import ArtifactRegistry  # noqa: PLC0415
 
-    registry_migration.migrate(registry_store.index_store(app), ArtifactRegistry())
+    store = registry_store.index_store(app)
+    assert store is not None, "an owed artifact-index migration requires a record store"
+    registry_migration.migrate(store, ArtifactRegistry())
     return {"records": 0, "fold_conflicts": 0}
 
 
