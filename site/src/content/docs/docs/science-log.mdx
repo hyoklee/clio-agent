@@ -80,7 +80,7 @@ The tab has three modes, each using the whole tab:
 
 - **List**: the study tree and the selected branch's log.
 - **Graph**: every entry and the links between them. Each experiment's observations are drawn as one group.
-- **Views**: a plugin's live views, when the study has any.
+- **Views**: the dashboards the study's agent attached, when it has any.
 
 <Capture client:visible image={await captureImage(tab)}
   alt="Science log tab in List mode with the canvas maximized: the question, three hypotheses with refuted or supported chips, and steps with their delegated children and folders"
@@ -141,13 +141,15 @@ Node folders rely on CLIO's write confinement. When it cannot confine writes on 
 
 ## Views and the current law
 
-A plugin can show live views fed by its own tools' results. The simulated bench in these examples records **Bench readings**: every measured period by input, colored by branch. In a study, choose **Views** at the top of the Science log tab. It appears once a session in the study records a view.
+A study's views are dashboards its agent builds and attaches to the study, so you can watch the study and check its conclusion. No plugin decides what a view shows; the agent designs it around the question and can revise it or add another as the study changes course. Choose **Views** at the top of the Science log tab. With several views, a row of their titles switches between them.
 
-When a hypothesis states a law as a formula written in the readings' own names, such as `ten_cycles_s = 19.080 * arm_length_m^0.5908 * ...`, the newest such hypothesis that has not been refuted, superseded or withdrawn is the study's current law. The view names it above its chart, with the hypothesis and the number of readings the formula covers. A view whose plugin draws it also shows the law's value beside each reading as an open mark, so a wrong law sits away from the readings and a good one settles onto them. The view redraws when a hypothesis arrives or changes status.
+A view's charts and tables can read the study directly: its measurements, its entries, and the records a plugin's tools keep (for example a game's board or a bench's readings). They show new entries as branches log them, without the agent rebuilding the view.
+
+When a hypothesis states a law as a formula written in the data's own names, such as `ten_cycles_s = 20 * sqrt(arm_length_m)`, the newest such hypothesis that has not been refuted, superseded or withdrawn is the study's current law. Each measurement it covers carries the law's value, so a chart can draw the law beside the readings and name it. A wrong law sits away from the readings and a good one settles onto them; the chart redraws when a hypothesis arrives or changes status.
 
 <Capture client:visible image={await captureImage(views)}
-  alt="Bench readings view: a line naming the current law, the merged hypothesis with its formula drawn for 240 of 240 rows, above four scatter plots of seconds per cycle against ambient temperature, arm length, bob mass and release angle"
-  caption="The view names the study's current law above the readings. This study was recorded with an earlier version of the bench plugin, which does not draw the open marks."
+  alt="Science log tab in Views mode: a chart of the time for ten cycles against arm length, with the readings as points and the current law as a line named in the legend"
+  caption="A view drawing the readings and the study's current law, named in the legend."
   sizes="(min-width: 50rem) 46rem, 100vw" />
 
 ## Set a budget

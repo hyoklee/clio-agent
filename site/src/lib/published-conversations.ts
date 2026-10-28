@@ -19,7 +19,7 @@ export interface ConversationCollection {
 
 const releases = 'https://github.com/iowarp/clio-agent/releases/download/';
 // JaimeCernuda/clio-exports at a fixed commit: the files there never change under a URL.
-const exports = 'https://raw.githubusercontent.com/JaimeCernuda/clio-exports/4eb811ef33c8f155000c5ab077a2af3e8d66c18e/';
+const exports = 'https://raw.githubusercontent.com/JaimeCernuda/clio-exports/32bc650e38af894e7e74b5091b2842c855bec314/';
 
 /** Every published conversation, served at /conversations/<collection>/<slug>/. */
 export const conversationCollections: readonly ConversationCollection[] = [
@@ -55,6 +55,8 @@ export const conversationCollections: readonly ConversationCollection[] = [
     conversations: [
       { slug: 'wordle', file: 'Wordle-study-session.html', bytes: 48278832,
         sha256: '8d3a29db0ec2aa39fad261f78a017e520715c94317815ffb36ca4483c00d6b61' },
+      { slug: 'wordle-views', file: 'Wordle-study-views-session.html', bytes: 32895657,
+        sha256: '1d1db8bb3de7cccbd215968fa196c2ca82bd0700df90640d2e547a21f2a69e0d' },
     ],
   },
 ];
