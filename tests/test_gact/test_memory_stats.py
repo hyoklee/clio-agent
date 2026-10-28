@@ -205,14 +205,14 @@ def test_memory_stats_session_block_populated_when_session_id_set(
     assert body["metadata"]["session"]["recorded_lifetime_tokens"] == 200
 
 
-def test_memory_stats_budget_from_handshake_context_window(tmp_path: Path) -> None:
+def test_memory_stats_budget_from_handshake_context_window(tmp_path: Path, arc: ARCMemory) -> None:
     """The retained-context budget is the handshake-resolved context window
     (``chosen_context`` on the live provider config), not the 4000 fossil."""
 
     client = TestClient(
         build_app(
             sessions_path=tmp_path / "s.json",
-            arc=FakeARC(),
+            arc=arc,
             agent=_StubAgent(chosen_context=32000),
         )
     )
@@ -232,11 +232,13 @@ def test_memory_stats_budget_from_handshake_context_window(tmp_path: Path) -> No
     assert body["metadata"]["tokens_budget_source"] == "handshake_window"
 
 
-def test_memory_stats_budget_unknown_without_provider_config(tmp_path: Path) -> None:
+def test_memory_stats_budget_unknown_without_provider_config(
+    tmp_path: Path, arc: ARCMemory
+) -> None:
     """No live provider config (agent unwired / window undiscoverable) -> the
     budget is 0 and the source is surfaced as ``unknown`` (pressure stays 0)."""
 
-    client = TestClient(build_app(sessions_path=tmp_path / "s.json", arc=FakeARC()))
+    client = TestClient(build_app(sessions_path=tmp_path / "s.json", arc=arc))
     sid = client.post("/v1/sessions", json={"title": "x"}).json()["id"]
     _application(client).state.messages[sid] = [
         Message(

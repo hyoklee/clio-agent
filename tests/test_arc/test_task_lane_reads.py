@@ -49,6 +49,7 @@ def _assignment(history: TaskHistory) -> TaskSnapshot:
         status="active",
         raw_status="active",
         description="Survey the dataset",
+        description_missing=False,
         details=history.write_content("owner", AssignmentDetails().model_dump(mode="json")),
     )
 

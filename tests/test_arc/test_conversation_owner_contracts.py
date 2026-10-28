@@ -301,7 +301,7 @@ async def create_environment(
     """Build finite store data off-loop and async resources on the active loop."""
 
     def records() -> tuple[Any, TaskSnapshot]:
-        sessions = SessionStore(path=tmp_path / "sessions.json")
+        sessions = SessionStore(path=tmp_path / "sessions.json", store=arc._store)
         session = sessions.create(workspace_id="workspace", agent={"id": "main"})
         history, stamp = TaskHistory(arc), now()
         root = TaskSnapshot(

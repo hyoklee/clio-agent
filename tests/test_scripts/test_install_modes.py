@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from tests.test_scripts.installer_shims import (
+    RELEASE_STOP,
     ROOT,
     STOP,
     run_installer,
@@ -51,7 +52,8 @@ def _call(calls: list[str], prefix: str) -> str:
 def test_default_installs_the_latest_stable_release_locked_by_its_tag(tmp_path: Path) -> None:
     _release_fixtures(tmp_path)
     result, calls = run_installer(tmp_path)
-    assert result.returncode == STOP, result.stdout + result.stderr
+    assert result.returncode == RELEASE_STOP, result.stdout + result.stderr
+    assert "could not install clio-agent" in result.stderr
     assert "--python 3.13" in _call(calls, "uv venv")  # 0.9.4.24 predates .python-version
     install = _call(calls, "uv pip install")
     assert "clio-agent[argonne,flowcept]==0.9.4.24" in install
@@ -62,7 +64,8 @@ def test_default_installs_the_latest_stable_release_locked_by_its_tag(tmp_path: 
 def test_dev_installs_the_latest_release_including_pre_releases(tmp_path: Path) -> None:
     _release_fixtures(tmp_path)
     result, calls = run_installer(tmp_path, "--dev")
-    assert result.returncode == STOP, result.stdout + result.stderr
+    assert result.returncode == RELEASE_STOP, result.stdout + result.stderr
+    assert "could not install clio-agent" in result.stderr
     assert "--python 3.14" in _call(calls, "uv venv")
     assert "clio-agent[argonne,flowcept]==0.9.5b8" in _call(calls, "uv pip install")
     assert "curl https://raw.githubusercontent.com/iowarp/clio-agent/v0.9.5-beta.8/uv.lock" in calls
@@ -77,7 +80,8 @@ def test_a_pinned_release_installs_exactly_that_version(
 ) -> None:
     _release_fixtures(tmp_path)
     result, calls = run_installer(tmp_path, *args, env=env)
-    assert result.returncode == STOP, result.stdout + result.stderr
+    assert result.returncode == RELEASE_STOP, result.stdout + result.stderr
+    assert "could not install clio-agent" in result.stderr
     assert "clio-agent[argonne,flowcept]==0.9.5b2" in _call(calls, "uv pip install")
     assert not any("api.github.com" in call for call in calls), "a pinned version is not resolved"
 

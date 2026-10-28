@@ -18,6 +18,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 STOP = 77
+# A failed release install rolls back and reports 1; source sync preserves the
+# dependency command's status. Both shims still stop at the install boundary.
+RELEASE_STOP = 1
 
 
 def shell_path(path: Path) -> str:

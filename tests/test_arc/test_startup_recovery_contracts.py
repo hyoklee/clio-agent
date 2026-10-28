@@ -142,7 +142,7 @@ async def test_failed_startup_never_admits_a_successor_without_physical_proof(
             )
         if reconstruct:
             owner.sessions = app.state.sessions = await asyncio.to_thread(
-                SessionStore, path=tmp_path / "sessions.json"
+                SessionStore, path=tmp_path / "sessions.json", store=arc._store
             )
             await owner.history.io.close()
             owner.history = app.state.task_history = await asyncio.to_thread(TaskHistory, arc)

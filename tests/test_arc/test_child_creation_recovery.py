@@ -76,7 +76,7 @@ async def test_spawn_retry_reuses_the_child_address_without_replaying_creation_h
         def recover() -> None:
             owner.history.restore()
             if reconstruct:
-                app.state.sessions = SessionStore(path=tmp_path / "sessions.json")
+                app.state.sessions = SessionStore(path=tmp_path / "sessions.json", store=arc._store)
                 owner.sessions = app.state.sessions
                 install_session_lifecycle_observer(app)
 
@@ -229,7 +229,7 @@ async def test_unconfirmed_hook_effects_are_not_replayed_by_session_reuse(
         def recover() -> None:
             owner.history.restore()
             if reconstruct:
-                app.state.sessions = SessionStore(path=tmp_path / "sessions.json")
+                app.state.sessions = SessionStore(path=tmp_path / "sessions.json", store=arc._store)
                 owner.sessions = app.state.sessions
                 install_session_lifecycle_observer(app)
 

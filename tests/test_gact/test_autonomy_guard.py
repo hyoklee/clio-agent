@@ -422,7 +422,7 @@ def test_restart_preserves_only_durable_waiting_work(
     app = _app(tmp_path, arc)
     from clio_agent.gact.sessions import SessionStore
 
-    app.state.sessions = SessionStore(path=tmp_path / "sessions.json")
+    app.state.sessions = SessionStore(path=tmp_path / "sessions.json", store=arc._store)
     sid = _session(app)
     arm_goal(app, sid, condition="Finish the sweep")
     start_loop(app, sid, prompt="One checkpoint", interval_s=60)
@@ -432,7 +432,7 @@ def test_restart_preserves_only_durable_waiting_work(
 
     reloaded = SimpleNamespace(
         state=SimpleNamespace(
-            sessions=SessionStore(path=tmp_path / "sessions.json"),
+            sessions=SessionStore(path=tmp_path / "sessions.json", store=arc._store),
             schedules=ScheduleStore(path=tmp_path / "schedules.json"),
             deferred_schedules=set(),
             task_history=TaskHistory(arc),
