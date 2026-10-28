@@ -51,28 +51,17 @@ def test_windows_renderer_is_extracted_to_private_image(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(office.platform, "system", lambda: "Windows")
-    seen: list[str] = []
-    options: dict[str, Any] = {}
+    from clio_agent.runtime.document_stack import windows_msi
 
-    def run(command: list[str], **kwargs: Any) -> str:
-        seen.extend(command)
-        options.update(kwargs)
-        return ""
+    seen: list[tuple[Path, Path]] = []
 
-    monkeypatch.setattr(office, "run", run)
+    monkeypatch.setattr(
+        windows_msi, "extract_application", lambda archive, root: seen.append((archive, root))
+    )
     archive = tmp_path / "CLIO Desktop" / "renderer.msi"
     private = tmp_path / "CLIO Desktop" / "private image"
     office._extract(archive, private)
-    assert seen[1:4] == ["/a", str(archive), "/qn"]
-    assert seen[-1] == f"TARGETDIR={private}"
-    assert options["windows_command_line"] == (
-        subprocess.list2cmdline(seen[:-1]) + f' TARGETDIR="{private}"'
-    )
-    assert '"TARGETDIR=' not in options["windows_command_line"]
-    assert options["cwd"] == private
-    assert options["timeout"] == 300
-    assert "/norestart" in seen
-    assert "/i" not in seen
+    assert seen == [(archive, private)]
 
 
 def test_explicit_windows_command_line_reaches_createprocess_without_a_shell(

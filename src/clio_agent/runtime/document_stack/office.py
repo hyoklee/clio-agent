@@ -6,11 +6,9 @@ import hashlib
 import http.client
 import io
 import logging
-import os
 import platform
 import shutil
 import ssl
-import subprocess
 import sysconfig
 import tarfile
 import tempfile
@@ -210,21 +208,10 @@ def _extract_linux(archive: Path, root: Path) -> None:
 
 def _extract(archive: Path, root: Path) -> None:
     if platform.system() == "Windows":
-        msiexec = Path(os.environ.get("SystemRoot", "C:/Windows")) / "System32" / "msiexec.exe"
-        # /a builds an administrative IMAGE; /qn neither installs nor opens UI.
-        command = [str(msiexec), "/a", str(archive), "/qn", "/norestart"]
-        # Windows Installer requires PROPERTY="value with spaces". Python's
-        # standard argv serializer emits "PROPERTY=value with spaces", which
-        # msiexec rejects with 1639 and a help dialog even when /qn is present.
-        if '"' in str(root) or "\0" in str(root):
-            raise DocumentError("Invalid private LibreOffice extraction path")
-        command_line = subprocess.list2cmdline(command) + f' TARGETDIR="{root}"'
-        run(
-            [*command, f"TARGETDIR={root}"],
-            cwd=root,
-            timeout=300,
-            windows_command_line=command_line,
-        )
+        from importlib import import_module
+
+        module = import_module(f"{__package__}.windows_msi" if __package__ else "windows_msi")
+        module.extract_application(archive, root)
     elif platform.system() == "Darwin":
         with tempfile.TemporaryDirectory(dir=root.parent) as temporary:
             mount = Path(temporary)

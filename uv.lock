@@ -746,8 +746,10 @@ optimizers = [
 [package.dev-dependencies]
 install-bootstrap = [
     { name = "filelock" },
+    { name = "httpx" },
     { name = "packaging" },
     { name = "psutil" },
+    { name = "pyyaml" },
     { name = "truststore" },
     { name = "zstandard" },
 ]
@@ -836,8 +838,10 @@ provides-extras = ["optimizers", "adios", "argonne", "desktop", "claude-code", "
 [package.metadata.requires-dev]
 install-bootstrap = [
     { name = "filelock", specifier = ">=3.12.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "packaging", specifier = ">=23.0" },
     { name = "psutil", specifier = ">=5.9.0" },
+    { name = "pyyaml", specifier = ">=6.0.3,<7" },
     { name = "truststore", specifier = "==0.10.4" },
     { name = "zstandard", specifier = "==0.25.0" },
 ]

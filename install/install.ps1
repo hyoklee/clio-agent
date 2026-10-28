@@ -364,7 +364,7 @@ function Start-TuiBuild {
     try { $script:TuiProc.PriorityClass = 'BelowNormal' } catch { Warn "TUI build runs at normal priority: $($_.Exception.Message)" }
 }
 
-# Office needs only the locked bootstrap packages, so its download/extraction
+# Managed tools need only the locked bootstrap packages, so their preparation
 # overlaps the agent's much larger sync without racing the main virtualenv.
 function Start-OfficePrepare {
     $worker = Join-Path $Src 'install/prepare-office.ps1'
@@ -374,7 +374,7 @@ function Start-OfficePrepare {
     $script:OfficeErr = "$stem.err.log"
     $shell = (Get-Process -Id $PID).Path
     $workerArgs = '-NoProfile -ExecutionPolicy Bypass -File "{0}" -SourceRoot "{1}" -PythonVersion "{2}"' -f $worker, $Src, $py
-    Say "Preparing Office beside the agent dependencies (log: $($script:OfficeLog))"
+    Say "Preparing managed tools beside the agent dependencies (log: $($script:OfficeLog))"
     $script:OfficeProc = Start-Process -FilePath $shell -ArgumentList $workerArgs `
         -WorkingDirectory $Src -WindowStyle Hidden -PassThru `
         -RedirectStandardOutput $script:OfficeLog -RedirectStandardError $script:OfficeErr
@@ -390,9 +390,9 @@ function Complete-OfficePrepare {
     $script:OfficeProc = $null
     if ($code -ne 0) {
         Get-Content -LiteralPath $script:OfficeLog, $script:OfficeErr -Tail 80 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
-        DieWith $code "Office preparation failed (logs: $($script:OfficeLog), $($script:OfficeErr)); the renderer was not marked ready."
+        DieWith $code "Managed-tool preparation failed (logs: $($script:OfficeLog), $($script:OfficeErr)); installation was not marked ready."
     }
-    Say "Office preparation completed in $seconds s; the managed-package step will verify it again"
+    Say "Managed-tool preparation completed in $seconds s; the managed-package step will verify it again"
     Remove-Item -LiteralPath $script:OfficeLog, $script:OfficeErr -Force -ErrorAction SilentlyContinue
 }
 
