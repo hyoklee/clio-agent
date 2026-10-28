@@ -6,6 +6,11 @@ active installer roots together to FastMCP/FastMCP Tasks 4.1.2, MCP 2.2.0 and
 LiteLLM 1.102.2, and updates the affected transitive locks. The uv floor is
 0.13.4 for the certificate-bundle fix.
 
+The ASGI cohort also advances to FastAPI 0.162.0, Starlette 1.10.0 and
+SSE-Starlette 3.6.0. The older TestClient imported an AnyIO alias that is now
+deprecated, which the strict Python 3.14 CI correctly rejected. The asynchronous
+fixture loop scope is explicit; warnings-as-errors remains enabled.
+
 The initial Windows Python 3.14 audit of all extras and dependency groups
 reported 31 affected packages. After the repair, the same audit reports one:
 DiskCache 5.6.3. Its output contains two copies of the same advisory. This is

@@ -228,9 +228,9 @@ flowcept = [
 ]
 
 dev = [
-    "pytest>=7.4.0",
+    "pytest>=9.0.3",
     "pytest-cov>=4.1.0",
-    "pytest-asyncio>=0.21.0",
+    "pytest-asyncio>=0.24.0",
     "pytest-xdist>=3.5.0",  # -n / --dist loadfile for the concurrency flake-hunt (#735)
     "pytest-repeat>=0.9.3",  # --count for the flake-hunt (#735)
     "pytest-timeout>=2.3.1",  # per-test hard limit: a hung test fails with every thread's stack
@@ -314,6 +314,7 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"  # SSE tests use async httpx
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "real_runtime_release: the test exercises release_runtime_client itself (the harness no-op is skipped)",
     "history_mode: the test may enter the loud DSPy History mode (every other test fails if it does)",

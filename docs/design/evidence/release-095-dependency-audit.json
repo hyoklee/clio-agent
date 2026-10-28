@@ -421,5 +421,13 @@
     }
   ],
   "audit_clean": false,
-  "suppressed_advisories": []
+  "suppressed_advisories": [],
+  "before_requirements_sha256": "6b35a7635b8f78b7dc6b8005ee7ac5f56b8c9d1b3685ebfb5302f87aeee82788",
+  "after_requirements_sha256": "7f0377a6b278ddd788c9558588f5624aaf134412c2ebffa975577fcaf1aac481",
+  "asgi_compatibility_cohort": {
+    "fastapi": "0.162.0",
+    "starlette": "1.10.0",
+    "sse-starlette": "3.6.0",
+    "anyio": "4.15.1"
+  }
 }
