@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import struct
 from pathlib import Path
 from typing import Any
@@ -149,6 +150,7 @@ def test_extraction_checks_published_payload_and_closes_database(
         return ""
 
     monkeypatch.setattr(msi, "_Database", Database)
+    monkeypatch.setattr(msi, "_direct_paths_supported", lambda *args: False)
     monkeypatch.setattr(msi, "run", expand)
     monkeypatch.setattr(msi, "inherit_parent_access", lambda path: None)
     root = tmp_path / "Office"
@@ -161,3 +163,46 @@ def test_extraction_checks_published_payload_and_closes_database(
             msi.extract_application(tmp_path / "office.msi", root)
     assert closed == [True]
     assert not list(tmp_path.glob("msi-*"))
+
+
+@pytest.mark.parametrize(
+    "damage", ["none", "size", "duplicate", "write", "unknown_result", "spanned"]
+)
+def test_direct_cabinet_notifications_preserve_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, damage: str
+) -> None:
+    target = tmp_path / "program/soffice.com"
+
+    def iterate(cabinet: Path, notify: Any) -> None:
+        skipped = msi._CabinetFile(NameInCabinet="system_dll", FileSize=9)
+        assert notify(0x11, ctypes.addressof(skipped)) == 2
+        if damage == "spanned":
+            assert notify(0x12, 0) != 0
+            return
+        info = msi._CabinetFile(NameInCabinet="soffice", FileSize=4 if damage == "size" else 3)
+        decision = notify(0x11, ctypes.addressof(info))
+        if damage == "size":
+            assert decision == 0
+            return
+        assert decision == 1 and info.FullTargetName == str(target)
+        if damage == "duplicate":
+            assert notify(0x11, ctypes.addressof(info)) == 0
+            return
+        extracted = msi._ExtractedFile(
+            Target="unexpected" if damage == "unknown_result" else str(target),
+            Win32Error=5 if damage == "write" else 0,
+        )
+        assert notify(0x13, ctypes.addressof(extracted)) == (0 if damage == "none" else 13)
+
+    monkeypatch.setattr(msi, "_iterate_cabinet", iterate)
+    if damage == "none":
+        assert msi._expand_direct(tmp_path / "office.cab", {"soffice": (target, 3)}) == {"soffice"}
+    else:
+        with pytest.raises(msi.DocumentError):
+            msi._expand_direct(tmp_path / "office.cab", {"soffice": (target, 3)})
+
+
+def test_direct_cabinet_declines_long_paths_without_truncating(tmp_path: Path) -> None:
+    assert msi._direct_paths_supported(tmp_path / "office.cab", {"a": (tmp_path / "a", 1)})
+    assert not msi._direct_paths_supported(tmp_path / "office.cab", {"a": (Path("a" * 260), 1)})
+    assert not msi._direct_paths_supported(tmp_path / "office.cab", {"a": (Path("😀" * 130), 1)})

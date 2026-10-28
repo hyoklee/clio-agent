@@ -13,7 +13,7 @@ import os
 import stat
 import struct
 import tempfile
-from collections.abc import Generator, Iterator, Mapping
+from collections.abc import Callable, Generator, Iterator, Mapping
 from contextlib import contextmanager
 from ctypes import wintypes
 from pathlib import Path, PureWindowsPath
@@ -230,6 +230,103 @@ def _validate_cabinet(cabinet: Path, sizes: Mapping[str, int]) -> None:
             seen.add(name)
 
 
+class _CabinetFile(ctypes.Structure):
+    _fields_ = [
+        ("NameInCabinet", wintypes.LPCWSTR),
+        ("FileSize", wintypes.DWORD),
+        ("Win32Error", wintypes.DWORD),
+        ("DosDate", wintypes.WORD),
+        ("DosTime", wintypes.WORD),
+        ("DosAttribs", wintypes.WORD),
+        ("FullTargetName", wintypes.WCHAR * 260),
+    ]
+
+
+class _ExtractedFile(ctypes.Structure):
+    _fields_ = [
+        ("Target", wintypes.LPCWSTR),
+        ("Source", wintypes.LPCWSTR),
+        ("Win32Error", wintypes.UINT),
+        ("Flags", wintypes.DWORD),
+    ]
+
+
+def _iterate_cabinet(cabinet: Path, notify: Callable[[int, int], int]) -> None:
+    """Use Windows' CAB decompressor without any device/application install actions."""
+    callback_type = ctypes.WINFUNCTYPE(
+        wintypes.UINT, ctypes.c_void_p, wintypes.UINT, ctypes.c_size_t, ctypes.c_size_t
+    )
+    callback = callback_type(lambda context, message, first, second: notify(message, first))
+    api: Any = ctypes.WinDLL("setupapi", use_last_error=True)
+    api.SetupIterateCabinetW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        callback_type,
+        ctypes.c_void_p,
+    ]
+    api.SetupIterateCabinetW.restype = wintypes.BOOL
+    if not api.SetupIterateCabinetW(str(cabinet), 0, callback, None):
+        raise DocumentError(f"Could not expand verified Office cabinet: {ctypes.WinError()}")
+
+
+def _direct_paths_supported(cabinet: Path, targets: Mapping[str, tuple[Path, int]]) -> bool:
+    # SetupAPI's FILE_IN_CABINET_INFO_W has a fixed MAX_PATH target buffer.
+    # Keep the expand.exe path for longer profiles; never truncate a destination.
+    return all(
+        len(str(path).encode("utf-16-le")) // 2 < 260
+        for path in (cabinet, *(target for target, _ in targets.values()))
+    )
+
+
+def _expand_direct(cabinet: Path, targets: Mapping[str, tuple[Path, int]]) -> set[str]:
+    """Decompress straight into validated application paths, avoiding a second file move."""
+    requested: dict[str, str] = {}
+    published: set[str] = set()
+    created: set[Path] = set()
+    failures: list[Exception] = []
+
+    def notify(message: int, parameter: int) -> int:
+        try:
+            if message == 0x11:  # SPFILENOTIFY_FILEINCABINET
+                info = ctypes.cast(parameter, ctypes.POINTER(_CabinetFile)).contents
+                if info.NameInCabinet not in targets:
+                    return 2  # FILEOP_SKIP: system integration is outside the private app.
+                target, size = targets[info.NameInCabinet]
+                name = str(target)
+                if info.FileSize != size or name in requested:
+                    raise DocumentError("Duplicate or damaged Office cabinet application file")
+                if target.parent not in created:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    created.add(target.parent)
+                requested[name] = info.NameInCabinet
+                info.FullTargetName = name
+                return 1  # FILEOP_DOIT
+            if message == 0x13:  # SPFILENOTIFY_FILEEXTRACTED
+                extracted = ctypes.cast(parameter, ctypes.POINTER(_ExtractedFile)).contents
+                if extracted.Win32Error:
+                    raise DocumentError(f"Office cabinet write failed: {extracted.Win32Error}")
+                identifier = requested.get(extracted.Target)
+                if identifier is None or identifier in published:
+                    raise DocumentError("Unexpected Office cabinet extraction result")
+                published.add(identifier)
+            if message == 0x12:  # SPFILENOTIFY_NEEDNEWCABINET
+                raise DocumentError("Spanned Office cabinets are unsupported")
+            return 0
+        except (DocumentError, OSError, ValueError) as exc:
+            # Never let Python exceptions cross the native callback boundary.
+            failures.append(exc)
+            return 0 if message == 0x11 else 13  # FILEOP_ABORT / ERROR_INVALID_DATA
+
+    try:
+        _iterate_cabinet(cabinet, notify)
+    except DocumentError:
+        if not failures:
+            raise
+    if failures:
+        raise DocumentError(f"Office cabinet extraction failed: {failures[0]}") from failures[0]
+    return published
+
+
 def extract_application(archive: Path, root: Path) -> None:
     """Expand the pinned MSI's complete application tree into a fresh private root."""
     if any(root.iterdir()):
@@ -260,6 +357,12 @@ def extract_application(archive: Path, root: Path) -> None:
                 cab_path = staging / name
                 database.stream(cabinet[1:], cab_path)
                 _validate_cabinet(cab_path, sizes)
+                if _direct_paths_supported(cab_path, targets):
+                    extracted = _expand_direct(cab_path, targets)
+                    if published.intersection(extracted):
+                        raise DocumentError("Duplicate extracted Office application file")
+                    published.update(extracted)
+                    continue
                 loose = staging / (cab_path.stem + "-files")
                 loose.mkdir()
                 expand = Path(os.environ.get("SystemRoot", "C:/Windows")) / "System32/expand.exe"
