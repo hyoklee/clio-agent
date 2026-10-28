@@ -749,7 +749,7 @@ requires-dist = [
     { name = "claude-agent-sdk", marker = "extra == 'claude-code'", specifier = ">=0.2.159" },
     { name = "clio-agent", extras = ["optimizers", "adios", "argonne", "claude-code", "desktop", "flowcept", "dev"], marker = "extra == 'all'" },
     { name = "clio-kit", specifier = "==2.11.0" },
-    { name = "clio-schemas", git = "https://github.com/iowarp/clio-schemas?rev=292c65a2ee71e1f4603cb48990b8570a7301c396" },
+    { name = "clio-schemas", git = "https://github.com/iowarp/clio-schemas?rev=23542ea868bc4e4daa9e58405849a32443708d1d" },
     { name = "ddgs", marker = "extra == 'desktop'", specifier = ">=6.0" },
     { name = "dspy", specifier = "==3.4.0" },
     { name = "fastapi", specifier = ">=0.140" },
@@ -841,7 +841,7 @@ wheels = [
 [[package]]
 name = "clio-schemas"
 version = "0.6.0b16"
-source = { git = "https://github.com/iowarp/clio-schemas?rev=292c65a2ee71e1f4603cb48990b8570a7301c396#292c65a2ee71e1f4603cb48990b8570a7301c396" }
+source = { git = "https://github.com/iowarp/clio-schemas?rev=23542ea868bc4e4daa9e58405849a32443708d1d#23542ea868bc4e4daa9e58405849a32443708d1d" }
 dependencies = [
     { name = "annotated-types" },
     { name = "jsonschema", extra = ["format"] },
