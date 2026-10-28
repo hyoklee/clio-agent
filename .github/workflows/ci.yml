@@ -12,7 +12,7 @@ on:
   workflow_dispatch: {}
 
 env:
-  CI_TEST_SHARD_COUNT: 4
+  CI_TEST_SHARD_COUNT: 6
 
 jobs:
   native-service-lifecycle:
@@ -134,15 +134,15 @@ jobs:
   check:
     env:
       UV_PYTHON: ${{ matrix.python-version }}
-    # The suite runs as 4 deterministic shards (tests/_sharding.py) per interpreter,
+    # The suite runs as 6 deterministic shards (tests/_sharding.py) per interpreter,
     # each on its own runner with one xdist worker per logical CPU. One 4-worker
     # runner took 23-29 min; the tests are CPU-bound (every gact test builds an app),
     # so more workers on the same 4 vCPUs only contend.
     name: check (${{ matrix.python-version }}, shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
-    # The three-shard Python 3.12 run still made progress at the 25-minute cap
-    # (one shard reached 92%). Partition across another runner while preserving
-    # the per-test deadlines, per-runner worker count and job deadline.
+    # Four-shard 3.12/3.13 runs reached 91%/99% at the 25-minute cap. Give the
+    # complete suite more runners while preserving the per-test deadlines,
+    # per-runner worker count, job deadline and complete coverage aggregation.
     timeout-minutes: 25
     strategy:
       # Every supported interpreter completes independently: existing hosts run
@@ -150,7 +150,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.12", "3.13", "3.14"]
-        shard: [0, 1, 2, 3]
+        shard: [0, 1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v4
         with:
