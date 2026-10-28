@@ -41,7 +41,10 @@ async def test_spawn_retry_reuses_the_child_address_without_replaying_creation_h
         nonlocal fired
         if fault == "session_flush" and not fired:
             fired = True
-            raise OSError("session projection flush unavailable")
+            # Lose the reply after the real record was committed. Staged writes
+            # do not publish a session when the put itself never happened.
+            original_persist(session)
+            raise OSError("session projection flush reply lost after confirmation")
         original_persist(session)
 
     def record(snapshot: TaskSnapshot, **kwargs: Any) -> None:

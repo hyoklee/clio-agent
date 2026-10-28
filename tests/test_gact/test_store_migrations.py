@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from types import SimpleNamespace
 from typing import Any
 
@@ -264,10 +266,36 @@ def test_cli_dispatches_migrate(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(store_migrate_command, "main", main)
 
+    def exit_for_test(code: int) -> None:
+        raise SystemExit(code)
+
+    # The release exit uses os._exit and must never run inside pytest's worker.
+    monkeypatch.setattr(store_migrate_command, "exit_released", exit_for_test)
+
     with pytest.raises(SystemExit) as stopped:
         handle_local_command(["migrate", "--json"])
 
     assert stopped.value.code == 3 and seen == [["--json"]]
+
+
+def test_released_exit_flushes_output_and_handlers_in_its_own_process() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            "-c",
+            "import atexit; "
+            "from clio_agent.gact.store_migrate_command import exit_released; "
+            "atexit.register(lambda: print('released')); "
+            "print('migrated'); exit_released(7)",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 7, result.stderr
+    assert result.stdout.splitlines() == ["migrated", "released"]
 
 
 def test_boot_row_names_the_replay_the_restore_step_already_paid() -> None:

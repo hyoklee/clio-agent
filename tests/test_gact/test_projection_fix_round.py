@@ -212,7 +212,8 @@ def test_the_interactions_projection_serves_the_a2ui_quarantine_reasons(tmp_path
 
     assert listed.status_code == 200, listed.text
     reasons = {row["reason"] for row in listed.json()["degradations"]}
-    assert reasons & {row["reason"] for row in quarantined}
+    # The interaction wire exposes the typed code; quarantine's reason is detail text.
+    assert reasons == {row["code"] for row in quarantined}
 
 
 def test_the_interactions_projection_bounds_the_owners_it_walks(tmp_path: Path) -> None:
