@@ -186,7 +186,9 @@ The desktop now checks real Windows protection before backend startup, then chec
 document packages alongside the backend. Old runtimes without the new
 protection-only option retain the full blocking check. Protection failures remain
 failures; startup does not request elevation. The Office check retains its 30 s
-timeout.
+timeout. Windows checks run through the existing launcher's own process job and
+desktop-parent monitor, so a package worker cannot outlive the desktop. The GUI
+does not join that job, preserving its update/restart and backend cleanup paths.
 
 Intermediate source-install results, each with another empty profile/cache set:
 
@@ -218,11 +220,44 @@ continuously, so no exact slowdown is attributed to the competing render.
 | | Cold | Repeat | Limit | Pass |
 |---|---|---|---|---|
 | Install (candidate `d9a476623`) | 162.103 s | 28.349 s | 180 s | yes |
-| Agent | pending | pending | 30 s | pending |
+
+Later reference-store generation reproduced `WinError 10048` in the listener
+probe and failed with an HTTP 503 recovery response. Candidate `8af46e421` reads
+Windows' live IPv4 listener table instead of allocating another TCP connection.
+Query errors stay typed/inconclusive; native RPC health, daemon identity, TTL and
+stall quarantine are unchanged. A real 2,000-query witness created no connections,
+detected listener closure and took 0.345 s; 61 related tests passed.
+
+The unchanged default workload then generated a new store at `D:\cw\r4` in
+349.7 s, with 929 conversations and 99 open records. It logged no socket-allocation,
+quarantine or recovery errors. The larger conversation count reflects children
+started before the generator's fixed interrupted-work settle time. No store was
+copied and no model provider was configured.
+
+Current candidate: clio-agent `8af46e421`; desktop gact-tui `f5b0ae3c` is being built.
+The source-install rerun uses another empty profile/cache set at `D:\cw\fp7`;
+continuous telemetry observed no encoder and no surviving install descendants.
+The installed `.venv\Scripts\clio-agent.exe` migrated the new store before startup
+measurement (nothing owed; 8.65 s command wall time).
+
+| | Cold | Repeat | Limit | Pass |
+|---|---|---|---|---|
+| Install | 167.829 s | 25.380 s | 180 s | yes |
+| Agent | 26.338 s | 17.573 s | 30 s | yes |
 | Desktop | pending | pending | 60 s | pending |
 
-The source-install row passes. Windows acceptance remains incomplete until the
-installed-agent, rebuilt bundled-desktop and fresh bundled-setup checks pass.
+The agent returned 30 of 929 conversations in 9/6 ms and the newest message page
+in 19/11 ms. Both runs reached readiness `ready`, with interrupted work held
+because no provider was configured. Server exit was graceful in 6.657/10.751 s.
+The initial cold teardown's general descendant sweep force-terminated a native
+SearXNG `uv sync`; this service installer is deliberately detached and
+controller-owned, so that action does not establish an orphaned product process.
+Its installation was not qualified as complete by this matrix. Repeat left no
+owned descendants. The corrected harness uses the service controller for owned
+native-service cleanup before any process fallback.
+
+The source-install and agent rows pass. Windows acceptance remains incomplete
+until rebuilt bundled-desktop and fresh bundled-setup checks pass.
 
 [Repair measurements and diagnostics](evidence/windows-startup-repair-2026-10-28)
 retain the intermediate failures. Defender remained enabled; a sample during the
