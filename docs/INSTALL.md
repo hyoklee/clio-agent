@@ -72,32 +72,42 @@ to point at your model provider.
 Download the installer for your OS from the
 [latest release](https://github.com/iowarp/clio-agent/releases/latest):
 the `-bundled` `.msi`/`.exe` (Windows), `.dmg` (Apple Silicon macOS), or `.deb`/`.rpm`
-(Linux). Bundled installers ship clio-agent, so there is nothing else to install. Installers
-without `-bundled` in the name, including every Linux `.AppImage` and the Intel macOS
-`.dmg`, are attach-only: they connect to a clio-agent you install and run separately.
+(Linux). Bundled installers ship clio-agent, so there is nothing else to install. The
+release also carries files without `-bundled` in the name: the desktop uses them to
+update itself, and they are not meant to be installed by hand. There is no desktop app
+for Intel Macs yet; use the install script without `--desktop` there.
 
 ### Desktop from a terminal
 
-macOS 14 or newer, without Python/uv/Node prerequisites:
+The install script installs the desktop app, bundled with its agent, with `--desktop`
+(macOS 14+ and Linux; Windows uses `install.ps1 -Desktop`). No Python, uv or Node is
+needed:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/iowarp/clio-agent/main/install/desktop.sh \
-  | CLIO_VERSION=v0.9.5-beta.8 bash
+curl -fsSL https://raw.githubusercontent.com/iowarp/clio-agent/main/install/install.sh | bash -s -- --desktop
 ```
-
-Windows (bundled x64 setup, including x64 emulation on ARM):
 
 ```powershell
-$env:CLIO_VERSION = 'v0.9.5-beta.8'
-irm https://raw.githubusercontent.com/iowarp/clio-agent/main/install/desktop.ps1 | iex
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/iowarp/clio-agent/main/install/install.ps1))) -Desktop
 ```
 
-Both verify the asset against its release checksum before installation. macOS installs
-into `~/Applications` (`CLIO_DESKTOP_DIR` overrides it), keeps the previous app when
-upgrading, and verifies the app's signature. Intel Macs get the attach-only package.
-Save the script and use `--download-only DIR` (macOS) or `-DownloadOnly
--DownloadDirectory DIR` (Windows) to verify without installing. Omitting `CLIO_VERSION`
-selects the latest stable release; older unsigned Mac packages are refused.
+`--dev` picks the newest release including pre-releases, and `--version <v>` pins one,
+as for the agent install. The download is verified against the release's checksum
+manifest before anything is installed:
+- **macOS:** the bundled `.dmg` (Apple Silicon) goes into `~/Applications`
+  (`CLIO_DESKTOP_DIR` overrides it); the previous app is kept, and the app's signature
+  is verified. Intel Macs are refused, with nothing downloaded.
+- **Linux:** the bundled `.deb` (with `dpkg`) or `.rpm` (with `rpm`) is installed with
+  `apt-get` / `dnf`, through `sudo` when not run as root.
+- **Windows:** the bundled x64 setup opens with its pages for the model provider and
+  infrastructure (it also runs under emulation on ARM).
+
+After installing, the script runs the app's own setup step as you (from 0.9.5): the agent's
+tool packages and the Office renderer are prepared then, as the Windows installer does,
+so the first launch only checks them. A package installed by double-clicking does this on
+its first launch instead.
+
+`--download-only DIR` (`-DownloadOnly DIR` on Windows) stops after the verified download.
 
 The macOS app is ad-hoc signed, not Apple-notarized. A first-launch approval may still
 be needed in System Settings → Privacy & Security → Open Anyway. Neither script
@@ -185,6 +195,14 @@ occupied destinations, links and live writers, verifies file hashes, keeps
 backups and receipts under `state/migrations`, and rolls back failed cutovers.
 Generated legacy workspace copies remain readable at their original paths.
 Nothing moves or removes the shared `~/.clio` tree owned by other CLIO products.
+
+Store upgrades run at install time, not at start: `install.sh`, `install.ps1` and the
+desktop's install step run `clio-agent migrate`, which converts what an older CLIO
+wrote (legacy transcripts, the task index, the artifact index) once and records a
+marker for each conversion; running it again does nothing. It refuses while a CLIO
+server holds the store (`store_in_use`, exit 3). A server that finds a conversion
+still owed runs it once before it reports ready and says so in `clio doctor`
+(`store_migrations`).
 
 Reinstall replaces executable payloads while retaining sessions and user data.
 Remote bootstrap also protects data when it must invoke an older release's

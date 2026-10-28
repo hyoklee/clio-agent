@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15' and sys_platform == 'win32'",
@@ -640,6 +640,7 @@ dependencies = [
     { name = "globusfs" },
     { name = "h5py" },
     { name = "httpx" },
+    { name = "httpx2" },
     { name = "iowarp-core" },
     { name = "jsonschema" },
     { name = "litellm" },
@@ -742,13 +743,24 @@ optimizers = [
     { name = "scipy" },
 ]
 
+[package.dev-dependencies]
+install-bootstrap = [
+    { name = "filelock" },
+    { name = "httpx" },
+    { name = "packaging" },
+    { name = "psutil" },
+    { name = "pyyaml" },
+    { name = "truststore" },
+    { name = "zstandard" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "adios2", marker = "sys_platform != 'win32' and extra == 'adios'", specifier = ">=2.10.0" },
     { name = "claude-agent-sdk", marker = "extra == 'claude-code'", specifier = ">=0.2.159" },
     { name = "clio-agent", extras = ["optimizers", "adios", "argonne", "claude-code", "desktop", "flowcept", "dev"], marker = "extra == 'all'" },
     { name = "clio-kit", specifier = "==2.11.0" },
-    { name = "clio-schemas", specifier = "==0.6.0b15" },
+    { name = "clio-schemas", git = "https://github.com/iowarp/clio-schemas?rev=ac1be7bc4b814228bbe3222cd80fb95251ec7024" },
     { name = "ddgs", marker = "extra == 'desktop'", specifier = ">=6.0" },
     { name = "dspy", specifier = "==3.4.0" },
     { name = "fastapi", specifier = ">=0.140" },
@@ -763,6 +775,7 @@ requires-dist = [
     { name = "globusfs", specifier = "==0.2.1" },
     { name = "h5py", specifier = ">=3.10.0" },
     { name = "httpx", specifier = ">=0.27.0" },
+    { name = "httpx2", specifier = ">=2.9.1" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6" },
     { name = "iowarp-core", specifier = "~=2.3.2" },
     { name = "jsonschema", specifier = ">=4.23" },
@@ -822,6 +835,17 @@ requires-dist = [
 ]
 provides-extras = ["optimizers", "adios", "argonne", "desktop", "claude-code", "flowcept", "dev", "all"]
 
+[package.metadata.requires-dev]
+install-bootstrap = [
+    { name = "filelock", specifier = ">=3.12.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "packaging", specifier = ">=23.0" },
+    { name = "psutil", specifier = ">=5.9.0" },
+    { name = "pyyaml", specifier = ">=6.0.3,<7" },
+    { name = "truststore", specifier = "==0.10.4" },
+    { name = "zstandard", specifier = "==0.25.0" },
+]
+
 [[package]]
 name = "clio-kit"
 version = "2.11.0"
@@ -838,17 +862,13 @@ wheels = [
 
 [[package]]
 name = "clio-schemas"
-version = "0.6.0b15"
-source = { registry = "https://pypi.org/simple" }
+version = "0.6.0b16"
+source = { git = "https://github.com/iowarp/clio-schemas?rev=ac1be7bc4b814228bbe3222cd80fb95251ec7024#ac1be7bc4b814228bbe3222cd80fb95251ec7024" }
 dependencies = [
     { name = "annotated-types" },
     { name = "jsonschema", extra = ["format"] },
     { name = "pydantic" },
     { name = "referencing" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/43/1f/916bb163b791c8aad5f4b6cc2493ce2d0402971f1a2c27def696165a0d7d/clio_schemas-0.6.0b15.tar.gz", hash = "sha256:3dd6dabb18035ab31aeb4476ccb464bfed90615ba4577d8de2af1d3bfa012603", size = 289219, upload-time = "2026-10-21T22:17:24.7Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/6e/07/ee01bdc7a320af912550c22c4a5ae3c87dd4ac946c832efce2f0889f1daf/clio_schemas-0.6.0b15-py3-none-any.whl", hash = "sha256:95abe07f55e8fe78488107bae0cce433de69b48457cfaf05eeb9fb065b36f1f9", size = 234620, upload-time = "2026-10-21T22:17:23.419Z" },
 ]
 
 [[package]]
