@@ -25,10 +25,10 @@ EXPECTED_VERSION = "0.9.5b8"
 #: package version only; users opt into it explicitly.
 DOCUMENTED_VERSION = "0.9.4.24"
 EXPECTED_DSPY = "dspy==3.4.0"
-EXPECTED_FASTMCP = "fastmcp==4.1.0"
-EXPECTED_FASTMCP_SLIM = "fastmcp-slim==4.1.0"
-EXPECTED_FASTMCP_TASKS = "fastmcp-tasks==4.1.0"
-EXPECTED_LITELLM = "litellm==1.102.1"
+EXPECTED_FASTMCP = "fastmcp==4.1.2"
+EXPECTED_FASTMCP_SLIM = "fastmcp-slim==4.1.2"
+EXPECTED_FASTMCP_TASKS = "fastmcp-tasks==4.1.2"
+EXPECTED_LITELLM = "litellm==1.102.2"
 
 
 def _text(relative_path: str) -> str:
@@ -66,7 +66,7 @@ def test_release_installers_explicitly_root_intentional_prereleases() -> None:
             "'export', '--quiet', '--frozen', '--no-hashes', '--no-emit-project'",
             "$syncArgs = @('sync', '--locked', '--python', $py, '--extra', 'argonne', '--extra', 'flowcept')",
         ),
-        "install/clio": ('"dspy==3.4.0" "fastmcp==4.1.0" "fastmcp-slim==4.1.0"',),
+        "install/clio": ('"dspy==3.4.0" "fastmcp==4.1.2" "fastmcp-slim==4.1.2"',),
     }
     # The bundled-runtime builders root nothing themselves: they install
     # clio-agent[BUNDLE_EXTRAS] against the lock export, whose exact prerelease
@@ -276,9 +276,9 @@ def test_release_workflow_smokes_the_published_registry_tool() -> None:
 
     assert publish < registry_job < registry_install
     assert "needs: pypi" in workflow[registry_job:registry_install]
-    assert "--with fastmcp==4.1.0" in workflow[registry_install:]
-    assert "--with fastmcp-slim==4.1.0" in workflow[registry_install:]
-    assert "--with fastmcp-tasks==4.1.0" in workflow[registry_install:]
+    assert "--with fastmcp==4.1.2" in workflow[registry_install:]
+    assert "--with fastmcp-slim==4.1.2" in workflow[registry_install:]
+    assert "--with fastmcp-tasks==4.1.2" in workflow[registry_install:]
     assert "assert dspy.__version__ == '3.4.0'" in workflow
     assert "assert hasattr(dspy, 'lm15')" in workflow
 

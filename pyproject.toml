@@ -41,7 +41,7 @@ classifiers = [
 dependencies = [
     "pyyaml>=6.0.3,<7",
     # Runtime preparation must also work for pip-installed Clio without a host uv.
-    "uv>=0.8,<1",
+    "uv>=0.13.4,<1",
     "truststore==0.10.4",
     "zstandard==0.25.0",  # Pinned private LibreOffice ABI packages use data.tar.zst.
     # Intentional exact prereleases: registry-backed uv installs must declare DSPy,
@@ -49,7 +49,7 @@ dependencies = [
     "dspy==3.4.0",
     # DSPy permits a broad LiteLLM range. Pin the tested stable wheel so a global
     # prerelease policy can never select a LiteLLM dev sdist on Windows.
-    "litellm==1.102.1",
+    "litellm==1.102.2",
     # The Codex runtime. The Codex LM provider calls the Codex backend directly
     # over HTTP/WebSocket (providers/codex/) and runs no CLI, but it presents
     # this distribution's version as its model list's client_version, and the
@@ -65,9 +65,9 @@ dependencies = [
     # first-party code imports it directly.
     "websockets>=13.0",
     "clio-kit==2.11.0",  # Source-locked scientific MCP components and launcher.
-    "fastmcp==4.1.0",  # stable native Tasks integration; adapter contracts are acceptance gates
-    "fastmcp-tasks==4.1.0",
-    "mcp==2.0.0",  # reviewed native Tasks wire/client contract
+    "fastmcp==4.1.2",  # stable native Tasks integration; adapter contracts are acceptance gates
+    "fastmcp-tasks==4.1.2",
+    "mcp==2.2.0",  # reviewed native Tasks wire/client contract
     "pydocket==0.26.2",  # fastmcp-tasks 4.1 requires >=0.26; native execution owner
     "clio-schemas @ git+https://github.com/iowarp/clio-schemas@ac1be7bc4b814228bbe3222cd80fb95251ec7024",
     "pydantic>=2.12,<2.14",
@@ -380,4 +380,4 @@ also_copy = ["src/clio_agent/", "tests/"]
 # Override it so the mcp-2 core and the claude-code extra co-resolve; the
 # combination's import surface is test-verified, the live session smoke runs
 # at the phase gate. Drop this override when upstream supports mcp 2.
-override-dependencies = ["mcp==2.0.0"]
+override-dependencies = ["mcp==2.2.0"]

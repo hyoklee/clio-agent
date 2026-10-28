@@ -61,7 +61,7 @@ GIL enabled. Release-mode installs and the backend-only examples below keep Pyth
 ### Persistent backend-only install with uv
 
 CLIO intentionally pins DSPy, FastMCP, and FastMCP Tasks prereleases and
-`litellm==1.102.1` as its tested stable provider boundary. Registry-backed uv tool
+`litellm==1.102.2` as its tested stable provider boundary. Registry-backed uv tool
 resolution requires those exact prereleases as explicit roots, which keeps unrelated
 dependencies on stable releases.
 
