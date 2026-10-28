@@ -1,5 +1,13 @@
 @AGENTS.md
 
+## Tool authoring
+
+For new tools and changes to existing inputs, results or lifecycle, follow
+[Adding or changing a tool](docs/tool-result-presentation.md#adding-or-changing-a-tool).
+Include the readable input/output showcase in the implementation, using the
+shared presentation contract and GACT readers. A callable tool with only raw
+JSON or an acknowledgement in its human result is unfinished.
+
 ## Cloud sessions
 
 Cloud sessions install dependencies through the SessionStart hook (`scripts/cloud/session_start.sh`). Its log is `.cloud-run/session_start.log`.
