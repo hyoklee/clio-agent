@@ -49,27 +49,8 @@ The default agent, shown as **CLIO**, is `clio/standard`. Its plugins:
 | `documents` | A pack of document formats: PDF, Word, spreadsheets, presentations, LaTeX, and OpenDocument. |
 | `visuals` | Interactive analysis, dashboards, diagrams, and visual review in the side panel. |
 | `connected-data` | Connected research data sources, the National Data Platform, and knowledge stores. |
-| `delegation` | Delegation to a copy of the agent, the read-only `explore`, `planner` and `review` roles, and forks of the agent's own work. See [Subagent controls](/docs/tasks/subagents/). |
+| `delegation` | Delegation to a copy of the agent, the read-only `explore`, `planner` and `review` roles, and forks of the agent's own work. See [Subagents](/docs/subagents/). |
 | `orchestration` | Workflows and flows, such as several independent answers followed by one synthesis. See [Flows and workflows](/docs/flows/). |
-
-## Pre-built agents
-
-These agents ship with the CLIO marketplace. The domain agents start from **CLIO Science** and add their own plugins.
-
-| Agent | Name | For |
-|---|---|---|
-| **CLIO** | `clio/standard` | General workspace work: files, a shell, the web, documents, visuals, connected data, subagents and workflows. |
-| **CLIO Science** | `clio/science` | CLIO plus scientific practice (`scientific-method`) and the study log (`science-log`): it can run a question as a [study](/docs/science-log/) with competing hypotheses, branches and views. |
-| **CLIO Data** | `clio/clio-data` | Inspecting, checking and converting HDF5, netCDF-4, ADIOS2 and Parquet files. |
-| **EarthScope** | `clio/earthscope` | EarthScope GNSS station data through the National Data Platform. |
-| **Factorio** | `clio/factorio` | How a part's design, material and manufacturing route set its performance, with Abaqus, Morphorm and Slurm. |
-| **OPAL** | `clio/appl-core` | Plant-phenotyping exports from APPL-CORE. |
-| **Deep Researcher** | `clio/deep-researcher` | Cited web research checked by an independent critic. |
-| **Document Production** | `clio/document-production` | Writing and revising Markdown, HTML, LaTeX, Office and OpenDocument files. |
-| **CLIO Search** | `clio/clio-search` | Finding conversations, passages and workspace files on the connected service. |
-| **SPOTTER** | `clio/spotter-ai` | Watching a working session's recorded provenance and raising evidence-backed alerts. |
-
-Any agent can hand work to a copy of itself or to a read-only role. An agent with `science-log` keeps a study as linked entries that cite the calls behind them; see [A branched study](/docs/examples/branched-study/) for a recorded one.
 
 ## Plugins and packs
 
