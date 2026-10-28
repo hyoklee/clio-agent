@@ -53,6 +53,7 @@ from clio_agent.gact.spawn_context import CreatePreparedChild
 from clio_agent.gact.task_access import TaskCaller
 from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.turn_runner import TurnRunner
+from clio_agent.gact.workspaces import WorkspaceStore
 from clio_agent.plugins.service import PluginService
 from clio_agent.tools.task_client import TaskSubmission, restore_native_call
 
@@ -319,7 +320,12 @@ async def create_environment(
         )
         history.record_snapshot(root, observation_id="root")
         return SimpleNamespace(
-            state=SimpleNamespace(sessions=sessions, task_history=history, human_principal="human")
+            state=SimpleNamespace(
+                sessions=sessions,
+                task_history=history,
+                human_principal="human",
+                workspaces=WorkspaceStore(path=tmp_path / "workspaces.json"),
+            )
         ), root
 
     app, root = await asyncio.to_thread(records)

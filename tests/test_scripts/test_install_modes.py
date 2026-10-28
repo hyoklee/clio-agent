@@ -19,6 +19,7 @@ from tests.test_scripts.installer_shims import (
     ROOT,
     STOP,
     run_installer,
+    shell_path,
     write_release,
     write_releases,
 )
@@ -100,7 +101,7 @@ def test_source_from_a_stream_clones_the_branch_and_installs_its_lock(
     assert f"--branch {branch}" in _call(calls, "git clone")
     sync = _call(calls, "uv sync")
     assert "--locked" in sync and "--python 3.14" in sync
-    assert sync.endswith(f"(in {tmp_path / 'prefix' / 'clio-agent'})")
+    assert sync.endswith(f"(in {shell_path(tmp_path / 'prefix' / 'clio-agent')})")
 
 
 def test_source_ref_pins_a_commit(tmp_path: Path) -> None:
@@ -125,11 +126,17 @@ def test_source_from_a_checkout_installs_it_in_place(tmp_path: Path) -> None:
     result, calls = run_installer(tmp_path, "--source", script=checkout / "install/install.sh")
     assert result.returncode == STOP, result.stdout + result.stderr
     assert not any(call.startswith("git clone") for call in calls)
-    assert f"git -C {checkout} submodule update --init --recursive" in calls
+    assert f"git -C {shell_path(checkout)} submodule update --init --recursive" in calls
     sync = _call(calls, "uv sync")
-    assert sync.endswith(f"(in {checkout})") and "--python 3.14" in sync
+    assert sync.endswith(f"(in {shell_path(checkout)})") and "--python 3.14" in sync
     link = tmp_path / "prefix" / "clio-agent"
-    assert link.is_symlink() and link.resolve() == checkout.resolve()
+    assert f"ln -sfn {shell_path(checkout)} {shell_path(link)}" in calls
+    if os.name != "nt":
+        assert link.is_symlink() and link.resolve() == checkout.resolve()
+    else:
+        # Git Bash can emulate ln with a directory copy; Windows installs use
+        # install.ps1. The Bash installer must still request the exact link.
+        assert link.is_dir()
 
 
 @pytest.mark.parametrize(

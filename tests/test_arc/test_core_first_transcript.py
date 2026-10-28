@@ -281,6 +281,8 @@ async def test_boot_captures_legacy_before_reconciling_and_reads_metrics_from_co
         monkeypatch.setattr("clio_agent.gact.transcript_file.resolve_transcript_file", lambda: True)
         boot_transcript_store(app, tmp_path)
         assert app.state.transcript_boot_ready.is_set()
+        assert app.state.restart_interruptions.waiting(sid)
+        assert app.state.restart_interruptions.settle_quietly(sid)
         rows = assemble_session_messages(arc, sid)
         assert rows[0] == original and len(rows) == 2
         assert rows[1].error_info is not None

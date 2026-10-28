@@ -82,6 +82,11 @@ if [ "$1" = -C ] && [ "$3" = rev-parse ]; then echo main; fi
 exit 0
 """
 
+_LN = r"""#!/usr/bin/env bash
+echo "ln $*" >> "$TEST_LOG"
+exec /usr/bin/ln "$@"
+"""
+
 
 def write_release(fixtures: Path, tag: str, *, python: str | None) -> None:
     """A release tag's files as raw.githubusercontent.com would serve them."""
@@ -122,7 +127,7 @@ def run_installer(
     shims = tmp_path / "shims"
     shims.mkdir(exist_ok=True)
     uname = f'#!/usr/bin/env bash\nif [ "$1" = -s ]; then echo {system}; else echo arm64; fi\n'
-    shimmed = [("curl", _CURL), ("uv", _UV), ("uname", uname)]
+    shimmed = [("curl", _CURL), ("uv", _UV), ("uname", uname), ("ln", _LN)]
     if not real_git:
         shimmed.append(("git", _GIT))
     for name, body in shimmed:

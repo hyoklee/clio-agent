@@ -526,7 +526,7 @@ def test_running_turn_persists_exact_user_message_count(tmp_path: Path) -> None:
         assert agent.entered.wait(TURN_SIGNAL_BACKSTOP_S), "turn never reached the agent"
 
         running = client.get(f"/v1/sessions/{sid}").json()
-        cold_running = SessionStore(sessions_path).get(sid)
+        cold_running = SessionStore(sessions_path, store=app.state.arc._store).get(sid)
         assert running["status"] == "running"
         assert running["message_count"] == 1
         assert cold_running is not None

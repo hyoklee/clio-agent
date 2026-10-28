@@ -148,9 +148,9 @@ def test_restart_interrupted_transcript_closes_before_a_new_write(tmp_path: Path
 
     rows = app2.state.messages[sid]
     assert [(row.role, row.stop_reason) for row in rows] == [
-        ("user", None),
+        ("user", ""),
         ("assistant", "error"),
-        ("user", None),
+        ("user", ""),
     ]
     assert not app2.state.restart_interruptions.waiting(sid)
 

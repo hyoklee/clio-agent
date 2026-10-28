@@ -251,9 +251,12 @@ def test_off_restart_reconciles_an_interrupted_session_from_the_atoms(
     second = _app(tmp_path, core_store, "second")
     session = second.state.sessions.get(sid)
     assert session.status == "error"
-    assert session.message_count == 2
+    assert session.message_count == 1
+    assert second.state.restart_interruptions.waiting(sid)
     with TestClient(second) as client:
         rows = _wire(client, sid)
+        # Boot marks the record; opening the transcript closes the interrupted turn.
+        assert second.state.sessions.get(sid).message_count == 2
     assert [row["role"] for row in rows] == ["user", "assistant"]
     assert rows[1]["error_info"]["error"] == "server_restart_interrupted"
     _no_message_files(tmp_path)
@@ -418,7 +421,8 @@ def test_off_the_atom_boot_runs_when_the_process_arc_attaches(
     second = build_app(sessions_path=tmp_path / "sessions.json", agent=FakeClioAgent(), arc=None)
     if second.state.arc is None:  # nothing attached clio-core during the build
         assert not second.state.transcript_boot_ready.is_set()
-        assert second.state.sessions.get(sid).status == "running"
+        # The index cannot read Core records until the process ARC is attached.
+        assert second.state.sessions.get(sid) is None
     with TestClient(second) as client:
         assert second.state.transcript_boot_ready.is_set()
         assert second.state.sessions.get(sid).status == "error"
