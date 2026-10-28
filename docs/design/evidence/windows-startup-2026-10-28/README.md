@@ -8,6 +8,9 @@ also failed its Office check. These files do not establish release readiness.
 - `install-*-aligned.json` and timestamped logs are the successful source installs
   with matching HOME/USERPROFILE/CODEX_HOME. The `diagnostic-install-*` files are
   earlier failed profile-isolation attempts; retain their timings separately.
+  The installer's reported TUI elapsed time runs until collection of the background
+  process, rather than recording its actual completion time. It is not a separate
+  compiler-duration measurement and must not be added to the total.
 - `mxc-original-profile.json` and `mxc-aligned-profile.json` retain the exact real
   probe comparison, including all seven witnesses in the successful run.
 - `reference-store-summary.json` identifies the locally generated store, workload

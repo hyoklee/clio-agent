@@ -93,9 +93,13 @@ and a fresh desktop package install failed its Office check.
   earlier diagnostic attempts; OS file caches and Defender reputation caches were
   not reset. System Python 3.14.6, Git, Go and Node were already installed.
 - **Install cost:** uv prepared 206 packages in 50.90 s and installed them in
-  14.49 s. TUI builds ran concurrently for 211 s cold / 24 s repeat. Cold Office
-  preparation occupied about 106 s alongside the other document setup. These
-  overlapping durations must not be summed. The final MXC phase took about 1.8 s
+  14.49 s. Cold Office preparation occupied about 106 s alongside the other
+  document setup. The installer reports "TUI built in 211 s" cold / 24 s repeat,
+  but its clock runs from background launch until `Complete-TuiBuild` collects the
+  process; it does not use the compiler's exit time. The final join's log messages
+  arrive almost together, so those figures do not establish compiler wall time
+  or an additional 211 s wait. Earlier compiler contention was not measured.
+  Overlapping durations must not be summed. The final MXC phase took about 1.8 s
   until all managed packages were verified; repeat reused the verified receipt.
 - **Protected execution:** CLIO used its own bundled Codex 0.162.1. The earlier
   454.1/31.1 s failed installs omitted explicit `CODEX_HOME` from the simulated
