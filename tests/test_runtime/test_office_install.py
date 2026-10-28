@@ -123,7 +123,39 @@ def test_private_renderer_is_probed_before_warm_reuse(
     monkeypatch.setattr(office.office_compat, "supported", lambda: False)
     monkeypatch.setattr(office, "run", lambda command, **kwargs: seen.append(command) or "26.2.6")
     assert office.ensure_office(tmp_path) == str(program)
-    assert seen == [[str(program), "--version"]]
+    assert len(seen) == 1
+    assert seen[0][0] == str(program)
+    assert seen[0][-1] == "--version"
+    assert "--headless" in seen[0]
+    assert seen[0][1].startswith("-env:UserInstallation=file:")
+
+
+def test_renderer_probe_uses_and_cleans_an_exclusive_profile_on_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed startup cannot pollute the user's Office profile or leave its own."""
+    from urllib.parse import unquote, urlparse
+
+    profiles: list[Path] = []
+
+    def fail(command: list[str], **kwargs: Any) -> str:
+        profile_uri = command[1].split("=", 1)[1]
+        path = unquote(urlparse(profile_uri).path)
+        if path.startswith("/") and len(path) > 2 and path[2] == ":":
+            path = path[1:]
+        profile = Path(path)
+        assert profile.parent.is_dir()
+        assert "--headless" in command and "--norestore" in command
+        assert kwargs["timeout"] == 30
+        profiles.append(profile)
+        raise DocumentError("version probe failed")
+
+    monkeypatch.setattr(office, "run", fail)
+    for _ in range(2):
+        with pytest.raises(DocumentError, match="version probe failed"):
+            office._verify_office(tmp_path / "soffice.com", cwd=tmp_path)
+    assert profiles[0] != profiles[1]
+    assert all(not profile.parent.exists() for profile in profiles)
 
 
 def test_debian_archive_parser_reads_real_data_member() -> None:

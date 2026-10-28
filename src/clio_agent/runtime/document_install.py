@@ -25,6 +25,25 @@ from clio_agent.runtime.execution_environment import publish_environment
 from clio_agent.runtime.github_cli import ensure_github_cli
 
 
+def prepare_protected_execution(
+    *, setup_protected_execution: bool = False, progress: Callable[[str], None] | None = None
+) -> dict[str, Any]:
+    """Verify the Windows fence independently of document package preparation."""
+    if progress is not None:
+        progress("Preparing and checking protected execution...")
+    protected = prepare_existing_windows_fence(
+        progress=progress, allow_elevation=setup_protected_execution
+    )
+    helpers = (
+        {"status": "not_required", "implementation": "mxc"}
+        if protected.get("implementation") == "mxc"
+        else ensure_bundled_codex_windows_helpers()
+    )
+    if progress is not None and protected["status"] == "setup_required":
+        progress(protected["next_action"])
+    return {"protected_execution": protected, "codex_windows_helpers": helpers}
+
+
 def install_document_runtime(
     workspace: Path,
     *,
@@ -97,21 +116,11 @@ def install_document_runtime(
         report(
             "Verified installation unchanged; reusing Office, Python, Node.js and GitHub packages."
         )
-    if progress is not None:
-        progress("Preparing and checking protected execution...")
-    result["native_tools"]["protected_execution"] = prepare_existing_windows_fence(
-        progress=report, allow_elevation=setup_protected_execution
+    result["native_tools"].update(
+        prepare_protected_execution(
+            progress=report, setup_protected_execution=setup_protected_execution
+        )
     )
-    result["native_tools"]["codex_windows_helpers"] = (
-        {"status": "not_required", "implementation": "mxc"}
-        if result["native_tools"]["protected_execution"].get("implementation") == "mxc"
-        else ensure_bundled_codex_windows_helpers()
-    )
-    if (
-        progress is not None
-        and result["native_tools"]["protected_execution"]["status"] == "setup_required"
-    ):
-        progress(result["native_tools"]["protected_execution"]["next_action"])
     if not reused:
         save_install_receipt(workspace, result, cache_root=cache_root)
     report("All managed runtime packages are installed and verified.")
@@ -141,6 +150,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", type=Path, default=paths.user_data_dir() / "workspace")
     parser.add_argument(
+        "--protected-execution-only",
+        action="store_true",
+        help="Verify protected execution before starting the agent, without preparing document tools.",
+    )
+    parser.add_argument(
         "--reuse-installed",
         action="store_true",
         help="Reuse installation checks while the verified managed package files are unchanged.",
@@ -156,6 +170,16 @@ def main() -> None:
         help="Do not run `clio-agent migrate` here (the caller runs it as its own step).",
     )
     args = parser.parse_args()
+    if args.protected_execution_only:
+        tools = prepare_protected_execution(
+            progress=lambda message: print(message, flush=True),
+            setup_protected_execution=args.setup_protected_execution,
+        )
+        ready = tools["protected_execution"]["status"] in {"available", "not_required"}
+        print(json.dumps({"status": "ready" if ready else "setup_required", **tools}), flush=True)
+        if not ready:
+            raise SystemExit(1)
+        return
     # This standalone installer owns its workspace. Never widen a running agent's policy.
     os.environ["CLIO_ALLOWED_ROOTS"] = str(args.workspace.resolve())
     result = install_document_runtime(
