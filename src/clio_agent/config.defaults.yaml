@@ -381,6 +381,7 @@ agent_tasks.max_depth: 8
 # Most forks one task or conversation may start; 0 means unlimited. A fork
 # past the limit is refused with fork_limit_reached and nothing is created.
 agent_tasks.max_forks_per_task: 0
+
 # CLIO_OBLIGATION_CONCURRENCY  (int)  <- src/clio_agent/gact/obligations.py
 # Conversations resumed at once after startup to finish work left open at
 # the last stop (pending mail, interrupted turns); raise it to drain a

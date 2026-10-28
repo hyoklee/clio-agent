@@ -14,7 +14,6 @@ from clio_agent.gact.semantic_events import SemanticEvent
 from clio_agent.gact.task_event_lane import (
     LANE_DONE,
     TASK_EVENT_LANE,
-    ensure_task_event_lane,
     migrate_task_event_lane,
     migration_owed,
 )
@@ -98,7 +97,7 @@ def test_migration_copies_task_events_once_and_boot_then_skips(arc: ARCMemory) -
 
     older = TaskHistory(arc)
     assert migration_owed(older)
-    report = ensure_task_event_lane(older)
+    report = migrate_task_event_lane(older)
     assert report is not None and report["events"] == 4
     assert report["sessions_with_task_events"] == 1
     assert older.index.done_marker(LANE_DONE) is not None
@@ -108,7 +107,7 @@ def test_migration_copies_task_events_once_and_boot_then_skips(arc: ARCMemory) -
     assert not older.index_build_pending  # trees load from the lane, not a full replay
     assert [item.id for item in older.pending_mail("owner")] == expected
 
-    assert ensure_task_event_lane(older) is None  # the second start skips
+    assert not migration_owed(older)  # the second start only reads the marker
 
 
 def test_rerun_after_interruption_rebuilds_without_duplicates(

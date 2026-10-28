@@ -21,7 +21,6 @@ from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.task_lane_reads import (
     INPUT_COMMITTED,
     checkpoint_identity,
-    ensure_task_lane_reads,
     migrate_task_lane_reads,
     reads_owed,
 )
@@ -146,12 +145,10 @@ def test_one_time_pass_annotates_an_older_lane_and_then_skips(
 
     older = TaskHistory(arc)
     assert reads_owed(older)
-    report = ensure_task_lane_reads(older)
-    assert report is not None
+    report = migrate_task_lane_reads(older)
     assert report["annotated"] == 1 and report["receipts"] == 1
     assert report["unreadable"] == 0
-    assert not reads_owed(older)
-    assert ensure_task_lane_reads(older) is None  # the second start skips
+    assert not reads_owed(older)  # the marker is written: the next start skips it
 
     again = migrate_task_lane_reads(older)  # idempotent: nothing left to add
     assert again["annotated"] == 0 and again["receipts"] == 0

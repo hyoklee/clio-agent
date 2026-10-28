@@ -23,9 +23,7 @@ from clio_agent.gact.questions import QuestionCommands
 from clio_agent.gact.sessions import SessionStore
 from clio_agent.gact.spawn_context import prepare_child_session
 from clio_agent.gact.task_access import TaskAccess, TaskCaller
-from clio_agent.gact.task_event_lane import ensure_task_event_lane
 from clio_agent.gact.task_history import TaskHistory
-from clio_agent.gact.task_lane_reads import ensure_task_lane_reads
 from clio_agent.gact.task_operations import TaskOperations
 from clio_agent.gact.task_publication import subscription_caller
 
@@ -77,18 +75,17 @@ async def start(app: Any) -> None:
         history = TaskHistory(arc)
         app.state.task_history = history  # Startup failure still owns and retires this writer.
         await boot_timing.timed(app, "task_history_restore", history.io.run(history.restore))
-        lane = history.io.run(ensure_task_event_lane, history)  # before any tree loads
-        await boot_timing.timed(app, "task_event_lane", lane)
-        reads = history.io.run(ensure_task_lane_reads, history)  # after the lane copy
-        await boot_timing.timed(app, "task_lane_reads", reads)
+    # Before any tree loads; normally `clio-agent migrate` copied it (one marker read).
+    from clio_agent.gact.store_migrations import ensure_at_boot
+
+    await history.io.run(ensure_at_boot, app, "task_event_lane")
+    await history.io.run(ensure_at_boot, app, "task_lane_reads")  # after the lane copy
     recovery = CoreRecovery(history)
     app.state.task_history, app.state.task_recovery = history, recovery
     app.state.human_principal = "human:" + str(app.state.connected_storage.store.clio_id)
     # One-time (normally done by `clio-agent migrate`): historical formats migrate from
     # the build's full replay, then the derived task records are written. Boot reads
     # the marker; later boots replay nothing.
-    from clio_agent.gact.store_migrations import ensure_at_boot
-
     await history.io.run(ensure_at_boot, app, "task_index_build")
     app.state.questions = QuestionCommands(history)
     app.state.question_events = QuestionEvents(app)

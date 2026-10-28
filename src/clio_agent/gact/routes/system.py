@@ -307,12 +307,10 @@ def _context_pressure_state(
 
 
 def collect_health_report(app: FastAPI) -> RuntimeReport:
-    """One full doctor collection for ``/v1/health`` (blocking; run on a worker thread).
-
-    Never triggers an LM handshake (folded from cache by the route) and skips the
-    full-box process census (served from its boot cache). An unselected LM provider
-    is reported ``unconfigured`` rather than probed at its committed default.
-    """
+    """One full doctor collection for ``/v1/health`` (blocking; runs on a worker thread).
+    Never triggers an LM handshake (folded from cache by the route), skips the process
+    census (boot cache), reports an unselected LM provider ``unconfigured`` (not probed
+    at its default) and adds the ``managed_packages`` row (B4)."""
 
     effective_lm = _effective_lm_config(app)
     configured = bool(effective_lm.get("provider") and effective_lm.get("model"))

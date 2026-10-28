@@ -428,49 +428,10 @@ def migrate_task_lane_reads(history: TaskHistory) -> dict[str, Any]:
     return report
 
 
-def ensure_task_lane_reads(history: TaskHistory) -> dict[str, Any] | None:
-    """Boot check: run the one-time pass when the store still owes it.
-
-    Interim until the install/upgrade step runs :func:`migrate_task_lane_reads`; then
-    boot should refuse with ``reason=task_lane_reads_migration_owed`` instead.
-
-    Returns:
-        The report when it ran, ``None`` when the marker was present.
-    """
-    if not reads_owed(history):
-        logger.info("task_lane_reads migration=skipped reason=marker_present")
-        return None
-    logger.warning(
-        "task_lane_reads migration=running reason=marker_absent at=boot "
-        "(owed by the install/upgrade step)"
-    )
-    try:
-        report = migrate_task_lane_reads(history)
-    except Exception as error:
-        logger.error(
-            "task_lane_reads migration=failed reason=task_lane_reads_migration_failed "
-            "error=%r (no marker written; the next start reruns it)",
-            error,
-        )
-        raise
-    logger.warning(
-        "task_lane_reads migration=done at=boot sessions=%d rewritten=%d annotated=%d "
-        "receipts=%d unreadable=%d seconds=%.2f",
-        report["sessions"],
-        report["sessions_rewritten"],
-        report["annotated"],
-        report["receipts"],
-        report["unreadable"],
-        report["seconds"],
-    )
-    return report
-
-
 __all__ = [
     "INPUT_COMMITTED",
     "accept_committed",
     "checkpoint_identity",
-    "ensure_task_lane_reads",
     "migrate_task_lane_reads",
     "observed_lane",
     "reads_owed",

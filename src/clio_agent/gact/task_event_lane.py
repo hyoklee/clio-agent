@@ -16,14 +16,13 @@ in the same clio-core segment store; tree loads read only that lane.
 * **Migration.** A store written before the lane has its task events only in
   ``_events``. :func:`migrate_task_event_lane` copies them into the lane once, session
   by session, and writes the ``meta.task_event_lane`` done marker last. It is the
-  install/upgrade step's entry point; until that step exists, boot calls
-  :func:`ensure_task_event_lane`, which runs it once when the marker is absent and
-  logs a typed line either way.
+  store migration ``task_event_lane`` (:mod:`clio_agent.gact.store_migrations`):
+  ``clio-agent migrate`` runs it at install or upgrade; a boot that finds it owed runs
+  it once with the typed reason ``task_event_lane_migration_owed``.
 """
 
 from __future__ import annotations
 
-import logging
 import time
 from collections.abc import Iterator
 from datetime import UTC, datetime
@@ -40,8 +39,6 @@ if TYPE_CHECKING:
     from clio_agent.arc.memory import ARCMemory
     from clio_agent.arc.schema import Segment
     from clio_agent.gact.task_history import TaskHistory
-
-logger = logging.getLogger(__name__)
 
 #: Base scope of the lane's chunk family (chunk N >= 2 is ``_events/t/log/N``).
 TASK_EVENT_LANE = f"{EVENTS_SCOPE}/t/log"
@@ -250,42 +247,6 @@ def migrate_task_event_lane(history: TaskHistory) -> dict[str, Any]:
     return report
 
 
-def ensure_task_event_lane(history: TaskHistory) -> dict[str, Any] | None:
-    """Boot check: run the one-time copy when the store still owes it.
-
-    Interim until the install/upgrade step runs :func:`migrate_task_event_lane`; then
-    boot should refuse with ``reason=task_event_lane_migration_owed`` instead.
-
-    Returns:
-        The migration report when it ran, ``None`` when the marker was present.
-    """
-    if not migration_owed(history):
-        logger.info("task_event_lane migration=skipped reason=marker_present")
-        return None
-    logger.warning(
-        "task_event_lane migration=running reason=marker_absent at=boot "
-        "(owed by the install/upgrade step)"
-    )
-    try:
-        report = migrate_task_event_lane(history)
-    except Exception as error:
-        logger.error(
-            "task_event_lane migration=failed reason=task_event_lane_migration_failed "
-            "error=%r (no marker written; the next start reruns it)",
-            error,
-        )
-        raise
-    logger.warning(
-        "task_event_lane migration=done at=boot sessions=%d with_task_events=%d events=%d "
-        "seconds=%.2f",
-        report["sessions"],
-        report["sessions_with_task_events"],
-        report["events"],
-        report["seconds"],
-    )
-    return report
-
-
 __all__ = [
     "LANE_DONE",
     "LANE_KEY",
@@ -294,7 +255,6 @@ __all__ = [
     "record_event",
     "TASK_EVENTS",
     "TASK_EVENT_LANE",
-    "ensure_task_event_lane",
     "migrate_task_event_lane",
     "migration_owed",
     "record",
