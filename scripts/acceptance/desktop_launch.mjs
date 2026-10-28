@@ -22,6 +22,7 @@ const LABEL = opt('label', 'launch');
 const READY_LIMIT_S = Number(opt('ready-limit', '900'));
 const QUIT_LIMIT_S = Number(opt('quit-limit', '240'));
 const EXPECTED_SESSIONS = Number(opt('expected-sessions', '0'));
+const PACKAGE_READY_LIMIT_S = Number(opt('package-ready-limit', '0'));
 const DRIVER = process.env.TAURI_DRIVER_URL;
 const EL = 'element-6066-11e4-a52e-4f735466cecf';
 const WINDOWS = process.platform === 'win32';
@@ -269,6 +270,25 @@ if (WINDOWS && ready) {
     result.backend_validation = { valid: false, error: String(error) };
   }
 }
+// Keep startup timing separate from qualification of the real background setup.
+// A usable composer must not hide a failed or interrupted document installation.
+if (WINDOWS && ready && PACKAGE_READY_LIMIT_S > 0) {
+  const deadline = Date.now() + PACKAGE_READY_LIMIT_S * 1000;
+  let terminal;
+  do {
+    terminal = bootLog().split('\n').find((line) =>
+      /^Managed packages checked reason=|^Managed package check failed reason=/.test(line));
+    if (terminal) break;
+    await sleep(1000);
+  } while (Date.now() < deadline);
+  result.package_validation = {
+    valid: terminal?.startsWith('Managed packages checked reason=') ?? false,
+    detail: terminal ?? 'No terminal package-check result within the qualification wait',
+    observed_s: at(),
+  };
+  event('package_validation', result.package_validation);
+  await refreshWindows();
+}
 const before = owned();
 result.processes_before_quit = before.map((p) => ({ kind: kind(p), pid: p.pid, created: p.created, rss_mb: p.rss_mb, cmd: p.cmd }));
 result.rss_mb = {
@@ -325,4 +345,4 @@ try {
 event('done');
 clearInterval(processSampler);
 writeFileSync(path.join(OUT, `${LABEL}.json`), JSON.stringify(result, null, 2));
-if (!ready || left.length || result.backend_validation?.valid === false) process.exitCode = 1;
+if (!ready || left.length || result.backend_validation?.valid === false || result.package_validation?.valid === false) process.exitCode = 1;

@@ -19,6 +19,7 @@ param(
     [ValidateRange(1, 65534)][int]$Port = 4455,
     [ValidateRange(0, 65535)][int]$NativePort = 0,
     [int]$ExpectedSessions = 0,
+    [int]$PackageReadyLimit = 0,
     [int]$ReadyLimit = 300,
     [int]$QuitLimit = 60
 )
@@ -92,7 +93,7 @@ try {
     $driverChildren | ConvertTo-Json -Depth 3 | Set-Content (Join-Path $Out "$Label-native-driver.json")
     $harnessArgs = @((Join-Path $PSScriptRoot 'desktop_launch.mjs'), '--app', $App, '--home', $env:HOME,
         '--out', $Out, '--label', $Label, '--ready-limit', "$ReadyLimit", '--quit-limit', "$QuitLimit",
-        '--expected-sessions', "$ExpectedSessions")
+        '--expected-sessions', "$ExpectedSessions", '--package-ready-limit', "$PackageReadyLimit")
     if ($BootLog) { $harnessArgs += @('--boot-log', $BootLog) }
     & node @harnessArgs
     $code = $LASTEXITCODE

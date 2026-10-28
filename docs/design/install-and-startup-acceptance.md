@@ -64,7 +64,12 @@ Details:
 
 ## Result on Windows (2026-10-28)
 
-**Code:** source install and agent: clio-agent `c6cb5535`, with its pinned gact-tui
+The authorized repair candidate now passes all six limits, and fresh bundled setup
+succeeds. The final matrix is in **Authorized Windows repairs and remeasurement**
+below. The initial develop baseline and unsuccessful candidates remain recorded.
+These repairs are on PR branches, not yet merged into develop.
+
+**Initial baseline code:** source install and agent: clio-agent `c6cb5535`, with its pinned gact-tui
 `fa393da0`; bundled desktop: gact-tui `59a0c97c` and the same clio-agent production
 source. Local test-fixture repairs do not change the measured product. The local
 unsigned NSIS package has version `0.7.3`; the release pipeline supplies the release
@@ -83,8 +88,8 @@ the acceptance timers.
 | Desktop | 120.8 s | 29.9 s | 60 s | cold no / repeat yes |
 | *Desktop package install (`/S`)* | *183.5 s, exit 2* | *73.2 s, exit 0* | | *cold failed* |
 
-Windows acceptance has **not passed**: all three cold timings exceed their limits,
-and a fresh desktop package install failed its Office check.
+This initial develop baseline **failed**: all three cold timings exceeded their
+limits, and fresh desktop package setup failed its Office check.
 
 - **Cold and repeat:** the corrected cold source install used a new empty
   `HOME`, `USERPROFILE`, `LOCALAPPDATA`, `APPDATA`, `CLIO_BIN_DIR` and uv/Go/npm
@@ -234,7 +239,7 @@ quarantine or recovery errors. The larger conversation count reflects children
 started before the generator's fixed interrupted-work settle time. No store was
 copied and no model provider was configured.
 
-Current candidate: clio-agent `8af46e421`; desktop gact-tui `f5b0ae3c` is being built.
+Final measured product: clio-agent `8af46e421`; desktop gact-tui `f5b0ae3c`.
 The source-install rerun uses another empty profile/cache set at `D:\cw\fp7`;
 continuous telemetry observed no encoder and no surviving install descendants.
 The installed `.venv\Scripts\clio-agent.exe` migrated the new store before startup
@@ -244,7 +249,8 @@ measurement (nothing owed; 8.65 s command wall time).
 |---|---|---|---|---|
 | Install | 167.829 s | 25.380 s | 180 s | yes |
 | Agent | 26.338 s | 17.573 s | 30 s | yes |
-| Desktop | pending | pending | 60 s | pending |
+| Desktop | 38.9 s | 27.0 s | 60 s | yes |
+| *Desktop package install (`/S`)* | *176.204 s, exit 0* | *19.161 s, exit 0* | | *yes* |
 
 The agent returned 30 of 929 conversations in 9/6 ms and the newest message page
 in 19/11 ms. Both runs reached readiness `ready`, with interrupted work held
@@ -256,8 +262,55 @@ Its installation was not qualified as complete by this matrix. Repeat left no
 owned descendants. The corrected harness uses the service controller for owned
 native-service cleanup before any process fallback.
 
-The source-install and agent rows pass. Windows acceptance remains incomplete
-until rebuilt bundled-desktop and fresh bundled-setup checks pass.
+All six acceptance timings pass on these candidate branches. The final cold source
+dependency preparation was 58.84 s and installation 17.11 s, compared with the
+earlier failed attempt's 238 s preparation. Managed-tool preparation (128.6 s),
+startup bytecode (39.1 s) and the TUI build (109 s actual lifetime) overlapped other
+work; those times must not be added together.
+
+The final portable runtime passed relocation, real Core initialization and a
+24.67 s backend boot smoke before packaging. The unsigned NSIS package is still
+locally versioned `0.7.3`, not a published 0.9.5 release. Its SHA-256 is
+`26575ecca51fc23a952329078c4622551cad11a083686afe4bc4694c9bca392f`;
+the packed runtime SHA-256 is
+`781d8c2f137e50c60d5656a285d8e5a0c22a3d6731a9cf099c022039ee4dbe06`.
+[Build identity](evidence/windows-startup-repair-2026-10-28/repaired-desktop-build.json)
+includes the heads, archive identity and actual bundled-launcher witness.
+An intermediate rebuild retained a stale launcher; it was caught before installation,
+excluded, and rebuilt through `desktop/scripts/fetch-sidecar.ps1`.
+
+Desktop package cold means a new target `D:\CLIO-Desktop-095-Repair`, profile
+`D:\cw\rp` and empty application/tool caches. The NSIS runtime and its default
+managed tool storage live under the chosen target's `data/`. Desktop launch cold
+means the first GUI launch after successful setup, using that profile and the
+locally generated/migrated `D:\cw\r4` reference store; repeat reuses both. No CLIO
+process was running at either launch. OS/Defender caches were not dropped. No
+independent owned build or test ran during these timers. Preflight total CPU was
+6–10%, with no encoder; an unrelated encoder appeared during 33 package-install
+telemetry samples. Cold package mean total CPU was 62.9%, peak 100%; repeat mean
+was 22.5%, peak 39.7%, with no encoder observed. Defender remained enabled; one
+setup snapshot reported 78.55% aggregate Defender CPU, not a wall-time attribution.
+
+The real protection step ran before the backend on both launches; the managed-step
+checkpoint was 2.551 s cold. Document tools for the reference home's cache prepared
+alongside the backend: **94.090 s** cold, and **1.764 s** to verify unchanged packages
+on repeat. The harness retained the app until these checks succeeded, independently
+of the composer timing. It verified readiness `ready`, 30 of 929 conversations and
+eight visible conversation links after the 10 s settle on both runs. No model
+provider was configured. Core exited 6.5/6.1 s after Quit, server 6.5/7.4 s, and all
+observed app descendants 11.7/11.4 s; no forced application cleanup or survivors.
+The agent picker still read "Loading agents…", as on Linux, and remains on #1887.
+[Cold workspace](evidence/windows-startup-repair-2026-10-28/repair-desktop-cold-04-before-quit.png)
+and [repeat workspace](evidence/windows-startup-repair-2026-10-28/repair-desktop-repeat-03-before-quit.png)
+retain the actual 932 × 499 viewport. The cold WebView was initially too early for
+the AppLog API; its recorded fallback matches the actual current log. Repeat
+resolved the same path through the running app.
+
+The matrix qualifies Windows installation/setup and functional startup on these
+heads. It does not assert that develop CI or release-wide tests pass. Automatic
+approval review blocked removal of superseded disposable profiles `D:\cw\fp1`
+through `fp5` ("blocked by policy"); those folders remain. Both desktop drivers,
+the package installers, build processes and their observed descendants retired.
 
 [Repair measurements and diagnostics](evidence/windows-startup-repair-2026-10-28)
 retain the intermediate failures. Defender remained enabled; a sample during the
@@ -402,6 +455,10 @@ The method carries over. What differs:
   - Quit goes through the app's `quit_clio` command. The result JSON records
     survivors before cleanup; the wrapper's separate cleanup receipt records any
     forced termination. A timed-out workspace or surviving app process exits 1.
+  - For a runtime with background package preparation, add `-PackageReadyLimit 180`.
+    The harness waits for its real terminal boot-log result before quitting and
+    fails on setup failure or timeout. This qualification wait does not change
+    the launch-to-composer measurement.
 - **Not measured on Linux and worth recording on Windows:**
   - the Windows protected-execution (sandbox) check, which still runs before the agent
     starts there;
