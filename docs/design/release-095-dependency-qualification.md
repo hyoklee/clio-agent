@@ -11,6 +11,13 @@ SSE-Starlette 3.6.0. The older TestClient imported an AnyIO alias that is now
 deprecated, which the strict Python 3.14 CI correctly rejected. The asynchronous
 fixture loop scope is explicit; warnings-as-errors remains enabled.
 
+The model router's separately installed proxy uses the same LiteLLM 1.102.2
+pin as the agent. The existing equality check caught its older 1.102.1 pin.
+DSPy test configuration now uses its context manager instead of monkeypatching
+dynamic settings, which leaked a fake usage tracker into later tests. Export
+cleanup tests exercise both ASGI 2.4 send failures and the older receive-side
+disconnect protocol; the latter must yield while waiting for a disconnect.
+
 The initial Windows Python 3.14 audit of all extras and dependency groups
 reported 31 affected packages. After the repair, the same audit reports one:
 DiskCache 5.6.3. Its output contains two copies of the same advisory. This is
