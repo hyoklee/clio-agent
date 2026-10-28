@@ -201,10 +201,12 @@ These resolve through `clio_agent.conf`: a value under the dotted key in `config
 | `CLIO_MCP_MOUNT_RETRY_DELAYS_S` | `tools.mcp.mount_retry_delays_s` | list | `0.5,1.5` | `src/clio_agent/gact/mcp_readiness.py` |
 | `CLIO_MCP_NO_PROGRESS_S` | `tools.mcp.no_progress_s` | float | `30.0` | `src/clio_agent/tools/mcp_server_progress.py` |
 | `CLIO_MCP_PROBE_TIMEOUT_RETRIES` | `tools.mcp.probe_timeout_retries` | int | `3` | `src/clio_agent/tools/mcp_probe_hardening.py` |
+| `CLIO_MCP_PROVISION_MAX_WAIT_S` | `tools.mcp.provision_max_wait_s` | float | `900.0` | `src/clio_agent/tools/mcp_prepare.py` |
 | `CLIO_MCP_RESPONSE_CACHE_ENABLED` | `tools.mcp.response_cache_enabled` | bool | `false` | `src/clio_agent/tools/mcp_runtime.py` |
 | `CLIO_MCP_SESSION_WARMUP` | `tools.mcp.session_warmup` | bool | `true` | `src/clio_agent/gact/session_warmup.py` |
 | `CLIO_MCP_SPAWN_DIET` | `tools.mcp.spawn_diet` | bool | `true` | `src/clio_agent/tools/spawn_diet.py` |
 | `CLIO_MCP_SPAWN_DIET_TTL_H` | `tools.mcp.spawn_diet_ttl_h` | float | `24.0` | `src/clio_agent/tools/spawn_diet.py` |
+| `CLIO_MCP_TURN_PREPARE_GRACE_S` | `tools.mcp.turn_prepare_grace_s` | float | `2.0` | `src/clio_agent/gact/mcp_background_prepare.py` |
 | `CLIO_MCP_WORKSPACE_MAX_RESIDENT` | `tools.mcp.workspace_max_resident` | int | `2` | `src/clio_agent/tools/reaper.py` |
 | `CLIO_MCP_WORKSPACE_TTL_S` | `tools.mcp.workspace_ttl_s` | float | `120.0` | `src/clio_agent/tools/reaper.py` |
 | `CLIO_MODEL_CATALOG` | `paths.model_catalog` | str | _(unset)_ | `src/clio_agent/providers/model_discovery/overlay.py` |
@@ -212,6 +214,7 @@ These resolve through `clio_agent.conf`: a value under the dotted key in `config
 | `CLIO_MODEL_DB` | `paths.model_db` | str | _(unset)_ | `src/clio_agent/providers/handshake/sources/db.py` |
 | `CLIO_MODEL_TOOL_RESULT_CHARS` | `limits.model_tool_result_chars` | int | `12000` | `src/clio_agent/gact/session_mail.py` |
 | `CLIO_NATIVE_ARTIFACT_STORE` | `provenance.artifacts.native.storage` | str | `file` | `src/clio_agent/gact/artifacts/provenance/factory.py` |
+| `CLIO_OBLIGATION_CONCURRENCY` | `agent_tasks.obligation_concurrency` | int | `4` | `src/clio_agent/gact/obligations.py` |
 | `CLIO_PLAN_REVIEW_CHARS` | `limits.plan_review_chars` | int | `256000` | `src/clio_agent/gact/plan_review.py` |
 | `CLIO_PLUGIN_STORE` | `plugins.store_root` | str | _(unset)_ | `src/clio_agent/plugins/service.py` |
 | `CLIO_PROVENANCE_ATTENTION` | `provenance.attention` | str | `false` | `src/clio_agent/provenance_config.py` |
@@ -230,7 +233,8 @@ These resolve through `clio_agent.conf`: a value under the dotted key in `config
 | `CLIO_RELEASE_MANIFEST_URL` | `system.release_manifest_url` | str | `https://github.com/iowarp/clio-agent/releases/latest/download/latest-lite.json` | `src/clio_agent/gact/routes/latest_release.py` |
 | `CLIO_RESIDENT_LEDGERS_MAX` | `gact.resident_ledgers.max_sessions` | int | `512` | `src/clio_agent/gact/resident_ledgers.py` |
 | `CLIO_RESIDENT_LEDGERS_MAX_BYTES` | `gact.resident_ledgers.max_bytes` | int | `536870912` | `src/clio_agent/gact/resident_ledgers.py` |
-| `CLIO_RESIDENT_LEDGERS_TTL_S` | `gact.resident_ledgers.idle_ttl_s` | float | `1800.0` | `src/clio_agent/gact/resident_ledgers.py` |
+| `CLIO_RESIDENT_LEDGERS_SWEEP_S` | `gact.resident_ledgers.sweep_interval_s` | float | `15.0` | `src/clio_agent/gact/resident_ledgers.py` |
+| `CLIO_RESIDENT_LEDGERS_TTL_S` | `gact.resident_ledgers.idle_ttl_s` | float | `60.0` | `src/clio_agent/gact/resident_ledgers.py` |
 | `CLIO_RESOURCE_DELIVERY_LEDGER_MAX_RECORDS` | `resources.delivery_ledger_max_records` | int | `2000` | `src/clio_agent/gact/resource_delivery.py` |
 | `CLIO_RESOURCE_DERIVATIVE_NAME_MAX_CHARS` | `resources.derivative_name_max_chars` | int | `48` | `src/clio_agent/gact/resource_processing.py` |
 | `CLIO_RESOURCE_LIST_MAX_RECORDS` | `resources.list_max_records` | int | `100` | `src/clio_agent/gact/resource_tools.py` |
@@ -277,6 +281,7 @@ These resolve through `clio_agent.conf`: a value under the dotted key in `config
 | `CLIO_SEMANTIC_TRACE_FACTORY` | `trace.semantic_factory` | str | _(unset)_ | `src/clio_agent/gact/provenance/factory.py` |
 | `CLIO_SEMANTIC_TRACE_PATH` | `trace.path` | str | _(unset)_ | `src/clio_agent/gact/provenance/factory.py` |
 | `CLIO_SERVER_CONF` | `arc.server_conf` | str | _(unset)_ | `src/clio_agent/arc/clio_core_liveness.py` |
+| `CLIO_SESSIONS_CACHE_RECORDS` | `sessions.cache_records` | int | `1024` | `src/clio_agent/gact/session_records.py` |
 | `CLIO_SESSIONS_PATH` | `paths.sessions` | str | _(unset)_ | `src/clio_agent/gact/sessions.py` |
 | `CLIO_SHELL_DEFAULT_OUTPUT_BYTES` | `limits.shell_default_output_bytes` | int | `8192` | `src/clio_agent/tools/servers/shell_server.py` |
 | `CLIO_SHELL_DEFAULT_TIMEOUT_S` | `limits.shell_default_timeout_s` | float | `0.0` | `src/clio_agent/tools/servers/shell_server.py` |
@@ -317,6 +322,7 @@ These deliberately bypass the config store (a shared file must not be able to re
 | `ALCF_INFERENCE_TOKEN` | secret | `src/clio_agent/providers/argonne_auth.py`, `src/clio_agent/providers/credentials.py` |
 | `CLIO_ARGONNE_TOKEN` | secret | `src/clio_agent/providers/argonne_auth.py`, `src/clio_agent/providers/credentials.py` |
 | `CLIO_AUTH_TOKEN` | secret | `src/clio_agent/gact/auth.py`, `src/clio_agent/gact/desktop_boot.py` |
+| `CLIO_BIN_DIR` | unmigrated | `src/clio_agent/gact/infrastructure/native_service_platform.py`, `src/clio_agent/gact/infrastructure/node_models.py` |
 | `CLIO_CODEX_RELEASE_TOKEN` | unmigrated | `src/clio_agent/runtime/codex_windows_helpers.py` |
 | `CLIO_CODEX_VARIANT` | unmigrated | `src/clio_agent/runtime/status.py` |
 | `CLIO_COLLABORA_URL` | unmigrated | `src/clio_agent/gact/documents/editors.py` |
@@ -339,6 +345,7 @@ These deliberately bypass the config store (a shared file must not be able to re
 | `CLIO_RUNTIME_STATE_DIR` | unmigrated | `src/clio_agent/arc/clio_core_config.py`, `src/clio_agent/arc/clio_core_effective_runtime.py` |
 | `CLIO_SECRET_VARIABLES` | unmigrated | `src/clio_agent/gact/infrastructure/node_service.py` |
 | `CLIO_SEMANTIC_TRACE_BACKEND` | unmigrated | `src/clio_agent/provenance_config.py` |
+| `CLIO_SHUTDOWN_BUDGET_S` | unmigrated | `src/clio_agent/gact/shutdown_budget.py` |
 | `CLIO_STORAGE_GITHUB_APP_URL` | unmigrated | `src/clio_agent/gact/storage/github_oauth.py` |
 | `CLIO_STORAGE_GITHUB_CLIENT_ID` | unmigrated | `src/clio_agent/gact/storage/github_oauth.py` |
 | `CLIO_STORAGE_GOOGLE_API_KEY` | unmigrated | `src/clio_agent/gact/storage/drive_filesystem.py` |

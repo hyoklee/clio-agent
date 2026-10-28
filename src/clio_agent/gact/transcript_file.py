@@ -142,7 +142,7 @@ class RegistryTranscriptIndex:
     def session_ids(self) -> list[str]:
         """Every registered session id."""
 
-        return [session.id for session in self._sessions.list()]
+        return self._sessions.ids()
 
     def has_session(self, session_id: str) -> bool:
         """Whether ``session_id`` is a registered session."""
@@ -307,21 +307,30 @@ def _seed_from_atoms(app: "FastAPI") -> None:
 
 
 def _atom_boot(app: "FastAPI") -> None:
-    """Retain legacy evidence, reconcile interruptions and seed canonical metrics."""
+    """Retain legacy evidence, mark interrupted turns and seed canonical metrics."""
 
-    from clio_agent.gact.session_store import (  # noqa: PLC0415 - import cycle
-        _reconcile_restart_interrupted_sessions,
-    )
+    from clio_agent.gact import boot_timing  # noqa: PLC0415
+    from clio_agent.gact.restart_interruptions import mark_restart_interrupted  # noqa: PLC0415
+    from clio_agent.gact.store_migrations import ensure_at_boot  # noqa: PLC0415
     from clio_agent.gact.task_history import TaskHistory
-    from clio_agent.gact.transcript_migration import migrate_transcripts
 
     if getattr(app.state, "task_history", None) is None:
-        history = TaskHistory(app.state.arc)
-        history.restore()
+        with boot_timing.step(app, "task_history_restore"):
+            history = TaskHistory(app.state.arc)
+            history.restore()
         app.state.task_history = history
-    migrate_transcripts(app)  # Capture legacy content before any reconciliation/cache update.
-    _reconcile_restart_interrupted_sessions(app)
-    _seed_from_atoms(app)
+        # Before any tree loads; normally `clio-agent migrate` copied it (one marker read).
+        ensure_at_boot(app, "task_event_lane")
+        ensure_at_boot(app, "task_lane_reads")  # after the lane copy
+    # The session records every later step reads (normally one marker read).
+    ensure_at_boot(app, "session_records_import")
+    # Legacy content is captured before any reconciliation/cache update; normally
+    # `clio-agent migrate` already did, and this is one marker read.
+    ensure_at_boot(app, "transcript_legacy_import")
+    with boot_timing.step(app, "interrupted_sessions"):
+        mark_restart_interrupted(app)  # records only; transcripts close after ready
+    with boot_timing.step(app, "interaction_times"):
+        _seed_from_atoms(app)
     app.state.transcript_boot_ready.set()
 
 
@@ -435,7 +444,7 @@ def boot_transcript_store(app: "FastAPI", root: Path) -> None:
 
     from clio_agent.gact.messages import MessageStore  # noqa: PLC0415
     from clio_agent.gact.metrics_counters import MetricsCounters  # noqa: PLC0415
-    from clio_agent.gact.resident_ledgers import build_resident_ledger_set
+    from clio_agent.gact.resident_ledgers import attach_arc_residency, build_resident_ledger_set
     from clio_agent.gact.runtime.retention import init_retention_state
     from clio_agent.gact.transcript_projection import canonical_log_arc
 
@@ -451,6 +460,7 @@ def boot_transcript_store(app: "FastAPI", root: Path) -> None:
     init_retention_state(app)
     app.state.metrics_counters = MetricsCounters()
     app.state.messages = build_resident_ledger_set(app)
+    attach_arc_residency(app, getattr(app.state, "arc", None))
     if canonical_log_arc(app) is not None:
         on_process_arc_bound(app)
 

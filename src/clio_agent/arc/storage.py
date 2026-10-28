@@ -12,9 +12,11 @@ import atexit
 import contextlib
 import logging
 import os
+import re
 import subprocess
 import sys
 import threading
+import weakref
 from collections.abc import Iterator, Sequence
 from itertools import batched
 from pathlib import Path
@@ -120,6 +122,7 @@ ARC_KINDS: tuple[str, ...] = (
     "task_lookup",  # derived handle/session/tree lookups, read by exact name only
     "task_open",  # derived open-work obligations, the one small listing done at boot
     "artifact_index",  # artifact registry records, read by exact name only (point gets)
+    "session_records",  # one record per session + recent-first index buckets (gact)
 )
 
 # Suffix for the optional plain-text companion blob (BM25 discovery, Thread D) a
@@ -395,6 +398,7 @@ class ClioCoreStore:
     _namespace = ""  # the default (bare-tag) namespace; set per instance in __init__
     _kinds: tuple[str, ...] = ARC_KINDS  # the kinds clear() and prewarm cover
     _attach_verified = False  # the post-attach probe ran (once per process attach)
+    _instances: "weakref.WeakSet[ClioCoreStore]" = weakref.WeakSet()
 
     _initialized = False  # process-global init guard (the runtime inits exactly once)
     _attached_runtime_identity: tuple[int, float] | None = None
@@ -414,6 +418,7 @@ class ClioCoreStore:
 
         self._cte = cte
         self._client = cte.get_cte_client()
+        type(self)._instances.add(self)
         # Records of one namespace live under ``<namespace>/<kind>`` tags; the default
         # (empty) namespace keeps the bare ``<kind>`` tags every deployment already has.
         self._namespace = namespace
@@ -457,6 +462,18 @@ class ClioCoreStore:
 
     # Process-owned, idempotent release_runtime_client runs after application
     # drain, with atexit as its backstop. Namespace instances never release it.
+
+    @classmethod
+    def drop_native_handles(cls) -> None:
+        """Let go of every store's native client and tag ids (a one-shot command's exit).
+
+        The binding reports each native object still alive at interpreter exit as a
+        leak (``nanobind: leaked ...``); a process that has released the runtime has no
+        further use for them. Any later call on a store fails instead of reaching clio-core.
+        """
+        for store in list(cls._instances):
+            store._tag_ids.clear()
+            store._client = None
 
     @classmethod
     def _ensure_runtime(cls, config_path: str, log_level: str, settle_s: float) -> str:
@@ -640,15 +657,25 @@ class ClioCoreStore:
                 yield blob_name, value
 
     def scan_names(self, kind: str, prefix: str = "") -> Iterator[str]:
-        """Read the namespace directory once; address discovery loads no blob bodies."""
-        # This generator guards its listing RPC when iterated, without loading bodies.
+        """Record names under ``prefix``: clio-core matches the names (a prefix asks for
+        that prefix only, never the whole kind); no blob body is read."""
+        yield from self.query_names(kind, (re.escape(prefix) + ".*") if prefix else "")
+
+    def query_names(self, kind: str, name_re: str = "") -> list[str]:
+        """Record names of ``kind`` fully matching ``name_re`` (``""``: all), asked of
+        clio-core by pattern (``BlobQuery``); search companions are skipped."""
         self._live()
+        tag = self.tag(kind)
 
         def _list() -> list[str]:
             try:  # the binding decodes every name; one corrupt name fails the listing
-                return list(self._cte.Tag(self.tag(kind)).GetContainedBlobs())
+                if not name_re:
+                    return list(self._cte.Tag(tag).GetContainedBlobs())
+                pool = self._cte.PoolQuery.Dynamic()
+                rows = self._client.BlobQuery(re.escape(tag), name_re, 0, pool)
+                return [blob for _tag, blob in rows]
             except UnicodeDecodeError as exc:
-                raise BlobNameDecodeError(self.tag(kind), exc) from exc
+                raise BlobNameDecodeError(tag, exc) from exc
 
         blobs = call_with_liveness(
             _list,
@@ -657,11 +684,7 @@ class ClioCoreStore:
             reconnect=self._reconnect,
             on_exhausted=self._gate.note_rpc_stalled,
         )
-        for blob_name in blobs:
-            if blob_name.endswith(_SEARCH_SUFFIX):
-                continue  # search companion, not a record
-            if blob_name.startswith(prefix):
-                yield blob_name
+        return [name for name in blobs if not name.endswith(_SEARCH_SUFFIX)]
 
     @guard_store_op("delete")
     def delete(self, kind: str, name: str) -> None:
@@ -705,8 +728,6 @@ class ClioCoreStore:
         """BM25 search over the plain-text companions; returns ``[(record_name, score)]``
         best-first with the ``.text`` suffix stripped. The indexer also returns
         in-scope blobs that match no query term at score 0; those are not hits."""
-        import re  # noqa: PLC0415
-
         if name_prefix and name_re:
             raise ValueError("search takes name_prefix or name_re, not both")
         stem = f"(?:{name_re})" if name_re else f"{re.escape(name_prefix)}.*"

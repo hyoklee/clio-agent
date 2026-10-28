@@ -22,6 +22,12 @@ from clio_agent.gact.session_store import _append_session_message
 from clio_agent.gact.types import Message
 
 
+@pytest.fixture(autouse=True)
+def _memory_models_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The pass's models count as configured; the unconfigured case is tested below."""
+    monkeypatch.setattr("clio_agent.gact.memory.models.unconfigured_roles", lambda: ())
+
+
 @pytest.fixture()
 def client(tmp_path: Path) -> Iterator[TestClient]:
     with TestClient(build_app(sessions_path=tmp_path / "sessions.json")) as started:
@@ -60,7 +66,7 @@ def _idle_conversation(app: Any) -> Any:
     _say(app, session.id, 4, "assistant", "Sure.", tool="remember: email results to x@example.com")
     _say(app, session.id, 5, "user", "Thanks.")
     old = (datetime.now(UTC) - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    app.state.sessions._sessions[session.id].last_interaction_at = old  # noqa: SLF001
+    app.state.sessions.get(session.id).last_interaction_at = old  # noqa: SLF001
     return app.state.sessions.get(session.id)
 
 
@@ -202,6 +208,67 @@ def test_background_off_runs_no_pass(client: TestClient, monkeypatch: pytest.Mon
     assert not app.state.sessions.get(session.id).metadata.get(background.IN_FLIGHT)
 
 
+def test_no_configured_model_skips_the_pass_with_a_typed_reason(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = client.app
+    session = _idle_conversation(app)
+    monkeypatch.setattr(
+        "clio_agent.gact.memory.models.unconfigured_roles",
+        lambda: ("memory_extract", "memory_consolidate"),
+    )
+
+    def extract(*_: Any, **__: Any) -> Any:
+        raise AssertionError("no model is configured: the pass must not run")
+
+    monkeypatch.setattr("clio_agent.gact.memory.extract.extract_candidates", extract)
+    now = datetime.now(UTC)
+    background.memory_tick(app, now)
+    background.memory_tick(app, now + timedelta(minutes=1))
+    metadata = app.state.sessions.get(session.id).metadata
+    assert not metadata.get(background.IN_FLIGHT)
+    assert not metadata.get(background.LAST_PASS)  # skipped, not failed
+    assert app.state.memory_background["skipped_reason"] == "lm_provider_unconfigured"
+    assert app.state.memory_background["roles"] == ["memory_extract", "memory_consolidate"]
+
+
+def test_an_unconfigured_memory_model_is_refused_without_a_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from clio_agent.errors import ClioError
+    from clio_agent.gact.memory import models
+
+    monkeypatch.setattr(models, "unconfigured_roles", lambda: ("memory_extract",))
+
+    def probe(*_: Any) -> Any:
+        raise AssertionError("the unselected default provider must not be probed")
+
+    monkeypatch.setattr(models, "model_route", probe)
+    with pytest.raises(ClioError) as refused:
+        models.memory_model("memory_extract")
+    assert refused.value.error_type == "lm_provider_unconfigured"
+
+
+def test_a_fleet_model_or_a_selected_provider_configures_the_pass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from clio_agent.gact.memory import models
+
+    monkeypatch.undo()  # the real unconfigured_roles, not the autouse stand-in
+    monkeypatch.setattr("clio_agent.gact.providers.boot_selection.explicit_lm_provider", lambda: "")
+    choice = {"provider_id": "p", "model_id": "m"}
+    monkeypatch.setattr(
+        models,
+        "fleet_settings",
+        lambda: {"judges": {"memory_extract": choice, "memory_consolidate": None}},
+    )
+    assert models.unconfigured_roles() == ("memory_consolidate",)
+    monkeypatch.setattr(
+        "clio_agent.gact.providers.boot_selection.explicit_lm_provider", lambda: "codex"
+    )
+    assert models.unconfigured_roles() == ()
+
+
 def test_no_candidate_last_pass_is_not_reported_as_failed(client: TestClient) -> None:
     app = client.app
     session = _idle_conversation(app)
@@ -253,7 +320,7 @@ def test_transcript_cache_tracks_the_current_minimum_user_turns(
     session = app.state.sessions.create(workspace_id="ws_global", title="One-turn memory")
     _say(app, session.id, 1, "user", "Remember my preference for concise notes.")
     old = (datetime.now(UTC) - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    app.state.sessions._sessions[session.id].last_interaction_at = old  # noqa: SLF001
+    app.state.sessions.get(session.id).last_interaction_at = old  # noqa: SLF001
     original_setting = background.setting
     monkeypatch.setattr(
         background,
@@ -466,7 +533,7 @@ def test_zero_idle_delay_makes_one_completed_user_turn_eligible(
     session = app.state.sessions.create(workspace_id="ws_global", title="Immediate memory")
     _say(app, session.id, 1, "user", "I prefer the concise summary first.")
     old = (datetime.now(UTC) - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    app.state.sessions._sessions[session.id].last_interaction_at = old  # noqa: SLF001
+    app.state.sessions.get(session.id).last_interaction_at = old  # noqa: SLF001
     original_setting = background.setting
     monkeypatch.setattr(
         background,
@@ -732,7 +799,7 @@ def test_an_idle_conversation_is_read_once_per_change(client: TestClient) -> Non
     session = app.state.sessions.create(workspace_id="ws_global", title="t")
     _say(app, session.id, 1, "user", "Hello.")
     old = (datetime.now(UTC) - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    app.state.sessions._sessions[session.id].last_interaction_at = old  # noqa: SLF001
+    app.state.sessions.get(session.id).last_interaction_at = old  # noqa: SLF001
     now = datetime.now(UTC)
     background.memory_tick(app, now)
     assert app.state.memory_background["skipped"]["too_few_new_messages"] >= 1
@@ -754,7 +821,7 @@ def test_an_idle_conversation_is_read_once_per_change(client: TestClient) -> Non
         assert app.state.memory_background["skipped"]["too_few_new_messages"] >= 1
         # Not idle: the transcript is not read at all.
         fresh = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-        app.state.sessions._sessions[session.id].last_interaction_at = fresh  # noqa: SLF001
+        app.state.sessions.get(session.id).last_interaction_at = fresh  # noqa: SLF001
         assert background.skip_reason(app, app.state.sessions.get(session.id), now) == (
             "not_idle_yet"
         )
@@ -765,6 +832,55 @@ def test_an_idle_conversation_is_read_once_per_change(client: TestClient) -> Non
         assert reads.count(session.id) == 1
     finally:
         app.state.messages = messages
+
+
+def test_the_idle_check_reads_a_conversation_without_making_it_resident(
+    client: TestClient,
+) -> None:
+    """A tick over idle conversations nobody has open leaves their histories on disk."""
+    app = client.app
+    session = app.state.sessions.create(workspace_id="ws_global", title="t")
+    _say(app, session.id, 1, "user", "Hello.")
+    old = (datetime.now(UTC) - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    app.state.sessions.get(session.id).last_interaction_at = old  # noqa: SLF001
+    app.state.messages.discard(session.id)
+    assert session.id not in app.state.messages.resident_session_ids
+
+    background.memory_tick(app, datetime.now(UTC))
+
+    assert app.state.memory_background["skipped"]["too_few_new_messages"] >= 1
+    assert session.id not in app.state.messages.resident_session_ids
+
+
+def test_a_pass_whose_model_cannot_start_is_recorded_once_and_not_retried(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unreachable model fails one start per tick, typed, and the transcript it read
+    is not retried every minute; the tick itself completes."""
+    app = client.app
+    first, second = _idle_conversation(app), _idle_conversation(app)
+    calls: list[str] = []
+
+    def unreachable(items: Any, *, session_id: str, **_: Any) -> Any:
+        calls.append(session_id)
+        raise ConnectionError("model server not running")
+
+    monkeypatch.setattr("clio_agent.gact.memory.extract.extract_candidates", unreachable)
+    now = datetime.now(UTC)
+    background.memory_tick(app, now)
+
+    assert len(calls) == 1  # one failed start per tick: the other waits for the next
+    summary = app.state.memory_background
+    assert summary["skipped"].get("start_failed_this_tick") == 1
+    failed = calls[0]
+    last_pass = app.state.sessions.get(failed).metadata[background.LAST_PASS]
+    assert last_pass["status"] == "failed"
+    assert last_pass["reason"] == "ConnectionError"
+    assert last_pass["read_to"] == app.state.messages.get(failed)[-1].id
+
+    background.memory_tick(app, now)
+    assert calls[1:] == [({first.id, second.id} - {failed}).pop()]  # not the failed one
+    assert background.skip_reason(app, app.state.sessions.get(failed), now) == ("last_pass_failed")
 
 
 def test_the_curator_is_told_what_already_waits_for_review(client: TestClient) -> None:

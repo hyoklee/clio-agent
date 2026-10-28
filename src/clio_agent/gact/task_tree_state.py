@@ -2,7 +2,9 @@
 
 A task tree is every session joined by task lineage (``parent_handle``) under one
 root session. Each task event is filed under a member session, so a tree is
-rebuilt by reading only its members' event logs; no other session is touched.
+rebuilt by reading only its members' task-event lanes
+(:mod:`clio_agent.gact.task_event_lane`), never their whole event logs; no other
+session is touched.
 :class:`TreeCache` holds the trees the process is using and drops idle ones; the
 records that find a tree live in clio-core (:mod:`clio_agent.gact.task_index_records`).
 """
@@ -13,7 +15,7 @@ import logging
 import threading
 import time
 from collections import OrderedDict
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any
 
 from clio_agent.arc.task_types import (
@@ -28,6 +30,8 @@ from clio_agent.arc.task_types import (
     WorkflowCheckpoint,
 )
 from clio_agent.gact import task_history_projection as projection
+from clio_agent.gact.task_event_lane import TASK_EVENTS, session_task_events
+from clio_agent.gact.task_lane_reads import INPUT_COMMITTED, receipt_record
 
 if TYPE_CHECKING:
     from clio_agent.arc.memory import ARCMemory
@@ -35,21 +39,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-TASK_EVENTS = frozenset(
-    {
-        "task.observed",
-        "task.submission",
-        "task.native_attempt",
-        "task.subscription",
-        "task.alias",
-        "session.mail.accepted",
-        "session.mail.updated",
-        "session.mail.withdrawn",
-        "session.coordination.grant",
-        "session.input.prepared",
-        "workflow.checkpoint",
-    }
-)
 _ENVELOPE = frozenset({"schema_version", "observation_id", "record"})
 
 
@@ -147,14 +136,6 @@ class TreeState:
         return any(getattr(self, name) for name in projection._PROJECTION_FIELDS)
 
 
-def session_task_events(arc: ARCMemory, session_id: str) -> Iterator[tuple[str, dict[str, Any]]]:
-    """Yield one session's task events in log order, by the dense chunk walk."""
-    for segment in arc._live.iter_session_event_segments(session_id):
-        content = segment.content
-        if str(content.get("event_type", "")) in TASK_EVENTS:
-            yield session_id, content
-
-
 def replay(
     state: TreeState,
     events: Iterable[tuple[str, dict[str, Any]]],
@@ -172,6 +153,7 @@ def replay(
     """
     state._replaying = True
     deferred: list[tuple[str, dict[str, Any]]] = []
+    receipts: dict[tuple[str, str], dict[str, Any]] = {}
     for session_id, content in events:
         event_type = str(content.get("event_type", ""))
         if event_type not in TASK_EVENTS:
@@ -181,6 +163,10 @@ def replay(
             if "schema_version" in payload:
                 raise ValueError("Task history observation envelope is incomplete")
             continue  # unversioned historical formats are decoded at startup migration
+        if event_type == INPUT_COMMITTED:
+            # A lane receipt: the input reached its context scope (read below, not here).
+            receipts[(session_id, str(payload["record"].get("id")))] = payload
+            continue
         if event_type == "task.subscription":
             record = payload["record"]
             if owner_filed_subscriptions:
@@ -203,17 +189,21 @@ def replay(
         ordering.sort()
     scopes: dict[tuple[str, str], dict[str, RecipientInput]] = {}
     for locator in state._input_locations.values():
-        key = (locator["session_id"], locator["scope"])
-        if key not in scopes:
-            scopes[key] = state.context_inputs(*key)
-        recovered = scopes[key].get(locator["id"])
+        receipt = receipts.get((locator["session_id"], locator["id"]))
+        if receipt is not None:
+            recovered: RecipientInput | None = receipt_record(receipt, locator)
+        else:  # no receipt (an older store, or a stop between commit and receipt)
+            key = (locator["session_id"], locator["scope"])
+            if key not in scopes:
+                scopes[key] = state.context_inputs(*key)
+            recovered = scopes[key].get(locator["id"])
         if recovered is not None:
             projection._accept_input(state, recovered)
     state._replaying = False
 
 
 def load_tree(history: TaskHistory, root: str, members: Iterable[str]) -> TreeState:
-    """Rebuild one tree from its member sessions' event logs only."""
+    """Rebuild one tree from its member sessions' task-event lanes only."""
     state = TreeState(history, root, members)
     events = (
         event

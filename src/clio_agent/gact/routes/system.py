@@ -25,6 +25,7 @@ from fastapi.responses import JSONResponse
 
 from clio_agent.arc import history_mode
 from clio_agent.errors import MCP_TASK_RECORD_STORE_ABSENT
+from clio_agent.gact import boot_timing, store_migrations
 from clio_agent.gact.composer_runtime import resource_capabilities
 from clio_agent.gact.context_references import CONTEXT_REFERENCE_CAPABILITY
 from clio_agent.gact.off_loop import run_off_loop
@@ -68,6 +69,7 @@ from clio_agent.gact.types import (
     TransportFlags,
 )
 from clio_agent.gact.version_info import build_version_info
+from clio_agent.runtime.package_preparation import probe_managed_packages
 from clio_agent.runtime.status import (
     IntegrationState,
     IntegrationStatus,
@@ -305,12 +307,10 @@ def _context_pressure_state(
 
 
 def collect_health_report(app: FastAPI) -> RuntimeReport:
-    """One full doctor collection for ``/v1/health`` (blocking; run on a worker thread).
-
-    Never triggers an LM handshake (folded from cache by the route) and skips the
-    full-box process census (served from its boot cache). An unselected LM provider
-    is reported ``unconfigured`` rather than probed at its committed default.
-    """
+    """One full doctor collection for ``/v1/health`` (blocking; runs on a worker thread).
+    Never triggers an LM handshake (folded from cache by the route), skips the process
+    census (boot cache), reports an unselected LM provider ``unconfigured`` (not probed
+    at its default) and adds the ``managed_packages`` row (B4)."""
 
     effective_lm = _effective_lm_config(app)
     configured = bool(effective_lm.get("provider") and effective_lm.get("model"))
@@ -320,6 +320,7 @@ def collect_health_report(app: FastAPI) -> RuntimeReport:
         lm_timeout=0.5,
         include_process_census=False,
     )
+    report.integrations.append(probe_managed_packages())
     return unconfigured_provider_report(
         report, provider_configured=configured or bool(explicit_lm_provider())
     )
@@ -359,6 +360,7 @@ def register_system_routes(app: FastAPI, deps: "GactDeps") -> None:
         """
 
         uptime = int(time.time() - app.state.started_at)
+        readiness, still_starting = boot_timing.readiness(app)
 
         try:
             # While the boot collection runs, answer at once (health_boot); else collect.
@@ -406,7 +408,9 @@ def register_system_routes(app: FastAPI, deps: "GactDeps") -> None:
         # synchronous collect above deliberately skipped, so the polled endpoint
         # stays fast even on a cold psutil box (the cheap reaper + child_processes
         # rows were already collected inline).
-        integrations = integrations + _folded_orphan_scan_rows(app)
+        integrations = (
+            integrations + _folded_orphan_scan_rows(app) + store_migrations.health_rows(app)
+        )
         report = RuntimeReport(integrations=integrations)
 
         overall = _health_overall(report)
@@ -421,6 +425,9 @@ def register_system_routes(app: FastAPI, deps: "GactDeps") -> None:
             # install (ungated/unobserved tools) is visible, not silent.
             tool_hooks_installed=getattr(app.state, "tool_hooks_installed", None),
             context_mode=history_mode.resolve().mode,
+            boot=boot_timing.snapshot(app),
+            readiness=readiness,
+            starting=still_starting,
         )
         if overall == "unavailable":
             content = response.model_dump(mode="json", exclude_none=True)

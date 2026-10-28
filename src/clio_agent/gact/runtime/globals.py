@@ -133,9 +133,8 @@ def _resolve_tool_session(app: "FastAPI") -> tuple[str, Any | None]:
     sid = _ctx.active_tool_session_id().strip()
     if sid:
         return sid, app.state.sessions.get(sid)
-    sessions_by_recency = app.state.sessions.list()
-    if sessions_by_recency:
-        current = sessions_by_recency[0]
+    current = app.state.sessions.most_recent()
+    if current is not None:
         return current.id, current
     return "", None
 
@@ -641,6 +640,9 @@ def _set_app_arc(app: "FastAPI", arc: Any) -> None:
     app.state.arc = arc
     if arc is not None:
         _PROCESS_ARC = arc
+        sessions = getattr(app.state, "sessions", None)
+        if sessions is not None:  # session records live in this ARC's clio-core store
+            sessions.bind_store(arc._store)
     _wire_arc_op_logger(app)
     # ARC-as-source: wire the highway-derive sink onto the arc so a recorded semantic
     # event fans out to the durable trace / SSE / hooks AFTER ARC persists+folds it.
@@ -656,6 +658,9 @@ def _set_app_arc(app: "FastAPI", arc: Any) -> None:
                 else {}
             )
         )
+        from clio_agent.gact.resident_ledgers import attach_arc_residency  # noqa: PLC0415
+
+        attach_arc_residency(app, arc)  # the one residency owner counts ARC's scopes
 
 
 def _coerce_error_info(value: Any) -> Optional["ErrorInfo"]:

@@ -19,6 +19,7 @@ from clio_agent import conf
 from clio_agent.gact.context_reference_result import reference_result as _reference_result
 from clio_agent.gact.runtime.retention import ledger_guard
 from clio_agent.gact.summarization_record import as_summarization
+from clio_agent.gact.transcript_reads import read_transcript
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -145,7 +146,7 @@ def _plan_snapshots(
 ) -> list[tuple[dict[str, Any], dict[str, Any]]]:
     snapshots: list[tuple[dict[str, Any], dict[str, Any]]] = []
     for session in _workspace_sessions(app, workspace_id):
-        for message in app.state.messages.get(session.id, []) or []:
+        for message in read_transcript(app, session.id):
             for index, part in enumerate(message.parts):
                 record = as_summarization(part)
                 if part.type != "plan" and record is None:
@@ -208,7 +209,7 @@ def _diff_snapshots(
                     kind="diff",
                     ref_id=ref_id,
                     label=Path(path).name or path,
-                    detail=f"Changed file · {path} · {payload['status']}",
+                    detail=f"Changed file: {path} ({payload['status']})",
                     media_type="text/x-diff",
                     navigation={
                         "workspace_id": workspace_id,
@@ -241,7 +242,10 @@ def _context_frame_snapshots(
                     kind="context_frame",
                     ref_id=frame_id,
                     label=f"Context for {session.title or session.id}",
-                    detail=f"{row.get('status') or 'assembled'} · {item_count} items",
+                    detail=(
+                        f"{row.get('status') or 'assembled'} ({item_count} "
+                        + ("item)" if item_count == 1 else "items)")
+                    ),
                     media_type="application/vnd.clio.context-frame+json",
                     navigation={
                         "workspace_id": workspace_id,
@@ -331,7 +335,7 @@ def _evidence_source_snapshots(
     snapshots: list[tuple[dict[str, Any], dict[str, Any]]] = []
     seen: set[tuple[str, str]] = set()
     for session in _workspace_sessions(app, workspace_id):
-        for message in app.state.messages.get(session.id, []) or []:
+        for message in read_transcript(app, session.id):
             for index, part in enumerate(message.parts):
                 candidates: list[tuple[str, str, str]] = []
                 if (

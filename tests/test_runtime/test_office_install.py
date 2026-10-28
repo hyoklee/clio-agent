@@ -27,6 +27,17 @@ def test_official_assets_are_pinned(
     assert len(checksum) == 64
 
 
+@pytest.mark.parametrize("machine", [m for system, m in office.ASSETS if system == "Linux"])
+def test_every_linux_build_has_a_pinned_userland(
+    machine: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each Linux LibreOffice build CLIO downloads runs on its own private userland."""
+    monkeypatch.setattr(office.office_compat.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(office.office_compat.platform, "machine", lambda: machine)
+    assert office.office_compat.supported() is True
+    assert office.office_compat.packages()
+
+
 def test_bad_download_checksum_never_extracts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -108,6 +119,8 @@ def test_private_renderer_is_probed_before_warm_reuse(
     program.parent.mkdir()
     program.touch()
     seen: list[list[str]] = []
+    # A Windows-layout tree: no private Linux userland applies.
+    monkeypatch.setattr(office.office_compat, "supported", lambda: False)
     monkeypatch.setattr(office, "run", lambda command, **kwargs: seen.append(command) or "26.2.6")
     assert office.ensure_office(tmp_path) == str(program)
     assert seen == [[str(program), "--version"]]

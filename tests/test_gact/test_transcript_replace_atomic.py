@@ -467,10 +467,12 @@ def test_off_a_legacy_row_takes_its_last_atom_message_time_never_messages_dir(
     assert stat_calls == []
     _no_messages_dir(tmp_path)
 
-    # Settled once and persisted: the restart reads the row's own value.
-    stored = json.loads((tmp_path / "sessions.json").read_text())
-    assert stored["sess_talked"]["last_interaction_at"] == "2026-08-22T18:21:00+00:00"
+    # Settled once and persisted: the restart reads the record's own value.
+    first.state.sessions.flush()
     second = _app(tmp_path)
+    stored = second.state.sessions.get("sess_talked")
+    assert stored is not None
+    assert stored.last_interaction_at == "2026-08-22T18:21:00+00:00"
     assert second.state.sessions.get("sess_silent").last_interaction_at == (
         "2026-08-01T00:00:00+00:00"
     )
