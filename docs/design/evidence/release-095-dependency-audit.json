@@ -429,5 +429,31 @@
     "starlette": "1.10.0",
     "sse-starlette": "3.6.0",
     "anyio": "4.15.1"
+  },
+  "final_registry_audit": {
+    "clio_version": "0.9.5",
+    "schemas_version": "0.6.0",
+    "kit_version": "2.11.1",
+    "dependency_entries": 235,
+    "affected_packages": 1,
+    "raw_advisory_entries": 2,
+    "remaining": [
+      {
+        "name": "diskcache",
+        "version": "5.6.3",
+        "advisories": [
+          "PYSEC-2026-2447"
+        ],
+        "aliases": [
+          "CVE-2025-69872",
+          "GHSA-w8v5-vhqr-4h9v"
+        ]
+      }
+    ],
+    "exclusions": [],
+    "skipped": [],
+    "suppressed_advisories": [],
+    "audit_clean": false,
+    "requirements_sha256": "a46f0f8eeb93cd2804717a9bc034a96002aad4edbb97b5ce6ae360a6e87d5cb1"
   }
 }

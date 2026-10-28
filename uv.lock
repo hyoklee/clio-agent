@@ -665,7 +665,7 @@ wheels = [
 
 [[package]]
 name = "clio-agent"
-version = "0.9.5b8"
+version = "0.9.5"
 source = { editable = "." }
 dependencies = [
     { name = "clio-kit" },
@@ -800,8 +800,8 @@ requires-dist = [
     { name = "adios2", marker = "sys_platform != 'win32' and extra == 'adios'", specifier = ">=2.10.0" },
     { name = "claude-agent-sdk", marker = "extra == 'claude-code'", specifier = ">=0.2.159" },
     { name = "clio-agent", extras = ["optimizers", "adios", "argonne", "claude-code", "desktop", "flowcept", "dev"], marker = "extra == 'all'" },
-    { name = "clio-kit", specifier = "==2.11.0" },
-    { name = "clio-schemas", git = "https://github.com/iowarp/clio-schemas?rev=ac1be7bc4b814228bbe3222cd80fb95251ec7024" },
+    { name = "clio-kit", specifier = "==2.11.1" },
+    { name = "clio-schemas", specifier = "==0.6.0" },
     { name = "ddgs", marker = "extra == 'desktop'", specifier = ">=6.0" },
     { name = "dspy", specifier = "==3.4.0" },
     { name = "fastapi", specifier = ">=0.140" },
@@ -889,27 +889,31 @@ install-bootstrap = [
 
 [[package]]
 name = "clio-kit"
-version = "2.11.0"
+version = "2.11.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
     { name = "pyyaml" },
     { name = "tomli-w" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0d/7d/c83326562a60d89f65cc8b5dc951a048ac727896a967db6f3aa545ce4618/clio_kit-2.11.0.tar.gz", hash = "sha256:84b9e014254217337c55d81587b0d5657da1a6ff999010e7de364620e93c8200", size = 260830, upload-time = "2026-10-08T22:28:12.149Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/61/1d/8448f04c0542c11206b9279ca02419e12a8c8a7282dfea4e66f70783ef0c/clio_kit-2.11.1.tar.gz", hash = "sha256:3f9c160867f9c1697b1fcc24ae88e4e454dc857dbede66192b9dea9a3d8f44a0", size = 260849, upload-time = "2026-10-28T21:23:42.883Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/af/1d/e2d2aeeffbcfa68fe73b9c58eeadd71578815c680cc0da998745c9a68725/clio_kit-2.11.0-py3-none-any.whl", hash = "sha256:44557c179fe6972cbb61ade733c3b01ac528009e8f7d98dee2d053bdccf4cd35", size = 291194, upload-time = "2026-10-08T22:28:10.514Z" },
+    { url = "https://files.pythonhosted.org/packages/ab/08/40c28d22582f63566cb71b0ee4b1508172ad1e6054ae7794e8407bae31b8/clio_kit-2.11.1-py3-none-any.whl", hash = "sha256:c36c12e9dbf28e9b62f14110feab542b9d33f58038f8be68d621b7e08f6ace39", size = 291193, upload-time = "2026-10-28T21:23:41.284Z" },
 ]
 
 [[package]]
 name = "clio-schemas"
-version = "0.6.0b16"
-source = { git = "https://github.com/iowarp/clio-schemas?rev=ac1be7bc4b814228bbe3222cd80fb95251ec7024#ac1be7bc4b814228bbe3222cd80fb95251ec7024" }
+version = "0.6.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "annotated-types" },
     { name = "jsonschema", extra = ["format"] },
     { name = "pydantic" },
     { name = "referencing" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7b/62/1779b8a294bbb6535e00db390ec6abee921aa195e0a6f8bae24999efafe3/clio_schemas-0.6.0.tar.gz", hash = "sha256:7585ae0c36feaca44e72e5fd29510605403f4aa57253dc538f5b4b08b1e1e1e7", size = 293413, upload-time = "2026-10-28T19:12:14.684Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c3/31/e6b69730e53643c19a180a60b2daadf9829fc176d68cd8933b61d858b537/clio_schemas-0.6.0-py3-none-any.whl", hash = "sha256:59297387f2e177cedfc72183c98fcd9199109fac69b65ec509340e14a943543a", size = 237689, upload-time = "2026-10-28T19:12:13.504Z" },
 ]
 
 [[package]]

@@ -23,7 +23,7 @@
 #   GACT_VERSION       legacy override for TUI release tag (default: match CLIO)
 #   CLIO_INSTALLER_REF pin launcher scripts (default: the installed release's tag)
 #   GACT_REF           gact-tui branch for the TUI (source mode only)
-#   CLIO_KIT_PACKAGE   local candidate wheel/base spec (default: released 2.10.6)
+#   CLIO_KIT_PACKAGE   local candidate wheel/base spec (default: released 2.11.1)
 #   CLIO_GIT_PROTOCOL  https | ssh          (default: https; source mode only)
 #
 # NOTE: invoke via `bash` (not `sh`). On Debian/Ubuntu `sh` is dash,
@@ -662,8 +662,8 @@ fi
 
 # ---------- provision clio-kit MCP runtime ----------------------------
 # Marketplace packs launch their MCP servers via the installed `clio-kit
-# mcp-server <name>` launcher. The released default retains legacy behavior; an
-# explicit candidate selects the compatible science dependency union once.
+# mcp-server <name>` launcher. The default matches this CLIO release's Kit pin;
+# explicit legacy shared-runtime candidates select their science dependency union.
 # Installed-tool launchers (not per-server `uvx` calls)
 # avoid the concurrent cold-cache ephemeral-env race and `uv cache prune`
 # deleting envs under running servers (astral-sh/uv#11694). `uv tool install`
@@ -671,8 +671,8 @@ fi
 # packs' tools simply stay unprovisioned until uv is installed.
 if have uv; then
   if [ -z "$CLIO_KIT_PACKAGE" ]; then
-    clio_kit_spec="clio-kit==2.10.6"
-    say "Provisioning released clio-kit launcher ($clio_kit_spec; legacy runtime semantics)"
+    clio_kit_spec="clio-kit==2.11.1"
+    say "Provisioning released clio-kit launcher ($clio_kit_spec)"
   elif [[ "$CLIO_KIT_PACKAGE" == *"=="* ]]; then
     clio_kit_spec="${CLIO_KIT_PACKAGE%%==*}[science]==${CLIO_KIT_PACKAGE#*==}"
     say "Provisioning candidate shared clio-kit science runtime ($clio_kit_spec)"
@@ -680,7 +680,7 @@ if have uv; then
     clio_kit_spec="${CLIO_KIT_PACKAGE}[science]"
     say "Provisioning candidate shared clio-kit science runtime ($clio_kit_spec)"
   fi
-  uv tool install --python 3.13 "$clio_kit_spec" || warn "clio-kit provisioning failed; marketplace pack tools will be unavailable until 'uv tool install \"$clio_kit_spec\"' succeeds and '\$(uv tool dir --bin)' is on PATH"
+  uv tool install --python "$py" "$clio_kit_spec" || warn "clio-kit provisioning failed; marketplace pack tools will be unavailable until 'uv tool install \"$clio_kit_spec\"' succeeds and '\$(uv tool dir --bin)' is on PATH"
 else
   warn "uv not found — skipping clio-kit MCP runtime provisioning; install uv and rerun this installer"
 fi

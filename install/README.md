@@ -27,21 +27,17 @@ Windows 10/11).
 - `gact` (CLIO-branded TUI binary, Go) — matching `clio-agent`
   **GitHub Release** asset for your OS/arch (`clio-tui-linux-amd64`,
   `clio-tui-darwin-arm64`, `clio-tui-windows-amd64.exe`, …)
-- `clio-kit` MCP launcher — provisioned via `uv tool install clio-kit==2.10.6`
-  (idempotent) when `uv` is present. This released version retains legacy runtime
-  semantics until the paired shared-runtime release. Marketplace packs
+- `clio-kit` MCP launcher — provisioned via `uv tool install clio-kit==2.11.1`
+  using the backend's selected Python (idempotent) when `uv` is present. Scientific
+  servers use the released Kit's locked component environments. Marketplace packs
   launch their MCP servers through the installed `clio-kit mcp-server
   <name>` launcher; the installed tool (not `uvx clio-kit@…`) avoids the
   concurrent cold-cache ephemeral-env race and `uv cache prune` deleting
   envs under running servers ([astral-sh/uv#11694](https://github.com/astral-sh/uv/issues/11694)).
   Without `uv`, this step is skipped with a warning — install `uv`, then
-  run `uv tool install clio-kit==2.10.6` and ensure the directory from
+  run `uv tool install clio-kit==2.11.1` and ensure the directory from
   `uv tool dir --bin` is on PATH. `clio doctor` flags a missing launcher.
 
-For local qualification of an unreleased shared-runtime CLIO Kit wheel, set
-`CLIO_KIT_PACKAGE` to its absolute path before running the installer. Only this
-explicit candidate path adds the `science` extra. Validate it with `clio-kit
-runtime-info ndp geo pandas plot`; the released pin does not provide that contract.
 - `clio` launcher — a small CLI that boots the server on `:17800` if
   not already running, attaches the TUI, and manages the server
   process (`clio start|stop|restart|status|logs|doctor|report`)
@@ -50,36 +46,32 @@ runtime-info ndp geo pandas plot`; the released pin does not provide that contra
 ### Prerequisites (release mode)
 
 - `curl` (Linux/macOS) / `Invoke-WebRequest` (PowerShell — built in)
-- `uv` (recommended) **or** Python 3.13 with `pip` for published releases
+- The installer provisions `uv` when missing and the release's managed Python.
 
 That's it — no `git`, no `go`.
 
-This checkout's source installers and bundled runtime select Python 3.14 with the
-GIL enabled. Release-mode installs and the backend-only examples below keep Python
-3.13 because current published releases pin clio-core 2.2.x, which has no 3.14 wheels.
+CLIO 0.9.5 selects standard Python 3.14 with the GIL enabled for source, release
+and bundled installations.
 
 ### Persistent backend-only install with uv
 
-CLIO intentionally pins DSPy, FastMCP, and FastMCP Tasks prereleases and
+CLIO pins verified DSPy, FastMCP and FastMCP Tasks releases and
 `litellm==1.102.2` as its tested stable provider boundary. Registry-backed uv tool
-resolution requires those exact prereleases as explicit roots, which keeps unrelated
-dependencies on stable releases.
+resolution uses the same exact SDK roots as the official installers.
 
 If you only need the long-running `clio-agent` backend, install it as a persistent uv
 tool rather than using the ephemeral `uvx` / `uv tool run` environment:
 
 ```sh
-uv tool install --python 3.13 --with dspy==3.4.0 --with fastmcp==4.0.0b5 --with fastmcp-slim==4.0.0b5 --with fastmcp-tasks==4.0.0b5 clio-agent==0.9.4.24
+uv tool install --python 3.14 --with dspy==3.4.0 --with fastmcp==4.1.2 --with fastmcp-tasks==4.1.2 --with mcp==2.2.0 clio-agent==0.9.5
 clio-agent serve
 ```
 
 Use `uv tool upgrade clio-agent` for later upgrades. The full
 one-line installer remains the supported path when you also want the CLIO-branded TUI.
 
-To opt into CLIO v0.9.5-beta.8, replace the package pin above with
-`clio-agent==0.9.5b8`. For the complete beta frontend/backend install, use
-`install.sh --dev` (or `--version 0.9.5b8`). Beta selection is explicit;
-the examples for the default channel continue to name the current stable release.
+Beta selection is explicit: use a published beta's package version and its SDK
+roots, or select its public tag with the complete installer's `--version` option.
 
 ## The ways to install
 
@@ -127,6 +119,8 @@ $u = 'https://raw.githubusercontent.com/iowarp/clio-agent/main/install/install.p
 **Pins** (deployments and CI): `--version <pypi version>` for a release,
 `--ref <branch, tag or commit>` for source. The older spellings still work:
 `CLIO_VERSION=<v>` is `--version <v>`, `CLIO_REF=<ref>` is `--source --ref <ref>`.
+For this release, `CLIO_VERSION=0.9.5 bash install/install.sh` selects the stable
+0.9.5 frontend and backend.
 `GACT_REF` builds the TUI from another gact-tui ref (source only); `GACT_VERSION`
 remains a legacy escape hatch for an alternate TUI release asset, and
 `CLIO_INSTALLER_REF` for a different launcher-script ref.

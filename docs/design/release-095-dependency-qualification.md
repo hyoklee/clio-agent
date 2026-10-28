@@ -21,10 +21,11 @@ disconnect protocol; the latter must yield while waiting for a disconnect.
 The initial Windows Python 3.14 audit of all extras and dependency groups
 reported 31 affected packages. After the repair, the same audit reports one:
 DiskCache 5.6.3. Its output contains two copies of the same advisory. This is
-not a clean audit. The existing Git-only clio-schemas dependency is excluded
-from this intermediate registry audit; the final stable registry pin must be
-audited without that exclusion. Marker-specific packages on other interpreters
-and operating systems need their own qualification.
+not a clean audit. The intermediate audit excluded the Git-only clio-schemas
+dependency. The final 0.9.5 registry audit includes published Schemas 0.6.0 and
+Kit 2.11.1: 235 dependency entries, one affected package, no exclusions, no skipped
+packages and no advisory suppression. Marker-specific packages on other
+interpreters and operating systems need their own qualification.
 
 ## Remaining DiskCache advisory
 

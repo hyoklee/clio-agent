@@ -4,10 +4,9 @@ CLIO is **one engine + three frontends**: `clio-agent` (the Python core + the ga
 server) is the brain; the **TUI**, **web**, and **desktop** are frontends that talk to a
 gact backend. Every pathway below is "get clio-agent running + a frontend on it."
 
-This checkout selects standard Python 3.14 with the GIL enabled for source builds,
-source installers, containers, and the next bundled Desktop release. Examples pinned to
-older published releases retain Python 3.13; their native dependencies predate the
-3.14 upgrade.
+CLIO 0.9.5 selects standard Python 3.14 with the GIL enabled for source builds,
+installers, containers and bundled Desktop. The installer provisions its managed
+Python and uv runtimes.
 
 There are **4 install mechanisms** exposing **6 usage experiences** (a–f).
 
@@ -31,15 +30,11 @@ Installs `clio-agent` from PyPI + the `clio-tui` binary + the `clio` launcher. W
 
 ## Beta releases
 
-To opt into CLIO v0.9.5-beta.8, pin the backend explicitly:
-
-```sh
-uv tool install --python 3.14 --with dspy==3.4.0 --with fastmcp==4.1.2 --with fastmcp-tasks==4.1.2 --with mcp==2.2.0 clio-agent==0.9.5b8
-```
-
-Use `CLIO_VERSION=v0.9.5-beta.8` with the complete installer when you also want
-the matching frontend. Desktop's beta update preference controls later updates;
-the default install channel continues to select published stable releases.
+Beta releases are opt-in. Select a published beta tag with
+`CLIO_VERSION=vX.Y.Z-beta.N` for the complete installer, or its PEP 440 package
+version `X.Y.ZbN` for a backend-only install. Use that beta's documented SDK roots.
+Desktop's beta update preference controls later updates; the default install
+channel selects published stable releases.
 
 ## b) No-install, Docker (TUI)
 
@@ -137,14 +132,14 @@ cd clio-agent && uv sync --extra optimizers --extra argonne
 uv run src/clio_agent/ui/cli.py        # or: uv run clio-agent serve
 ```
 
-CLIO intentionally pins DSPy, FastMCP, and FastMCP Tasks prereleases and the tested
-stable LiteLLM release. Registry-backed uv tool resolution requires those exact
-prereleases as explicit roots, avoiding global admission of unrelated prereleases.
+CLIO pins verified DSPy, FastMCP, FastMCP Tasks and LiteLLM releases.
+Registry-backed uv tool installation uses the same exact SDK roots as the
+official installers.
 For a persistent backend-only installation, use `uv tool` (not the
 ephemeral `uvx` / `uv tool run` path):
 
 ```sh
-uv tool install --python 3.13 --with dspy==3.4.0 --with fastmcp==4.0.0b5 --with fastmcp-slim==4.0.0b5 --with fastmcp-tasks==4.0.0b5 clio-agent==0.9.4.24
+uv tool install --python 3.14 --with dspy==3.4.0 --with fastmcp==4.1.2 --with fastmcp-tasks==4.1.2 --with mcp==2.2.0 clio-agent==0.9.5
 clio-agent serve
 ```
 

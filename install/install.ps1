@@ -22,7 +22,7 @@
 #   GACT_VERSION       legacy override for TUI release tag (default: match CLIO)
 #   CLIO_INSTALLER_REF pin launcher scripts   (default: the installed release's tag)
 #   GACT_REF           gact-tui branch for the TUI (source mode only)
-#   CLIO_KIT_PACKAGE   local candidate wheel/base spec (default: released 2.10.6)
+#   CLIO_KIT_PACKAGE   local candidate wheel/base spec (default: released 2.11.1)
 #   CLIO_GIT_PROTOCOL  https | ssh            (default: https; source mode only)
 
 $ErrorActionPreference = 'Stop'
@@ -649,8 +649,8 @@ if ($LASTEXITCODE -eq 0) {
 
 # ---------- provision clio-kit MCP runtime ----------------------------
 # Marketplace packs launch their MCP servers via the installed `clio-kit
-# mcp-server <name>` launcher. The released default retains legacy behavior; an
-# explicit candidate selects the compatible science dependency union once.
+# mcp-server <name>` launcher. The default matches this CLIO release's Kit pin;
+# explicit legacy shared-runtime candidates select their science dependency union.
 # Installed-tool launchers (not per-server `uvx` calls)
 # avoid the concurrent cold-cache ephemeral-env race and `uv cache prune`
 # deleting envs under running servers (astral-sh/uv#11694). `uv tool install`
@@ -658,8 +658,8 @@ if ($LASTEXITCODE -eq 0) {
 # packs' tools simply stay unprovisioned until uv is installed.
 if (Have uv) {
     if (-not $ClioKitPackage) {
-        $ClioKitSpec = 'clio-kit==2.10.6'
-        Say "Provisioning released clio-kit launcher ($ClioKitSpec; legacy runtime semantics)"
+        $ClioKitSpec = 'clio-kit==2.11.1'
+        Say "Provisioning released clio-kit launcher ($ClioKitSpec)"
     } elseif ($ClioKitPackage.Contains('==')) {
         $ClioKitParts = $ClioKitPackage.Split('==', 2)
         $ClioKitSpec = "$($ClioKitParts[0])[science]==$($ClioKitParts[1])"
@@ -668,7 +668,7 @@ if (Have uv) {
         $ClioKitSpec = "$ClioKitPackage[science]"
         Say "Provisioning candidate shared clio-kit science runtime ($ClioKitSpec)"
     }
-    & uv tool install --python 3.13 $ClioKitSpec
+    & uv tool install --python $py $ClioKitSpec
     if ($LASTEXITCODE -ne 0) {
         Warn "clio-kit provisioning failed; marketplace pack tools will be unavailable until 'uv tool install `"$ClioKitSpec`"' succeeds and the dir from 'uv tool dir --bin' is on PATH"
     }

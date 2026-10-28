@@ -20,10 +20,10 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-EXPECTED_VERSION = "0.9.5b8"
+EXPECTED_VERSION = "0.9.5"
 #: The release the install docs name: the latest stable one. A beta changes the
 #: package version only; users opt into it explicitly.
-DOCUMENTED_VERSION = "0.9.4.24"
+DOCUMENTED_VERSION = "0.9.5"
 EXPECTED_DSPY = "dspy==3.4.0"
 EXPECTED_FASTMCP = "fastmcp==4.1.2"
 EXPECTED_FASTMCP_SLIM = "fastmcp-slim==4.1.2"
@@ -284,24 +284,18 @@ def test_release_workflow_smokes_the_published_registry_tool() -> None:
 
 
 def test_documented_persistent_uv_tool_install_has_the_same_policy() -> None:
-    """Historical released-version examples retain that release's exact dependency roots."""
+    """Stable installation examples use the current release's exact SDK roots."""
 
     command = (
-        f"uv tool install --python 3.13 --with {EXPECTED_DSPY} --with fastmcp==4.0.0b5 "
-        f"--with fastmcp-slim==4.0.0b5 "
-        f"--with fastmcp-tasks==4.0.0b5 clio-agent=={DOCUMENTED_VERSION}"
+        f"uv tool install --python 3.14 --with {EXPECTED_DSPY} --with {EXPECTED_FASTMCP} "
+        f"--with {EXPECTED_FASTMCP_TASKS} --with mcp==2.2.0 clio-agent=={DOCUMENTED_VERSION}"
     )
     for relative_path in ("docs/INSTALL.md", "install/README.md"):
         contents = _text(relative_path)
         assert command in contents
         assert "uvx" in contents or "uv tool run" in contents
 
-    # The release README retains the broader, still-valid command
-    # published to PyPI. Official installers and current install docs use the narrower
-    # exact-root policy above.
-    assert (
-        f"uv tool install --python 3.13 --prerelease allow --with dspy==3.4.0 clio-agent=={DOCUMENTED_VERSION}"
-    ) in _text("README.md")
+    assert command in _text("README.md")
 
 
 def test_package_init_and_lock_share_the_release_version() -> None:
