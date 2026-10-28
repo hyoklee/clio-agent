@@ -380,6 +380,7 @@ function Start-TuiBuild {
 # Managed tools need only the locked bootstrap packages, so their preparation
 # overlaps the agent's much larger sync without racing the main virtualenv.
 function Start-OfficePrepare {
+    if ($script:OfficeProc) { return }
     $worker = Join-Path $Src 'install/prepare-office.ps1'
     if (-not (Test-Path -LiteralPath $worker)) { return }  # older source ref
     $stem = Join-Path ([IO.Path]::GetTempPath()) ("clio-office-" + [Guid]::NewGuid().ToString('N'))
@@ -410,10 +411,12 @@ function Complete-OfficePrepare {
 }
 
 function Start-BytecodePrepare {
+    $precompiler = Join-Path $Src 'install/precompile_runtime.py'
+    if (-not (Test-Path -LiteralPath $precompiler)) { return }  # older source ref
     $stem = Join-Path ([IO.Path]::GetTempPath()) ("clio-bytecode-" + [Guid]::NewGuid().ToString('N'))
     $script:BytecodeLog = "$stem.log"
     $script:BytecodeErr = "$stem.err.log"
-    $compileArgs = '-B -m compileall -q -j 2 "{0}" "{1}"' -f (Join-Path $Src 'src'), (Join-Path $Venv 'Lib/site-packages')
+    $compileArgs = '-B "{0}" --python-root "{1}" --source-root "{2}"' -f $precompiler, $Venv, (Join-Path $Src 'src')
     Say "Compiling installed bytecode beside final setup (log: $($script:BytecodeLog))"
     $script:BytecodeProc = Start-Process -FilePath $VenvPython -ArgumentList $compileArgs `
         -WorkingDirectory $Src -WindowStyle Hidden -PassThru `
@@ -491,7 +494,7 @@ if ($OptSource) {
             Update-SourceClone $Src $ref
         } else {
             Say "Cloning clio-agent at $ref"
-            & git clone --quiet --recurse-submodules --shallow-submodules --branch $ref --depth 1 $ClioRepo $Src 2>$null
+            & git clone --quiet --branch $ref --depth 1 $ClioRepo $Src 2>$null
             if ($LASTEXITCODE -ne 0) {
                 # A commit is not a branch or tag: fetch it by id.
                 RemoveTree $Src
@@ -499,8 +502,10 @@ if ($OptSource) {
                 RunNative git @('-C', $Src, 'remote', 'add', 'origin', $ClioRepo)
                 RunNative git @('-C', $Src, 'fetch', '-q', '--depth', '1', 'origin', $ref)
                 RunNative git @('-C', $Src, 'checkout', '-q', 'FETCH_HEAD')
-                RunNative git @('-C', $Src, 'submodule', 'update', '--init', '--recursive', '--depth', '1')
             }
+            $py = PythonOf (Join-Path $Src '.python-version')
+            Start-OfficePrepare
+            RunNative git @('-C', $Src, 'submodule', 'update', '--init', '--recursive', '--depth', '1')
         }
         $py = PythonOf (Join-Path $Src '.python-version')
         $syncArgs = @('sync', '--locked', '--python', $py, '--extra', 'argonne', '--extra', 'flowcept')

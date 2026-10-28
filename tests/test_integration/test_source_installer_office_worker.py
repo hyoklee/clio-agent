@@ -30,7 +30,7 @@ def test_office_worker_runs_independently_and_is_joined_or_retired(
         "if (Test-Path (Join-Path $SourceRoot 'fail')) { exit 7 }\n",
         encoding="utf-8",
     )
-    (source / "install/compileall.py").write_text(
+    (source / "install/precompile_runtime.py").write_text(
         "import os, pathlib, sys, time\n"
         "root = pathlib.Path.cwd()\n"
         "(root / 'started').write_text(str(os.getpid()))\n"
