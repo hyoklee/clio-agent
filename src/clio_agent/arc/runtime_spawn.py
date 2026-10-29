@@ -5,6 +5,7 @@ resolve the launcher binary, the shared-library env var, and the detach flags fo
 ``clio_run start``. ``storage._spawn_runtime_daemon`` composes them (and stays in
 ``storage`` because it writes the daemon pidfile owned by the client-registry
 lifecycle there); ``storage`` re-exports these names for existing callers/tests.
+:func:`apply_zmq_io_threads` sizes the ZeroMQ I/O pools of the daemon and clients.
 """
 
 from __future__ import annotations
@@ -12,7 +13,16 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from collections.abc import MutableMapping
 from typing import Any, Optional
+
+# ZeroMQ I/O threads per context for CLIO's single-host daemon and its clients.
+# clio-core defaults to 8, sized for ~512-node clusters; every daemon/client process
+# holds three contexts, so 8 costs ~27 threads each (verified against iowarp-core
+# 2.3.2: the daemon runs 38 threads at 8 and 17 at 1). That alone exceeds a login
+# node's per-user process limit (``ulimit -u`` 100 on TACC Vista), and local IPC
+# needs nowhere near one GB/s of I/O per thread.
+_DEFAULT_ZMQ_IO_THREADS = "1"
 
 
 def _dynamic_library_env_var() -> str:
@@ -65,3 +75,30 @@ def _detached_popen_kwargs(*, breakaway: bool = True) -> "dict[str, Any]":
             flags |= getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0x01000000)
         return {"creationflags": flags, "close_fds": True}
     return {"start_new_session": True, "close_fds": True}
+
+
+def apply_zmq_io_threads(environ: MutableMapping[str, str]) -> None:
+    """Size clio-core's ZeroMQ I/O pools in ``environ`` unless the user already did.
+
+    clio-core reads ``CLIO_ZMQ_IO_THREADS`` in the daemon and in every client, and the
+    daemon, the native preflight child, and the in-process client all inherit this
+    process's environment, so one default set before the spawn covers all three.
+    ``arc.core_zmq_io_threads`` (or the env var itself) overrides it.
+
+    Args:
+        environ: The environment to update (``os.environ`` in production).
+
+    Raises:
+        ValueError: If the configured value is not a positive integer.
+    """
+    from clio_agent import conf  # noqa: PLC0415 - avoid import cycle
+
+    raw = conf.resolve(
+        "arc.core_zmq_io_threads",
+        env="CLIO_ZMQ_IO_THREADS",
+        default=_DEFAULT_ZMQ_IO_THREADS,
+        cast=conf.as_str,
+    ).strip()
+    if not raw.isdigit() or int(raw) < 1:
+        raise ValueError(f"invalid CLIO_ZMQ_IO_THREADS {raw!r}: expected a positive integer")
+    environ["CLIO_ZMQ_IO_THREADS"] = raw

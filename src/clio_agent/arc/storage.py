@@ -98,6 +98,7 @@ from clio_agent.arc.runtime_spawn import (  # noqa: F401 - re-exported for calle
     _detached_popen_kwargs,
     _dynamic_library_env_var,
     _runtime_launcher_path,
+    apply_zmq_io_threads,
 )
 from clio_agent.arc.runtime_stop import (  # noqa: F401 - re-exported for callers/tests
     RuntimeShutdownInProgress,
@@ -492,6 +493,7 @@ class ClioCoreStore:
             if cls._initialized:
                 return _active_config_path
             os.environ.setdefault("CTP_LOG_LEVEL", log_level)
+            apply_zmq_io_threads(os.environ)  # before spawn/attach: both inherit it
             # Import order is load-bearing: iowarp_core does the RTLD_GLOBAL .so
             # preload + seeds ~/.clio/clio.yaml; it MUST precede clio_cte_core_ext.
             # isort:skip keeps ruff from reordering these alphabetically.

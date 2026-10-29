@@ -388,17 +388,22 @@ main() {
       # untouched and just attach.
       # stdout stays on the terminal so the TUI renders; gact stderr is captured to
       # a log so Go panics survive for bug reports.
+      # Go sizes itself to every core (144 on an HPC login node: ~40 threads, mostly
+      # GC workers), which alone breaks a per-user process limit; a TUI needs few.
+      local GACT_GOMAXPROCS="${GOMAXPROCS:-4}"
       if [[ "${SERVER_WAS_STARTED:-0}" = 1 ]]; then
         trap 'exit 130' INT TERM
         trap 'stop_server' EXIT
         env \
           GACT_BACKEND="http://127.0.0.1:$CLIO_PORT" \
           GACT_BRAND_NAME="$CLIO_BRAND_NAME" \
+          GOMAXPROCS="$GACT_GOMAXPROCS" \
           "$GACT_BIN" "$@" 2>"$GACT_LOG" || true
       else
         exec env \
           GACT_BACKEND="http://127.0.0.1:$CLIO_PORT" \
           GACT_BRAND_NAME="$CLIO_BRAND_NAME" \
+          GOMAXPROCS="$GACT_GOMAXPROCS" \
           "$GACT_BIN" "$@" 2>"$GACT_LOG"
       fi
       ;;
