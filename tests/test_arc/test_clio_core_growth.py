@@ -74,6 +74,8 @@ def store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
             core_port=31413,
             conf_dir=_cte_yaml_path(tmp_path / "conf"),
             ram_budget="1GB",
+            main_segment_size=1073741824,
+            metadata_segment_size=268435456,
             file_tier=_cte_yaml_path(tmp_path / "storage.bin"),
             file_capacity="8MB",
             metadata_log=_cte_yaml_path(tmp_path / "metadata.log"),

@@ -83,6 +83,8 @@ def _managed_config(config: Path, text: str) -> dict[str, Any] | None:
             file_tier=_cte_yaml_path(config.parent / "storage.bin"),
             file_capacity=tier["capacity_limit"],
             metadata_log=_cte_yaml_path(config.parent / "metadata.log"),
+            main_segment_size=document["runtime"]["main_segment_size"],
+            metadata_segment_size=document["runtime"]["metadata_segment_size"],
             indexer=indexer_block(_cte_yaml_path(config.parent / "indexer_index.log"))
             if indexer
             else "",

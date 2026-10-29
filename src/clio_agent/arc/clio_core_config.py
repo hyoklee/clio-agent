@@ -53,6 +53,7 @@ import yaml
 
 from clio_agent.arc import clio_core_durability as _durability
 from clio_agent.arc import clio_core_indexer as _indexer
+from clio_agent.arc import clio_core_segments as _segments
 from clio_agent.arc.clio_core_host_migration import (
     migrate_legacy_cte_store,
 )
@@ -143,6 +144,8 @@ networking:
   port: {core_port}
 runtime:
   num_threads: 4
+  main_segment_size: {main_segment_size}
+  metadata_segment_size: {metadata_segment_size}
   conf_dir: "{conf_dir}"
 compose:
   - mod_name: clio_bdev
@@ -355,6 +358,7 @@ def default_cte_config_path() -> str:
     cte_dir.mkdir(parents=True, exist_ok=True)
     cfg = cte_dir / "cte.yaml"
     if cfg.is_file():
+        _segments.ensure_seeded_segments_bounded(cfg)  # a pre-segment-size seed, once
         _durability.ensure_seeded_config_durable(cfg)  # a pre-durability seed, upgraded once
         _indexer.ensure_seeded_config_indexed(cfg, cte_dir / "indexer_index.log")  # pre-#905
         _seeded_capacity_fits(cfg, _default_cte_file_capacity(cte_dir))  # a pre-sizing seed
@@ -371,6 +375,7 @@ def default_cte_config_path() -> str:
                 ram_budget=budget,
                 metadata_log=_cte_yaml_path(cte_dir / "metadata.log"),
                 indexer=_indexer.indexer_block(_cte_yaml_path(cte_dir / "indexer_index.log")),
+                **_segments.seeded_segment_sizes(),
             ),
             encoding="utf-8",
         )

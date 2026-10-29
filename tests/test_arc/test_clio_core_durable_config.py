@@ -30,6 +30,8 @@ _VOLATILE_SEED = clio_core_config._DEFAULT_CTE_CONFIG_TEMPLATE.replace(
     file_tier="C:/x/storage.bin",
     file_capacity="50GB",
     ram_budget="1GB",
+    main_segment_size=1073741824,
+    metadata_segment_size=268435456,
     metadata_log="C:/x/metadata.log",
     indexer="",
 )

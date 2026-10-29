@@ -219,6 +219,8 @@ def test_memory_budget_is_the_arena_and_data_is_disk_only() -> None:
         file_tier="f",
         file_capacity="50GB",
         ram_budget="1GB",
+        main_segment_size=1073741824,
+        metadata_segment_size=268435456,
         metadata_log="m",
         indexer="",
     )

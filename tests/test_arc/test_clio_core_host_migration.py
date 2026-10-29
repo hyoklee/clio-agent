@@ -62,6 +62,8 @@ def _legacy_store(home: Path, *, port: int | None = None) -> Path:
             file_tier=(legacy / "storage.bin").as_posix(),
             file_capacity="50GB",
             ram_budget="1GB",
+            main_segment_size=1073741824,
+            metadata_segment_size=268435456,
             metadata_log=(legacy / "metadata.log").as_posix(),
             indexer=indexer_block((legacy / "indexer_index.log").as_posix()),
         ),

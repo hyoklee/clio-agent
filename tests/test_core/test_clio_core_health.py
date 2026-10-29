@@ -77,6 +77,8 @@ def test_probe_disk_only_default_is_ready(tmp_path):
             file_tier="f",
             file_capacity="50GB",
             ram_budget="1GB",
+            main_segment_size=1073741824,
+            metadata_segment_size=268435456,
             metadata_log="m",
             indexer="",
         ),
@@ -295,6 +297,8 @@ def test_search_row_is_red_with_a_remedy_when_no_indexer_is_composed(tmp_path):
         file_tier="f",
         file_capacity="50GB",
         ram_budget="1GB",
+        main_segment_size=1073741824,
+        metadata_segment_size=268435456,
         metadata_log="m",
         indexer="{indexer}",
     )

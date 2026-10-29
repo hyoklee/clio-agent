@@ -62,6 +62,8 @@ def _old_seed(tmp_path: Path) -> Path:
             file_tier=clio_core_config._cte_yaml_path(tmp_path / "cte" / "storage.bin"),
             file_capacity="50GB",
             ram_budget="1GB",
+            main_segment_size=1073741824,
+            metadata_segment_size=268435456,
             metadata_log=clio_core_config._cte_yaml_path(tmp_path / "cte" / "metadata.log"),
             indexer="",
         ),
